@@ -1,7 +1,7 @@
 # dsh-omp-tui
 
 ## 重要提示！
-** 本项目尚处于早期开发测试阶段，目前项目文档由ai完成，后续功能开发完全后会重新编写readme以增强可读性 **
+- 本项目尚处于早期开发测试阶段，目前项目文档由ai完成，后续功能开发完全后会重新编写readme以增强可读性
 
 OMP 风格的 DeepSeek Harness（dsh）终端界面——一个独立的 profile bundle（插件）。
 当前视觉基线是本机 `omp v17.2.15` 的实际配置：`dark-catppuccin`、Nerd Font
