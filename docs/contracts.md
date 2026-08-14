@@ -66,6 +66,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 - SurfaceOp = `'append' | { op: 'replace'; start: number; end: number }`（compaction 用 replace 删除被遮蔽节点）
 - 派生历史 = 按 surfaceOp 顺序走 surface 节点投影（`Session.deriveMessages()`）
 
+人类 transcript 必须注意首步事件顺序：`turn/start → step/start → user/message* → assistant/chunk* → assistant/message`。
+因此不能在 `step/start` 时把空助手组件插入视图；应在首个 assistant payload 到达时再挂载，否则助手输出会排到本轮用户输入之前。
+
 ### 1.4 Session（活会话）
 
 ```ts

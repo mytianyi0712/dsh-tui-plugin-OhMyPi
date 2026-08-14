@@ -29,6 +29,13 @@ describe('frameBlock', () => {
     assert.equal(visibleWidth(rows[0]!), 20)
   })
 
+  it('uses the three-cell OMP title cap and optional section divider', () => {
+    const rows = frameBlock(['body'], 24, palette.border, undefined, 'Read file', 'Output')
+    assert.equal(rows[0], '╭─── Read file ────────╮')
+    assert.equal(rows[1], '├─── Output ───────────┤')
+    assert.equal(rows.at(-1), '╰──────────────────────╯')
+  })
+
   it('paints the background across every row when supplied', () => {
     const bg = (text: string) => `<bg>${text}</bg>`
     const border = (text: string) => `<b>${text}</b>`
@@ -43,14 +50,14 @@ describe('frameBlock', () => {
 describe('palette spec selection', () => {
   it('emits truecolor SGR on dark truecolor terminals', () => {
     const enabled = createPalette(true, 'dark', true)
-    assert.equal(enabled.accent('x'), '\u001b[38;2;122;162;247mx\u001b[39m')
+    assert.equal(enabled.accent('x'), '\u001b[38;2;250;179;135mx\u001b[39m')
   })
 
   it('falls back to ANSI on light schemes or non-truecolor terminals', () => {
     const ansi = createPalette(true, 'dark', false)
-    assert.equal(ansi.accent('x'), '\u001b[95mx\u001b[39m')
+    assert.equal(ansi.accent('x'), '\u001b[93mx\u001b[39m')
     const light = createPalette(true, 'light', true)
-    assert.equal(light.accent('x'), '\u001b[95mx\u001b[39m')
+    assert.equal(light.accent('x'), '\u001b[93mx\u001b[39m')
   })
 
   it('emits nothing for background roles on the ANSI fallback', () => {

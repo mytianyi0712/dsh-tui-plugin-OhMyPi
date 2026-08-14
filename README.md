@@ -1,25 +1,27 @@
 # dsh-omp-tui
 
-omp 风格的 DeepSeek Harness（dsh）终端界面——一个独立的 profile bundle（插件），
-用 `@earendil-works/pi-tui` 实现，样式原生模仿本机 omp 的 titanium 暗色主题：
-圆角边框 `╭╮╰╯`、per-status 工具卡背景、`#16161e` 状态行、思考块左竖线。
+OMP 风格的 DeepSeek Harness（dsh）终端界面——一个独立的 profile bundle（插件）。
+当前视觉基线是本机 `omp v17.2.15` 的实际配置：`dark-catppuccin`、Nerd Font
+符号与 minimal/powerline 状态栏，而不是早期实现中误认的 Tokyo Night/titanium 配色。
+
+已适配的主要结构：响应式双栏欢迎页、无边框全宽用户消息、带来源标题与独立边框的
+注入上下文卡、无角色标题的助手正文、斜体弱化思考文本、OMP 三字符标题帽工具卡、
+`Output` 分隔栏，以及嵌入编辑器横线的左右状态段。
 
 ```
-╭─ dsh HARNESS─────────────────────────────────────────────────────╮
-│ tui-8f3a…                                                         │
-╰───────────────────────────────────────────────────────────────────╯
-╭───────────────────────────────────────────────────────────────────╮
-│ User                                                              │
-│ 用 pwsh 列出当前目录                                               │
-╰───────────────────────────────────────────────────────────────────╯
-╭─ ○ Tool / pwsh────────────────────────────────────────────────────╮
-│ $ { "command": "Get-ChildItem …" }                                │
-╰───────────────────────────────────────────────────────────────────╯
-Plan
-✓ 任务A
-○ 任务B
-D:\Projects\dsh  deepseek-v4-pro  ↑1.2k ↓300  1% context
- >
+╭─── dsh ─────────────────────────────────────────────────────────╮
+│        Welcome back!        │ Tips                               │
+│          D S H              │ / for commands                     │
+│      deepseek-v4-pro        │ Session / Workspace                │
+╰─────────────────────────────┴────────────────────────────────────╯
+───  D:\Projects\dsh   main ─────── 󰚩 deepseek-v4-pro  ↑0 ↓0 ───
+
+ Read: Reading theme implementation
+
+╭─── • Read: Reading theme implementation ────────────────────────╮
+├─── Output ───────────────────────────────────────────────────────┤
+│ src/theme.ts                                                     │
+╰──────────────────────────────────────────────────────────────────╯
 ```
 
 ## 架构
@@ -35,18 +37,30 @@ D:\Projects\dsh  deepseek-v4-pro  ↑1.2k ↓300  1% context
 
 ## 安装
 
-要求：Node ≥ 22.19、pnpm（corepack）、`dsh` 可用（`npx @deepseek-ai/dsh`）。
+发布版、GitHub tag、升级、卸载和本地开发的完整说明见
+[`docs/INSTALL.md`](docs/INSTALL.md)。GitHub 发布前的仓库配置、`dsh-plugin` topic、
+Release tarball 和 CI 说明见 [`docs/PUBLISHING.md`](docs/PUBLISHING.md)。
+
+快速安装当前 GitHub Release tarball：
 
 ```sh
-cd /path/to/dsh-omp-tui
-pnpm install
-pnpm run prepare          # 构建 lib/（消费者构建，无类型检查）
+npm install --global pnpm@11.7.0
+npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.1.0/dsh-omp-tui-0.1.0.tgz
+npx --yes @deepseek-ai/dsh@0.1.0-rc.6 --profile tui
+```
 
-# 本地开发：link 安装，改完 lib/ 立即生效
+从 GitHub tag 安装时，需要显式允许 Git 依赖执行构建：
+
+```sh
+npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
+  --allow-build=dsh-omp-tui github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.1.0
+```
+
+本地开发仍可使用 `link:`；先运行 `pnpm install && pnpm run prepare`，再执行：
+
+```sh
 dsh plugin --profile tui add link:/path/to/dsh-omp-tui
-
-# 或打包安装（拷贝形态，改完需重新 add）
-dsh plugin --profile tui add file:/path/to/dsh-omp-tui
 ```
 
 模型配置走 dsh 的 settings 文档（`~/.dsh/settings.yaml`，热加载）：

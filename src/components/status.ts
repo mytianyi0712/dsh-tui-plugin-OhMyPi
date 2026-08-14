@@ -1,17 +1,10 @@
-/**
- * The status line: one full-width row above the editor rendering the
- * left/right prompt templates, padded to the terminal width and filled with
- * the omp `statusLineBg` — the terminal-mode counterpart of omp's status bar.
- */
+/** OMP-style composer chrome: status segments embedded in a horizontal top rail. */
 
 import { truncateToWidth, visibleWidth, type Component } from '@earendil-works/pi-tui'
-import {
-  renderTuiPromptTemplate,
-  type TuiPromptToken,
-} from '../prompt.ts'
+import { renderTuiPromptTemplate, type TuiPromptToken } from '../prompt.ts'
 import type { Palette } from '../theme.ts'
 
-/** The left/right template line rendered above the editor. */
+/** Left/right prompt templates rendered as surfaced groups inside the editor rail. */
 export class StatusLineComponent implements Component {
   constructor(
     private readonly leftTemplate: readonly TuiPromptToken[],
@@ -23,12 +16,41 @@ export class StatusLineComponent implements Component {
   invalidate(): void {}
 
   render(width: number): string[] {
-    const right = truncateToWidth(renderTuiPromptTemplate(this.rightTemplate, this.resolve), width, '')
-    const rightWidth = visibleWidth(right)
-    const leftCapacity = Math.max(0, width - rightWidth - (rightWidth === 0 ? 0 : 2))
-    const left = truncateToWidth(renderTuiPromptTemplate(this.leftTemplate, this.resolve), leftCapacity, '')
-    const gap = rightWidth === 0 ? '' : ' '.repeat(Math.max(0, width - visibleWidth(left) - rightWidth))
-    const row = `${left}${gap}${right}`
-    return [this.palette.statusLineBg(row + ' '.repeat(Math.max(0, width - visibleWidth(row))))]
+    const safeWidth = Math.max(1, width)
+    if (safeWidth < 8) return [this.palette.borderMuted('─'.repeat(safeWidth))]
+
+    const rightBudget = Math.floor((safeWidth - 6) * 0.45)
+    const right = truncateToWidth(
+      renderTuiPromptTemplate(this.rightTemplate, this.resolve),
+      rightBudget,
+      '',
+    )
+    const rightClusterWidth = right === '' ? 0 : visibleWidth(right) + 2
+    const leftBudget = Math.max(0, safeWidth - 6 - rightClusterWidth - 3)
+    const left = truncateToWidth(
+      renderTuiPromptTemplate(this.leftTemplate, this.resolve),
+      leftBudget,
+      '',
+    )
+    const leftCluster = left === '' ? '' : this.palette.statusLineBg(` ${left} `)
+    const rightCluster = right === '' ? '' : this.palette.statusLineBg(` ${right} `)
+    const fillWidth = Math.max(
+      0,
+      safeWidth - 6 - visibleWidth(leftCluster) - visibleWidth(rightCluster),
+    )
+    const rail = this.palette.borderMuted('─'.repeat(fillWidth))
+    const cap = this.palette.borderMuted('───')
+    return [`${cap}${leftCluster}${rail}${rightCluster}${cap}`]
+  }
+}
+
+/** Bottom rail closing the borderless editor body, matching OMP's composer. */
+export class InputBorderComponent implements Component {
+  constructor(private readonly palette: Palette) {}
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    return [this.palette.borderMuted('─'.repeat(Math.max(1, width)))]
   }
 }

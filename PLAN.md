@@ -1,7 +1,7 @@
 # dsh-omp-tui：自研 TUI bundle（方案 B）实施计划
 
 > 目标：以插件（profile bundle）形式为 DeepSeek Harness（dsh）实现终端界面，
-> 样式原生模仿本机 omp（titanium 暗色主题）。不动 harness、不改 turtle-ui。
+> 视觉与本机 omp 17.2.15 的当前 dark-catppuccin/Nerd/minimal 配置对齐。不动 harness、不改 turtle-ui。
 > 创建：2026-08-14。上游版本基准：dsh 0.1.0-rc.6、turtle-ui b08ed69、
 > @earendil-works/pi-tui 0.80.7。
 
@@ -13,9 +13,9 @@
   harness 负责 agent/模型/工具/持久化/沙箱；本 bundle 只拥有终端呈现与输入。
 - **渲染**：`@earendil-works/pi-tui@0.80.7`（npm 公开分发，含 win32 原生 prebuild）。
   移植 turtle-ui 的 pnpm patch（编辑器 `frame`/`prompt` 支持，BSD-3 需保留版权声明）。
-- **样式**：omp 风格为原生实现——titanium 调色板 + truecolor 检测（照搬 omp
-  `detectColorMode`）+ 圆角框 `╭╮╰╯` + 状态行（bg `#16161e`）+ 思考分级色。
-  不移植 turtle-ui 的主题机制（其 16 色 ANSI 设计与 omp 目标相反）。
+- **样式**：原生复刻本机 omp 的实际组合——dark-catppuccin 角色、truecolor 检测、
+  响应式欢迎面板、无边框消息、OMP output-block 工具卡与嵌入编辑器横线的状态段。
+  非 truecolor/light 终端回退 16 色 ANSI。
 - **仓库布局**：
   - `D:/Projects/dsh` → 本 bundle 仓库（现为 turtle-ui 克隆，Phase 0 迁移）
   - `D:/Projects/deepseek-harness` → 兄弟 checkout（类型解析 + 测试宿主 + 合约来源）
@@ -60,20 +60,19 @@
    （`${cwd}${git/worktree}${model}${token_meter/cache_hit_rate}${context}${queued}${symbol}${indicator}`）
    与注册表（插件可注册自定义值，与 turtle-ui 同能力）。
 4. **theme.ts（omp 原生样式）**：
-   - titanium 全量角色：accent `#7aa2f7`、border `#4c566a`、success `#9ece6a`、
-     warning `#e0af68`、error `#f7768e`、dim `#a9b1d6`、code `#c0caf5`、
-     model `#bb9af7`、context `#2ac3de`、spend `#7dcfff`、thinking `#7aa2f7`
-   - 背景角色：userMessageBg `#1f2335`、toolPendingBg `#1f2335`、
-     toolSuccessBg `#1f2d2a`、toolErrorBg `#2d1f2a`、statusLineBg `#16161e`
+   - dark-catppuccin 角色：accent `#fab387`、border `#89b4fa`、success `#a6e3a1`、
+     warning `#f9e2af`、error `#f38ba8`、muted `#7f849c`、dim `#6c7086`
+   - 状态角色：path `#94e2d5`、model `#f5c2e7`、context `#cba6f7`、spend `#74c7ec`
+   - 背景角色：user/success `#181825`、pending `#313244`、error/status `#11111b`
    - truecolor 检测（COLORTERM/WT_SESSION/TERM，同 omp）；非 truecolor 回落 16 色 ANSI
-   - 圆角框 helper（`╭─╮`/`╰─╯` + 侧边 `│`，整行背景填充）；`/palette` 命令
+   - output-block helper（`╭─── title` + `├─── Output` + 圆角底边）；`/palette` 命令
 5. **TUI 核心**：TUI init、Container chat、HintEditor（patch 版：frame/prompt）、
    事件驱动 transcript：
-   - user/message → 用户块（User 标签 + userMessageBg 圆角框）
-   - assistant/chunk → 流式组件（text/reasoning 块；思考块 = thinking 色左竖线 + 斜体灰字）
-   - tool/call + tool/result → 工具卡（圆角框 + per-status 背景 + 状态色边框）
-   - turn/start → 状态指示（提示符 `>` 位置的活动字形）
-   - 状态行：PromptContext 行整行 statusLineBg，分段色 path/model/spend/context
+   - user/message → 与 omp 一致的全宽背景块，无 `User` 标签和外框
+   - assistant/chunk → 流式组件；正文无 `Assistant` 标签，思考文本缩进、斜体、弱化
+   - tool/call + tool/result → pending 单行状态；settled 为带 `Output` 分隔栏的圆角卡
+   - turn/start → 编辑器内活动字形
+   - 状态行：路径/Git 与模型/token/context 段嵌入编辑器顶部横线
 6. **验收**：`dsh plugin --profile tui add file:.` 后 `dsh --profile tui` 可对话；
    流式渲染、工具卡 omp 样式、Ctrl+C 中断、退出清理正常；headless 快照测试起步。
 

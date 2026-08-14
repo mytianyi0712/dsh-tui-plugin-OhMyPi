@@ -32,10 +32,10 @@ export interface TuiConfig {
   title?: string
 }
 
-export const DEFAULT_LEFT_PROMPT = '${cwd}${git/worktree}${model}${tokens}${context}'
-export const DEFAULT_RIGHT_PROMPT = '${queued}'
-export const DEFAULT_INPUT_PROMPT = '${symbol} ${indicator}'
-export const DEFAULT_INPUT_PLACEHOLDER = 'press enter to send and esc to cancel'
+export const DEFAULT_LEFT_PROMPT = '${cwd}${git/worktree}'
+export const DEFAULT_RIGHT_PROMPT = '${model}${tokens}${context}'
+export const DEFAULT_INPUT_PROMPT = '${indicator}'
+export const DEFAULT_INPUT_PLACEHOLDER = ''
 
 const themeSchema = z.object({
   color: z.boolean().default(true),

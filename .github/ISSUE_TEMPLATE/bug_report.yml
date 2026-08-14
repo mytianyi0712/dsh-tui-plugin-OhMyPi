@@ -1,0 +1,61 @@
+name: Bug report
+description: Report a reproducible dsh-omp-tui problem
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先搜索已有 issue。不要在 issue 中粘贴 API key、完整 session 内容或其他敏感数据。
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: package.json 的 version 或 Git tag
+      placeholder: 0.1.0 / v0.1.0
+    validations:
+      required: true
+  - type: input
+    id: dsh-version
+    attributes:
+      label: dsh version
+      placeholder: 0.1.0-rc.6
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Node.js and pnpm versions
+      placeholder: Node 22.19.0, pnpm 11.7.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: OS and terminal
+      placeholder: Windows 11, Windows Terminal, Nerd Font
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: 给出最小、可重复的命令和输入
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshot
+      description: 删除 API key、session 内容和敏感路径后再提交

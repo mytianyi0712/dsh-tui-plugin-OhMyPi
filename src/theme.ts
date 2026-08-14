@@ -1,12 +1,10 @@
 /**
- * omp-titanium palette and derived pi-tui themes for the terminal front door.
+ * Palette and layout primitives matching the OMP installation on this machine.
  *
- * The role set mirrors the local omp harness's `titanium` dark theme tokens
- * (Tokyo-Night family): accent `#7aa2f7`, model `#bb9af7`, context `#2ac3de`,
- * spend `#7dcfff`, borders `#4c566a`, and the per-status tool background
- * fills. On non-truecolor terminals (and light schemes) the palette falls
- * back to the scheme-adaptive 16-color ANSI spec so the TUI stays legible on
- * any background; background roles emit nothing there.
+ * The default dark roles mirror OMP 17.2.15's active `dark-catppuccin` theme:
+ * peach accents, blue/lavender chrome, mantle message surfaces, and a crust
+ * status surface. Non-truecolor terminals keep a readable ANSI fallback and
+ * omit background fills that cannot be represented reliably.
  */
 
 import type {
@@ -27,27 +25,35 @@ export type AttributeRole = (text: string) => string
 /** Theme-agnostic role colors and SGR attribute wrappers. */
 export interface Palette {
   accent: ColorRole
-  /** DeepSeek brand ink; the startup gradient overrides it on truecolor terminals. */
-  brand: ColorRole
   /** The terminal's own default foreground; still a role, so it does not stack. */
   text: ColorRole
-  /** The one recessed tone: tool bodies, chrome, footers. */
+  /** Low-emphasis content and secondary chrome. */
+  muted: ColorRole
+  /** The quietest foreground tone. */
   dim: ColorRole
   success: ColorRole
   warning: ColorRole
   error: ColorRole
   code: ColorRole
-  /** Frame chrome: card borders, dialog edges. */
+  /** Accent frame chrome. */
   border: ColorRole
+  /** Recessed card and editor chrome. */
+  borderMuted: ColorRole
+  toolTitle: ColorRole
+  toolOutput: ColorRole
+  /** Status-line path and branch segments. */
+  path: ColorRole
+  git: ColorRole
   /** Status-line model segment. */
   model: ColorRole
   /** Status-line context segment. */
   context: ColorRole
   /** Status-line token/spend segment. */
   spend: ColorRole
-  /** Reasoning label and border column. */
+  statusSep: ColorRole
+  /** Reasoning prose. */
   thinking: ColorRole
-  /** Block backgrounds, applied as full-row spans behind framed content. */
+  /** Full-row block backgrounds. */
   userMessageBg: ColorRole
   toolPendingBg: ColorRole
   toolSuccessBg: ColorRole
@@ -63,9 +69,10 @@ export interface Palette {
 
 /** Names of the palette's color roles, in the order `/palette` prints them. */
 export const COLOR_ROLES = [
-  'text', 'dim', 'accent', 'brand', 'code', 'success', 'warning', 'error',
-  'border', 'model', 'context', 'spend', 'thinking',
-  'userMessageBg', 'toolPendingBg', 'toolSuccessBg', 'toolErrorBg', 'statusLineBg',
+  'text', 'muted', 'dim', 'accent', 'code', 'success', 'warning', 'error',
+  'border', 'borderMuted', 'toolTitle', 'toolOutput', 'path', 'git', 'model',
+  'context', 'spend', 'statusSep', 'thinking', 'userMessageBg', 'toolPendingBg',
+  'toolSuccessBg', 'toolErrorBg', 'statusLineBg',
 ] as const
 
 /** Names of the palette's attribute roles, in the order `/palette` prints them. */
@@ -87,27 +94,15 @@ type SpecTable = {
 }
 
 /**
- * Every SGR code the TUI is allowed to emit, keyed by role. This table is the
- * single source: {@link createPalette} derives the wrappers from it and
- * `/palette` prints it, so a role cannot exist in one and not the other, and
- * no component hand-writes an escape.
- *
- * Two specs exist:
- * - the omp-titanium truecolor spec, applied on dark-scheme truecolor
- *   terminals (values copied from the omp harness `titanium` theme);
- * - the 16-color ANSI spec, kept as the fallback on light schemes and
- *   non-truecolor terminals. There, background roles emit nothing and a
- *   terminal-remapped ANSI hue stands in for each foreground role.
- *
- * @param scheme - active terminal color scheme; the titanium spec is dark-only.
- * @param truecolor - whether the terminal supports 24-bit color.
+ * Every SGR code the TUI may emit, keyed by semantic role. `/palette` reads the
+ * same table, preventing the diagnostic view from drifting from rendering.
  */
 export function paletteSpec(scheme: TerminalColorScheme, truecolor = false): SpecTable {
-  return truecolor && scheme === 'dark' ? titaniumSpec() : ansiSpec(scheme)
+  return truecolor && scheme === 'dark' ? catppuccinSpec() : ansiSpec(scheme)
 }
 
-/** The titanium (omp dark theme) truecolor spec. */
-function titaniumSpec(): SpecTable {
+/** OMP 17.2.15 `dark-catppuccin`, the active local OMP dark theme. */
+function catppuccinSpec(): SpecTable {
   const fg = (rgb: readonly [number, number, number], purpose: string): RoleSpec => ({
     open: `38;2;${rgb.join(';')}`,
     close: '39',
@@ -120,64 +115,77 @@ function titaniumSpec(): SpecTable {
   })
   return {
     colors: {
-      text: { open: '', close: '', purpose: 'Body text, the terminal default foreground' },
-      dim: fg([169, 177, 214], 'The one recessed tone: tool bodies, chrome, footers'),
-      accent: fg([122, 162, 247], 'The one emphasis color: role headers, prompt, borders'),
-      brand: fg([77, 107, 254], 'DeepSeek brand art when the gradient is unavailable'),
-      code: fg([192, 202, 245], 'Inline code and code blocks in prose'),
-      success: fg([158, 206, 106], "Succeeded calls, and a diff's added lines"),
-      warning: fg([224, 175, 104], 'Pending calls and warnings'),
-      error: fg([247, 118, 142], "Failures, signals, and a diff's removed lines"),
-      border: fg([76, 86, 106], 'Frame chrome: card borders, dialog edges'),
-      model: fg([187, 154, 247], 'Status-line model segment'),
-      context: fg([42, 195, 222], 'Status-line context segment'),
-      spend: fg([125, 207, 255], 'Status-line token/spend segment'),
-      thinking: fg([122, 162, 247], 'Reasoning label and border column'),
-      userMessageBg: bg([31, 35, 53], 'User message block background'),
-      toolPendingBg: bg([31, 35, 53], 'Pending tool-card background'),
-      toolSuccessBg: bg([31, 45, 42], 'Succeeded tool-card background'),
-      toolErrorBg: bg([45, 31, 42], 'Failed tool-card background'),
-      statusLineBg: bg([22, 22, 30], 'Status-line row background'),
+      text: { open: '', close: '', purpose: 'Body text, using the terminal foreground' },
+      muted: fg([127, 132, 156], 'Secondary prose and tool output'),
+      dim: fg([108, 112, 134], 'Quiet chrome, metadata, and inactive content'),
+      accent: fg([250, 179, 135], 'Primary OMP emphasis (Catppuccin peach)'),
+      code: fg([245, 224, 220], 'Inline code (Catppuccin rosewater)'),
+      success: fg([166, 227, 161], 'Successful operations and additions'),
+      warning: fg([249, 226, 175], 'Pending operations and warnings'),
+      error: fg([243, 139, 168], 'Failures and removals'),
+      border: fg([137, 180, 250], 'Accent frame chrome'),
+      borderMuted: fg([49, 50, 68], 'Recessed frame and editor chrome'),
+      toolTitle: fg([180, 190, 254], 'Tool-card titles'),
+      toolOutput: fg([127, 132, 156], 'Tool-card output'),
+      path: fg([148, 226, 213], 'Status-line path'),
+      git: fg([166, 227, 161], 'Clean Git branch'),
+      model: fg([245, 194, 231], 'Status-line model'),
+      context: fg([203, 166, 247], 'Status-line context usage'),
+      spend: fg([116, 199, 236], 'Status-line token usage'),
+      statusSep: fg([69, 71, 90], 'Status-line separators'),
+      thinking: fg([127, 132, 156], 'Reasoning prose'),
+      userMessageBg: bg([24, 24, 37], 'User-message surface (mantle)'),
+      toolPendingBg: bg([49, 50, 68], 'Pending tool surface (surface0)'),
+      toolSuccessBg: bg([24, 24, 37], 'Successful tool surface (mantle)'),
+      toolErrorBg: bg([17, 17, 27], 'Failed tool surface (crust)'),
+      statusLineBg: bg([17, 17, 27], 'Status segment surface (crust)'),
     },
     attributes: {
       bold: { open: '1', close: '22', purpose: 'Emphasis; composes with any color' },
-      italic: { open: '3', close: '23', purpose: 'Reasoning text' },
-      underline: { open: '4', close: '24', purpose: 'Role-header banding' },
+      italic: { open: '3', close: '23', purpose: 'Reasoning and hint prose' },
+      underline: { open: '4', close: '24', purpose: 'Links and selected labels' },
       strike: { open: '9', close: '29', purpose: 'Struck-through Markdown' },
       selected: { open: '7', close: '27', purpose: 'Reverse video for the active selection' },
     },
   }
 }
 
-/** The scheme-adaptive 16-color ANSI spec, used when truecolor is unavailable. */
+/** Scheme-adaptive ANSI fallback for terminals without truecolor. */
 function ansiSpec(scheme: TerminalColorScheme): SpecTable {
+  const none = (purpose: string): RoleSpec => ({ open: '', close: '', purpose })
   return {
     colors: {
-      text: { open: '', close: '', purpose: 'Body text, the terminal default foreground' },
-      dim: { open: '2;39', close: '22;39', purpose: 'The one recessed tone: tool bodies, chrome, footers' },
-      accent: { open: '95', close: '39', purpose: 'The one emphasis color: role headers, prompt, borders' },
-      brand: { open: '34', close: '39', purpose: 'DeepSeek brand art when truecolor is unavailable' },
+      text: none('Body text, using the terminal foreground'),
+      muted: { open: '2;39', close: '22;39', purpose: 'Secondary prose and tool output' },
+      dim: { open: '2;39', close: '22;39', purpose: 'Quiet chrome and metadata' },
+      accent: { open: '93', close: '39', purpose: 'Primary emphasis' },
       code: scheme === 'light'
-        ? { open: '34', close: '39', purpose: 'Inline code and code blocks in prose' }
-        : { open: '36', close: '39', purpose: 'Inline code and code blocks in prose' },
-      success: { open: '32', close: '39', purpose: "Succeeded calls, and a diff's added lines" },
-      warning: { open: '33', close: '39', purpose: 'Pending calls and warnings' },
-      error: { open: '31', close: '39', purpose: "Failures, signals, and a diff's removed lines" },
-      border: { open: '2;39', close: '22;39', purpose: 'Frame chrome: card borders, dialog edges' },
-      model: { open: '95', close: '39', purpose: 'Status-line model segment' },
-      context: { open: '36', close: '39', purpose: 'Status-line context segment' },
-      spend: { open: '96', close: '39', purpose: 'Status-line token/spend segment' },
-      thinking: { open: '95', close: '39', purpose: 'Reasoning label and border column' },
-      userMessageBg: { open: '', close: '', purpose: 'User message block background (none on ANSI fallback)' },
-      toolPendingBg: { open: '', close: '', purpose: 'Pending tool-card background (none on ANSI fallback)' },
-      toolSuccessBg: { open: '', close: '', purpose: 'Succeeded tool-card background (none on ANSI fallback)' },
-      toolErrorBg: { open: '', close: '', purpose: 'Failed tool-card background (none on ANSI fallback)' },
-      statusLineBg: { open: '', close: '', purpose: 'Status-line row background (none on ANSI fallback)' },
+        ? { open: '35', close: '39', purpose: 'Inline code' }
+        : { open: '96', close: '39', purpose: 'Inline code' },
+      success: { open: '32', close: '39', purpose: 'Successful operations and additions' },
+      warning: { open: '33', close: '39', purpose: 'Pending operations and warnings' },
+      error: { open: '31', close: '39', purpose: 'Failures and removals' },
+      border: { open: '94', close: '39', purpose: 'Accent frame chrome' },
+      borderMuted: { open: '2;39', close: '22;39', purpose: 'Recessed frame and editor chrome' },
+      toolTitle: { open: '95', close: '39', purpose: 'Tool-card titles' },
+      toolOutput: { open: '2;39', close: '22;39', purpose: 'Tool-card output' },
+      path: { open: '36', close: '39', purpose: 'Status-line path' },
+      git: { open: '32', close: '39', purpose: 'Clean Git branch' },
+      model: { open: '95', close: '39', purpose: 'Status-line model' },
+      context: { open: '95', close: '39', purpose: 'Status-line context usage' },
+      spend: { open: '96', close: '39', purpose: 'Status-line token usage' },
+      statusSep: { open: '2;39', close: '22;39', purpose: 'Status-line separators' },
+      thinking: { open: '2;39', close: '22;39', purpose: 'Reasoning prose' },
+      userMessageBg: none('User-message background unavailable in ANSI fallback'),
+      toolPendingBg: none('Pending tool background unavailable in ANSI fallback'),
+      toolSuccessBg: none('Successful tool background unavailable in ANSI fallback'),
+      toolErrorBg: none('Failed tool background unavailable in ANSI fallback'),
+      statusLineBg: none('Status background unavailable in ANSI fallback'),
     },
     attributes: {
       bold: { open: '1', close: '22', purpose: 'Emphasis; composes with any color' },
-      italic: { open: '3', close: '23', purpose: 'Reasoning text' },
-      underline: { open: '4', close: '24', purpose: 'Role-header banding' },
+      italic: { open: '3', close: '23', purpose: 'Reasoning and hint prose' },
+      underline: { open: '4', close: '24', purpose: 'Links and selected labels' },
       strike: { open: '9', close: '29', purpose: 'Struck-through Markdown' },
       selected: { open: '7', close: '27', purpose: 'Reverse video for the active selection' },
     },
@@ -200,17 +208,23 @@ export function detectTruecolor(): boolean {
 /** Wrap text in an SGR pair, or pass it through when color is disabled. */
 function ansi(spec: RoleSpec, enabled: boolean): (text: string) => string {
   if (!enabled || spec.open === '') return (text: string) => text
-  return (text: string) => `\x1b[${spec.open}m${text}\x1b[${spec.close}m`
+  const open = `\x1b[${spec.open}m`
+  const close = `\x1b[${spec.close}m`
+  if (!spec.open.startsWith('48;')) return (text: string) => `${open}${text}${close}`
+  return (text: string) => {
+    const stable = text
+      .replace(/\x1b\[(?:0)?m/g, reset => `${reset}${open}`)
+      .replace(/\x1b\[49m/g, reset => `${reset}${open}`)
+    return `${open}${stable}${close}`
+  }
 }
 
 /**
- * Palette derived from {@link paletteSpec}. On dark truecolor terminals the
- * omp-titanium roles apply; elsewhere the scheme-adaptive ANSI fallback keeps
- * the TUI legible.
+ * Derive a palette from the active OMP-compatible spec.
  *
  * @param enabled - whether ANSI is emitted at all.
- * @param scheme - active terminal color scheme; the titanium spec applies to dark schemes only.
- * @param truecolor - terminal 24-bit support; omitted to auto-detect like omp's `detectColorMode`.
+ * @param scheme - active terminal color scheme; the Catppuccin spec is dark-only.
+ * @param truecolor - terminal 24-bit support; omitted to auto-detect like OMP.
  */
 export function createPalette(enabled: boolean, scheme: TerminalColorScheme = 'dark', truecolor?: boolean): Palette {
   const spec = paletteSpec(scheme, truecolor ?? detectTruecolor())
@@ -227,14 +241,14 @@ export function createPalette(enabled: boolean, scheme: TerminalColorScheme = 'd
 export function markdownTheme(palette: Palette): MarkdownTheme {
   return {
     heading: (text: string) => palette.accent(text),
-    link: (text: string) => palette.accent(text),
+    link: (text: string) => palette.border(text),
     linkUrl: (text: string) => palette.dim(text),
     code: (text: string) => palette.code(text),
-    codeBlock: (text: string) => palette.code(text),
-    codeBlockBorder: (text: string) => palette.border(text),
-    quote: (text: string) => palette.dim(text),
-    quoteBorder: (text: string) => palette.accent(text),
-    hr: (text: string) => palette.border(text),
+    codeBlock: (text: string) => palette.text(text),
+    codeBlockBorder: (text: string) => palette.borderMuted(text),
+    quote: (text: string) => palette.muted(text),
+    quoteBorder: (text: string) => palette.borderMuted(text),
+    hr: (text: string) => palette.borderMuted(text),
     listBullet: (text: string) => palette.accent(text),
     bold: (text: string) => palette.bold(text),
     italic: (text: string) => palette.italic(text),
@@ -255,10 +269,9 @@ export function selectTheme(palette: Palette): SelectListTheme {
 }
 
 /**
- * Frame `lines` in a rounded omp-style box: `╭─…╮` / `│ … │` / `╰…╯`.
- * The optional `title` rides the top border; `background` fills every row.
- * Body rows carry `│ ` / ` │` side borders, so they wrap to `width - 4`;
- * corner rows span exactly `width`.
+ * Frame rows with OMP's rounded output-block grammar. Titles begin after a
+ * three-cell cap (`╭─── title ─╮`); an optional section label adds the matching
+ * `├─── label ─┤` divider used by settled tool results.
  */
 export function frameBlock(
   lines: readonly string[],
@@ -266,23 +279,30 @@ export function frameBlock(
   border: ColorRole,
   background: ColorRole | undefined,
   title?: string,
+  sectionTitle?: string,
 ): string[] {
   const bodyInner = Math.max(1, width - 4)
   const paint = (row: string): string => background === undefined ? row : background(row)
+  const bar = (left: string, right: string, label?: string): string => {
+    const innerWidth = Math.max(0, width - 2)
+    if (label === undefined) return paint(border(`${left}${'─'.repeat(innerWidth)}${right}`))
+    const cap = '───'
+    const labelBudget = Math.max(0, innerWidth - cap.length)
+    const clippedLabel = truncateToWidth(` ${label} `, labelBudget, '')
+    const fill = '─'.repeat(Math.max(0, innerWidth - cap.length - visibleWidth(clippedLabel)))
+    return paint(`${border(`${left}${cap}`)}${clippedLabel}${border(`${fill}${right}`)}`)
+  }
   const body = lines.map((line) => {
     const clipped = truncateToWidth(line, bodyInner, '')
     const pad = ' '.repeat(Math.max(0, bodyInner - visibleWidth(clipped)))
     return paint(`${border('│')} ${clipped}${pad} ${border('│')}`)
   })
-  const dashes = Math.max(0, width - 2)
-  const top = title === undefined
-    ? paint(border(`╭${'─'.repeat(dashes)}╮`))
-    : (() => {
-      const clippedTitle = truncateToWidth(title, Math.max(1, width - 4), '')
-      const tail = Math.max(0, width - 4 - visibleWidth(clippedTitle))
-      return paint(border(`╭─ ${clippedTitle}${'─'.repeat(tail)}╮`))
-    })()
-  return [top, ...body, paint(border(`╰${'─'.repeat(dashes)}╯`))]
+  return [
+    bar('╭', '╮', title),
+    ...sectionTitle === undefined ? [] : [bar('├', '┤', sectionTitle)],
+    ...body,
+    bar('╰', '╯'),
+  ]
 }
 
 /** Sample text every `/palette` row renders, long enough to judge a tone against its neighbours. */
@@ -321,43 +341,38 @@ export function renderPalette(
   return rows
 }
 
-/** Official DeepSeek icon ink from the shipped 24x24 SVG. */
-const DEEPSEEK_BRAND_RGB: readonly [number, number, number] = [77, 107, 254] // #4D6BFE
-
-/**
- * Paint trusted static DeepSeek brand art with the official `#4D6BFE` ink.
- * @param text - static brand text or raster cells.
- */
-export function brandText(text: string): string {
-  return `\x1b[38;2;${DEEPSEEK_BRAND_RGB.join(';')}m${text}\x1b[39m`
-}
-
-/** DeepSeek brand gradient stops (indigo → light blue) from the logo. */
+/** OMP's welcome-screen gradient, hot pink through violet and cyan to mint. */
 const BRAND_GRADIENT = [
-  [77, 107, 254], // #4D6BFE
-  [57, 130, 255], // #3982FF
-  [36, 152, 255], // #2498FF
+  [255, 92, 200],
+  [200, 110, 255],
+  [120, 130, 255],
+  [60, 200, 255],
+  [120, 255, 220],
 ] as const
 
-/**
- * Paint `text` left-to-right in the DeepSeek brand gradient with per-character
- * truecolor spans. Used by the startup banner's product name on truecolor
- * terminals; fixed brand identity, deliberately outside the theme-adaptive
- * {@link Palette}.
- */
-export function gradientText(text: string): string {
-  const stops = BRAND_GRADIENT.length - 1
-  let out = ''
-  for (let index = 0; index < text.length; index++) {
-    const t = stops === 0 ? 0 : index / (text.length - 1)
-    const scaled = t * stops
-    const segment = Math.min(stops, Math.floor(scaled))
-    const frac = scaled - segment
-    const from = BRAND_GRADIENT[segment] ?? BRAND_GRADIENT[0]!
-    const to = BRAND_GRADIENT[Math.min(stops, segment + 1)] ?? from
-    const rgb = from.map((channel, channelIndex) =>
-      Math.round(channel + (to[channelIndex]! - channel) * frac))
-    out += `\x1b[38;2;${rgb.join(';')}m${text[index] ?? ''}\x1b[39m`
-  }
-  return out
+/** Paint a multi-line logo with a stable diagonal OMP-style gradient. */
+export function gradientLogo(lines: readonly string[]): string[] {
+  const rows = lines.length
+  const columns = Math.max(1, ...lines.map(line => line.length))
+  const span = Math.max(1, columns + rows - 1)
+  return lines.map((line, row) => {
+    let out = ''
+    for (let column = 0; column < line.length; column++) {
+      const char = line[column] ?? ''
+      if (char === ' ') {
+        out += char
+        continue
+      }
+      const position = (column + rows - 1 - row) / span
+      const scaled = position * (BRAND_GRADIENT.length - 1)
+      const segment = Math.min(BRAND_GRADIENT.length - 2, Math.floor(scaled))
+      const fraction = scaled - segment
+      const from = BRAND_GRADIENT[segment] ?? BRAND_GRADIENT[0]!
+      const to = BRAND_GRADIENT[segment + 1] ?? from
+      const rgb = from.map((channel, index) =>
+        Math.round(channel + (to[index]! - channel) * fraction))
+      out += `\x1b[38;2;${rgb.join(';')}m${char}\x1b[39m`
+    }
+    return out
+  })
 }

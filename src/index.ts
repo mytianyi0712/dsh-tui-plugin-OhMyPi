@@ -1,11 +1,12 @@
 /**
- * Interactive pi-tui front door for DeepSeek Harness agents, styled after the
- * local omp harness (titanium palette, rounded frames, status line). Renders
- * the durable session transcript, drives one configured agent, and provides
- * keyboard-driven commands without owning agent lifecycle.
+ * Interactive DeepSeek Harness front door, visually aligned with the local
+ * OMP 17.2.15 Catppuccin layout while retaining dsh-native agent, session,
+ * command, and persistence contracts.
  * @module dsh-omp-tui
  */
 
+import { readFileSync } from 'node:fs'
+import { isAbsolute, join, resolve } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import {
   Container,
@@ -61,13 +62,13 @@ import {
   ContextCardComponent,
   HeaderComponent,
   StaticCardComponent,
-  StreamingAssistantComponent,
+  AssistantStreamController,
   TodoPanelComponent,
   ToolCardComponent,
   UserMessageComponent,
   type ToolCardVisibility,
 } from './components/transcript.ts'
-import { StatusLineComponent } from './components/status.ts'
+import { InputBorderComponent, StatusLineComponent } from './components/status.ts'
 import {
   SelectDialog,
   runModelFlow,
@@ -89,6 +90,28 @@ function formatTokens(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`
   if (count >= 1_000) return `${(count / 1_000).toFixed(1)}k`
   return String(count)
+}
+
+/** Resolve a regular repository or linked worktree branch without spawning Git. */
+function readGitBranch(cwd: string): string | undefined {
+  const dotGit = join(cwd, '.git')
+  let gitDir = dotGit
+  try {
+    const pointer = readFileSync(dotGit, 'utf8').trim()
+    const match = /^gitdir:\s*(.+)$/i.exec(pointer)
+    if (match?.[1] !== undefined) {
+      gitDir = isAbsolute(match[1]) ? match[1] : resolve(cwd, match[1])
+    }
+  } catch {
+    // A normal checkout exposes `.git` as a directory, not a pointer file.
+  }
+  try {
+    const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim()
+    if (head.startsWith('ref:')) return head.slice(head.lastIndexOf('/') + 1)
+    return head === '' ? undefined : head.slice(0, 7)
+  } catch {
+    return undefined
+  }
 }
 
 /** The terminal mode's plugin entry: mounts the whole UI in its constructor. */
@@ -116,6 +139,7 @@ export class Tui extends Service {
     // The agent is published asynchronously on the resume path (persistence
     // load), so agent-dependent setup runs in mount() once it is live.
     let agent: Agent | undefined
+    let gitBranch: string | undefined
     // Agent-scoped helpers handed to the command surface by mount().
     const handles: {
       switchAgent: ((id: SessionId) => Promise<void>) | undefined
@@ -126,12 +150,12 @@ export class Tui extends Service {
     // --- components -------------------------------------------------------
     const chat = new Container()
     const editor = new Editor(ui, {
-      borderColor: (text: string) => palette.border(text),
+      borderColor: (text: string) => palette.borderMuted(text),
       selectList: selectTheme(palette),
     } satisfies EditorTheme, {
       paddingX: 1,
       frame: 'none',
-      prompt: { first: '> ', continuation: '  ' },
+      prompt: { first: '', continuation: '' },
     })
     const statusLine = new StatusLineComponent(
       parseTuiPromptTemplate(displayInlineText(resolved.theme.leftPrompt)),
@@ -140,15 +164,18 @@ export class Tui extends Service {
       palette,
     )
     const todoPanel = new TodoPanelComponent(palette)
-    const notice = new Text('', 0, 0)
+    const noticeSlot = new Container()
+    const notice = new Text('', 1, 0)
+    const inputBorder = new InputBorderComponent(palette)
     let noticeMounted = false
-    let noticeTimer: ReturnType<typeof setTimeout> | undefined
+    let noticeTimer: NodeJS.Timeout | undefined
 
     ui.addChild(chat)
     ui.addChild(todoPanel)
-    ui.addChild(notice)
+    ui.addChild(noticeSlot)
     ui.addChild(statusLine)
     ui.addChild(editor)
+    ui.addChild(inputBorder)
     ui.setFocus(editor)
     terminal.setTitle(resolved.title)
 
@@ -163,11 +190,9 @@ export class Tui extends Service {
     const indicatorValue = ctx.tuiPrompt.register('indicator')
 
     const updateInputPrompt = (): void => {
-      const symbol = ctx.tuiPrompt.get('symbol') ?? ''
       const indicator = ctx.tuiPrompt.get('indicator') ?? ''
-      const first = `${symbol} ${indicator}`
-      const firstWidth = visibleWidth(first)
-      editor.setPrompt({ first, continuation: ' '.repeat(firstWidth) })
+      const first = indicator === '' ? '' : `${indicator} `
+      editor.setPrompt({ first, continuation: ' '.repeat(visibleWidth(first)) })
     }
 
     const appendNotice = (text: string, kind: 'info' | 'warning' | 'error'): void => {
@@ -176,13 +201,13 @@ export class Tui extends Service {
         : kind === 'warning' ? palette.warning : palette.dim
       notice.setText(color(displayInlineText(text)))
       if (!noticeMounted) {
-        ui.addChild(notice)
+        noticeSlot.addChild(notice)
         noticeMounted = true
       }
       clearTimeout(noticeTimer)
       noticeTimer = setTimeout(() => {
         if (noticeMounted) {
-          ui.removeChild(notice)
+          noticeSlot.removeChild(notice)
           noticeMounted = false
         }
         ui.requestRender()
@@ -192,7 +217,7 @@ export class Tui extends Service {
 
     // --- status -----------------------------------------------------------
     let currentScheme: TerminalColorScheme = 'dark'
-    let spinnerTimer: ReturnType<typeof setInterval> | undefined
+    let spinnerTimer: NodeJS.Timeout | undefined
     let spinnerIndex = 0
 
     const startSpinner = (): void => {
@@ -217,10 +242,13 @@ export class Tui extends Service {
     const updateStatusValues = (): void => {
       const current = agent
       if (current === undefined) return
-      cwdValue.set(palette.bold(palette.accent(displayText(current.session.header.cwd ?? process.cwd()))))
-      gitValue.set(undefined)
+      const cwd = displayText(current.session.header.cwd ?? process.cwd())
+      cwdValue.set(palette.path(` ${cwd}`))
+      gitValue.set(gitBranch === undefined
+        ? undefined
+        : ` ${palette.statusSep('')} ${palette.git(` ${displayText(gitBranch)}`)}`)
       const model = handles.selectionRef?.current?.model ?? current.options.model
-      modelValue.set(model === undefined ? undefined : `  ${palette.model(displayText(model))}`)
+      modelValue.set(model === undefined ? undefined : palette.model(`󰚩 ${displayText(model)}`))
       let inputTokens = 0
       let outputTokens = 0
       for (const event of current.session.events) {
@@ -229,24 +257,24 @@ export class Tui extends Service {
           outputTokens += event.data.usage.outputTokens
         }
       }
-      tokensValue.set(`  ${palette.spend(`↑${formatTokens(inputTokens)} ↓${formatTokens(outputTokens)}`)}`)
+      tokensValue.set(` ${palette.statusSep('')} ${palette.spend(`↑${formatTokens(inputTokens)} ↓${formatTokens(outputTokens)}`)}`)
       const contextWindow = current.session.requestContext()?.contextWindow
       if (contextWindow !== undefined) {
         const totalTokens = ctx.tokenMeter.measure(current.session).totalTokens
         const percent = Math.min(100, Math.round(totalTokens / contextWindow * 100))
-        contextValue.set(`  ${palette.context(`${percent}% context`)}`)
+        contextValue.set(` ${palette.statusSep('')} ${palette.context(`󰁨 ${percent}%`)}`)
       } else {
         contextValue.set(undefined)
       }
       queuedValue.set(undefined)
-      symbolValue.set(palette.bold(palette.accent('>')))
+      symbolValue.set(undefined)
       updateInputPrompt()
     }
 
     const setStatus = (status: AgentStatus): void => {
       editor.borderColor = status === 'running'
         ? (text: string) => palette.accent(text)
-        : (text: string) => palette.border(text)
+        : (text: string) => palette.borderMuted(text)
       if (status === 'running') startSpinner()
       else stopSpinner()
       terminal.setProgress(status === 'running')
@@ -255,12 +283,13 @@ export class Tui extends Service {
     }
 
     // --- transcript ---------------------------------------------------------
-    let streaming: StreamingAssistantComponent | undefined
+    const assistantStream = new AssistantStreamController(chat, palette, mdTheme)
     const toolCards = new Map<CallId, ToolCardComponent>()
     const allToolCards = new Set<ToolCardComponent>()
     let toolsVisibility: ToolCardVisibility = 'collapsed'
     let showReasoning = resolved.showReasoning
     let live = false
+    let header: HeaderComponent | undefined
 
     const renderEvent = (event: SessionEvent): void => {
       switch (event.type) {
@@ -270,7 +299,7 @@ export class Tui extends Service {
           if (text === '') break
           chat.addChild(new Spacer(1))
           if (source.kind !== 'user') {
-            const label = typeof source.kind === 'string' ? source.kind : 'context'
+            const label = source.kind === 'plugin' ? source.plugin : source.kind
             chat.addChild(new ContextCardComponent(label, text, resolved.maxToolOutputLines, palette))
           } else {
             chat.addChild(new UserMessageComponent(text, palette, mdTheme))
@@ -278,17 +307,16 @@ export class Tui extends Service {
           break
         }
         case 'step/start':
-          streaming = new StreamingAssistantComponent(palette, mdTheme, showReasoning)
-          chat.addChild(streaming)
+          assistantStream.start(showReasoning)
           break
         case 'assistant/chunk':
-          if (streaming !== undefined) streaming.update(event.data.chunk)
+          assistantStream.update(event.data.chunk)
           break
         case 'assistant/message':
-          if (streaming !== undefined) streaming.settle(event.data.message.content)
+          assistantStream.settle(event.data.message.content)
           break
         case 'step/end':
-          streaming = undefined
+          assistantStream.end()
           break
         case 'tool/call': {
           const card = new ToolCardComponent(
@@ -333,7 +361,7 @@ export class Tui extends Service {
           // Detach the live streaming slot so straggler chunks that arrive
           // after an abort cannot keep appending to the interrupted step;
           // its rendered partial content stays in the transcript.
-          streaming = undefined
+          assistantStream.end()
           if (live && event.data.reason.kind !== 'completed') {
             appendNotice(`Turn ended: ${event.data.reason.kind}.`, 'warning')
           }
@@ -346,10 +374,11 @@ export class Tui extends Service {
     }
 
     const rebuildTranscript = (): void => {
-      streaming = undefined
+      assistantStream.end()
       toolCards.clear()
       allToolCards.clear()
       chat.clear()
+      if (header !== undefined) chat.addChild(header)
       for (const event of agent!.session.events) renderEvent(event)
     }
 
@@ -611,16 +640,17 @@ export class Tui extends Service {
       }
 
       const updateTitle = (): void => {
-        const folded = foldSessionTitle(liveAgent.session.events)
+        const current = agent
+        const folded = current === undefined ? undefined : foldSessionTitle(current.session.events)
         terminal.setTitle(folded === undefined ? resolved.title : `${folded.title} — ${resolved.title}`)
       }
 
-      const header = new HeaderComponent(liveAgent, () => undefined, palette, truecolor)
-      ui.addChild(header)
+      header = new HeaderComponent(liveAgent, () => undefined, palette, resolved.theme.color && truecolor)
 
       // Slash commands + @ / path completions (pi-tui's combined provider
       // scans the workspace rooted at the session cwd).
       const workspace = liveAgent.session.header.cwd ?? process.cwd()
+      gitBranch = readGitBranch(workspace)
       const commandEntries: Array<{ name: string; description: string; argumentHint?: string }> = [
         { name: 'palette', description: 'Show the palette role table' },
         { name: 'help', description: 'Show keyboard shortcuts and commands' },
@@ -677,6 +707,8 @@ export class Tui extends Service {
         offEvent?.()
         offStatus?.()
         agent = resumed
+        gitBranch = readGitBranch(resumed.session.header.cwd ?? process.cwd())
+        header = new HeaderComponent(resumed, () => undefined, palette, resolved.theme.color && truecolor)
         offEvent = ctx.on('session/event', (session, event) => {
           if (session.id !== resumed.session.id) return
           if (event.type === 'session/title') updateTitle()
