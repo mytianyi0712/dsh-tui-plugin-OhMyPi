@@ -1,6 +1,3 @@
-# Patch vendored from turtle1999/turtle-ui (BSD-3-Clause, upstream commit b08ed69).
-# Adds Editor prompt/frame support to @earendil-works/pi-tui@0.80.7.
-
 diff --git a/dist/components/editor.d.ts b/dist/components/editor.d.ts
 index a6fedc9e3b36d066e34860d040db6df47d88c432..f0b20eb87686215d1d1a54274a7b1ebdf4030ef1 100644
 --- a/dist/components/editor.d.ts
@@ -347,4 +344,3 @@ index 6c03aeec4148571558713e885ac7f7df18a511bc..0111317ccab31a1e973b92272d8a668b
                  for (const chunk of chunks) {
                      visualLines.push({
                          logicalLine: i,
--- 
