@@ -10,7 +10,8 @@
   },
   "scripts": {
     "build": "tsc -b && tsdown",
-    "prepare": "tsdown --config tsdown.prepare.config.ts"
+    "prepare": "tsdown --config tsdown.prepare.config.ts",
+    "test": "node --test --experimental-transform-types \"tests/*.spec.ts\""
   },
   "main": "lib/index.js",
   "exports": {
