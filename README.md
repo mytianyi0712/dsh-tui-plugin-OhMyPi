@@ -64,6 +64,28 @@ dsh --profile tui --session my-id      # 显式命名新会话
 dsh --profile tui --resume <id>        # 恢复持久化会话
 ```
 
+### 让裸 `dsh` 默认进 TUI
+
+dsh 启动器硬性要求 `--profile`（只有 `web`/`plugin` 是内建子命令），没有默认
+profile 机制。仓库提供了包装脚本，把裸 `dsh`（或任何非 launcher 参数调用）
+注入 `--profile tui`，`web`/`plugin`/`--profile`/`--patch`/`--dump*`/帮助/版本
+原样透传：
+
+```sh
+# Git Bash / zsh
+export PATH="$HOME/dsh-omp-tui/scripts:$PATH"   # 或 alias dsh=<仓库>/scripts/dsh
+dsh                                   # → dsh --profile tui
+dsh --resume <id>                     # → dsh --profile tui --resume <id>
+dsh web --port 8080                   # 透传，照常启动官方 web
+
+# cmd / PowerShell：把 scripts 目录加进 PATH，或直接用 scripts\dsh.cmd
+```
+
+后端解析顺序：`DSH_REAL`（显式可执行文件）→ PATH 上的全局 `dsh`（跳过包装器
+自身目录）→ 全局安装的 `@deepseek-ai/dsh` → `npx --yes @deepseek-ai/dsh`。
+可选加速：`npm i -g @deepseek-ai/dsh@0.1.0-rc.6`，之后包装器直连全局二进制。
+排障：`DSH_DEBUG=1 dsh` 打印解析后的真实命令行。
+
 | 键 | 作用 |
 |---|---|
 | `Ctrl+C` | 中断当前回合（流式内容保留） |
