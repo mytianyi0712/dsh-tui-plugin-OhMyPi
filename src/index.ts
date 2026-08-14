@@ -553,10 +553,13 @@ export class Tui extends Service {
               [{ type: 'text', text: parsed.text }],
               parsed.references,
             )
-            current.followup(createUserMessage({ content: prepared.content, source: { kind: 'user' } }))
+            // Inject first (queues context without waking), then follow up:
+            // the waking driver claims both at the next pre-step, so the
+            // model sees the referenced snapshot from the first step.
             if (prepared.additionalContext !== undefined) {
               current.inject(prepared.additionalContext)
             }
+            current.followup(createUserMessage({ content: prepared.content, source: { kind: 'user' } }))
           } catch (error: unknown) {
             appendNotice(`Session reference failed: ${errorChain(error)}`, 'error')
           }
