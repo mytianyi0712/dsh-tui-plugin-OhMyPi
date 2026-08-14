@@ -22,17 +22,25 @@ import {
 } from '@earendil-works/pi-tui'
 import type { Agent, AgentStatus, ModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
+import { CombinedAutocompleteProvider } from '@earendil-works/pi-tui'
 import { createUserMessage, errorChain, type CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { foldSessionTitle } from '@deepseek-ai/dsh-session-title'
+import { parseSessionReferenceText } from '@deepseek-ai/dsh-session-reference'
+import { renderSkillContent } from '@deepseek-ai/dsh-skill'
 // Type-only imports pull in the declaration merges that expose `ctx.commands`,
-// `ctx.tokenMeter`, `ctx.llm`, `ctx.userQuestions`, `ctx.sessionQuery`, and
-// `ctx.agentDefaultModel` on the cordis Context.
+// `ctx.tokenMeter`, `ctx.llm`, `ctx.userQuestions`, `ctx.sessionQuery`,
+// `ctx.agentDefaultModel`, `ctx.skills`, and `ctx.sessionReferenceResolver` on
+// the cordis Context, plus the goal/compaction/skill session-event extensions.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-user-questions'
 import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
+import type {} from '@deepseek-ai/dsh-skill'
+import type {} from '@deepseek-ai/dsh-session-reference'
+import type {} from '@deepseek-ai/dsh-goal'
+import type {} from '@deepseek-ai/dsh-compaction'
 import {
   TuiConfigSchema,
   resolveTuiConfig,
@@ -54,6 +62,7 @@ import {
   HeaderComponent,
   StaticCardComponent,
   StreamingAssistantComponent,
+  TodoPanelComponent,
   ToolCardComponent,
   UserMessageComponent,
   type ToolCardVisibility,
@@ -84,7 +93,7 @@ function formatTokens(count: number): string {
 
 /** The terminal mode's plugin entry: mounts the whole UI in its constructor. */
 export class Tui extends Service {
-  static inject = ['tuiStartup', 'agents', 'tuiPrompt', 'commands', 'tokenMeter', 'llm', 'userQuestions', 'sessionQuery', 'agentDefaultModel']
+  static inject = ['tuiStartup', 'agents', 'tuiPrompt', 'commands', 'tokenMeter', 'llm', 'userQuestions', 'sessionQuery', 'agentDefaultModel', 'skills', 'sessionReferenceResolver']
   static Config = TuiConfigSchema
 
   constructor(ctx: Context, config: Config) {
@@ -130,11 +139,13 @@ export class Tui extends Service {
       (valueName: string) => ctx.tuiPrompt.get(valueName),
       palette,
     )
+    const todoPanel = new TodoPanelComponent(palette)
     const notice = new Text('', 0, 0)
     let noticeMounted = false
     let noticeTimer: ReturnType<typeof setTimeout> | undefined
 
     ui.addChild(chat)
+    ui.addChild(todoPanel)
     ui.addChild(notice)
     ui.addChild(statusLine)
     ui.addChild(editor)
@@ -297,6 +308,27 @@ export class Tui extends Service {
           if (callId !== undefined) toolCards.get(callId)?.updateResult(event.data)
           break
         }
+        case 'todo/write':
+          todoPanel.setTodos(event.data.todos)
+          break
+        case 'goal/change':
+          if (event.data.operation === 'clear') {
+            todoPanel.setGoal(undefined)
+          } else {
+            todoPanel.setGoal({ objective: event.data.goal.objective, phase: event.data.goal.phase })
+          }
+          break
+        case 'compaction/start':
+          if (live) appendNotice('Context being compacted…', 'info')
+          break
+        case 'compaction/end':
+          if (live) {
+            appendNotice(
+              event.data.error === undefined ? 'Compaction finished.' : `Compaction failed: ${event.data.error}`,
+              event.data.error === undefined ? 'info' : 'error',
+            )
+          }
+          break
         case 'turn/end': {
           // Detach the live streaming slot so straggler chunks that arrive
           // after an abort cannot keep appending to the interrupted step;
@@ -394,6 +426,43 @@ export class Tui extends Service {
         }
         return
       }
+      if (line === '/skills' || line.startsWith('/skills ')) {
+        try {
+          const snapshot = await ctx.skills.snapshot({ cwd: current.session.header.cwd ?? process.cwd() })
+          if (snapshot.skills.length === 0) {
+            appendNotice('No skills available.', 'info')
+            return
+          }
+          const rows = snapshot.skills.map(skill =>
+            `/${skill.name} — ${skill.description}${skill.source === undefined ? '' : ` (${skill.source})`}`)
+          chat.addChild(new StaticCardComponent(rows, palette))
+          ui.requestRender()
+        } catch (error: unknown) {
+          appendNotice(`Skill listing failed: ${errorChain(error)}`, 'error')
+        }
+        return
+      }
+      if (line.startsWith('/skill:')) {
+        const name = line.slice('/skill:'.length).trim()
+        if (name === '') {
+          appendNotice('Usage: /skill:<name>', 'warning')
+          return
+        }
+        try {
+          const definition = await ctx.skills.get(name, { cwd: current.session.header.cwd ?? process.cwd() })
+          if (definition === undefined) {
+            appendNotice(`Unknown skill: ${name}`, 'warning')
+            return
+          }
+          current.followup(createUserMessage({
+            content: [{ type: 'text', text: renderSkillContent(definition) }],
+            source: { kind: 'skill-invocation', name, form: 'instructions' },
+          }))
+        } catch (error: unknown) {
+          appendNotice(`Skill "${name}" failed to load: ${errorChain(error)}`, 'error')
+        }
+        return
+      }
       if (line === '/details' || line.startsWith('/details ')) {
         const folded = foldSessionTitle(current.session.events)
         const model = handles.selectionRef?.current?.model ?? current.options.model
@@ -436,6 +505,13 @@ export class Tui extends Service {
           `${palette.dim('Ctrl+R')}  toggle reasoning blocks`,
           '',
           palette.bold(palette.accent('Commands')),
+          '/palette — show the palette role table',
+          '/help — this listing',
+          '/model — pick a provider/model/reasoning effort',
+          '/resume — resume a persisted session',
+          '/details — show session diagnostics',
+          '/skills — list available skills',
+          '/skill:<name> — invoke a skill as instructions',
           ...commandRows,
         ]
         chat.addChild(new StaticCardComponent(rows, palette))
@@ -463,6 +539,28 @@ export class Tui extends Service {
       editor.addToHistory(text)
       if (trimmed.startsWith('/')) {
         void runCommand(trimmed)
+        return
+      }
+      // `@[label](dsh-session:…)` mentions lift another session's surface
+      // into this one: prepare attaches the snapshot and injects the
+      // additional context without a model turn.
+      const parsed = parseSessionReferenceText(text)
+      if (parsed.references.length > 0) {
+        void (async () => {
+          try {
+            const prepared = await ctx.sessionReferenceResolver.prepare(
+              current,
+              [{ type: 'text', text: parsed.text }],
+              parsed.references,
+            )
+            current.followup(createUserMessage({ content: prepared.content, source: { kind: 'user' } }))
+            if (prepared.additionalContext !== undefined) {
+              current.inject(prepared.additionalContext)
+            }
+          } catch (error: unknown) {
+            appendNotice(`Session reference failed: ${errorChain(error)}`, 'error')
+          }
+        })()
         return
       }
       current.followup(createUserMessage({
@@ -516,6 +614,24 @@ export class Tui extends Service {
 
       const header = new HeaderComponent(liveAgent, () => undefined, palette, truecolor)
       ui.addChild(header)
+
+      // Slash commands + @ / path completions (pi-tui's combined provider
+      // scans the workspace rooted at the session cwd).
+      const workspace = liveAgent.session.header.cwd ?? process.cwd()
+      const commandEntries: Array<{ name: string; description: string; argumentHint?: string }> = [
+        { name: 'palette', description: 'Show the palette role table' },
+        { name: 'help', description: 'Show keyboard shortcuts and commands' },
+        { name: 'model', description: 'Pick a provider/model/reasoning effort' },
+        { name: 'resume', description: 'Resume a persisted session', argumentHint: '[sessionId]' },
+        { name: 'details', description: 'Show session diagnostics' },
+        { name: 'skills', description: 'List available skills' },
+        ...ctx.commands.list(liveAgent).map(command => ({
+          name: command.name,
+          description: command.description,
+          ...command.input === undefined ? {} : { argumentHint: command.input.hint },
+        })),
+      ]
+      editor.setAutocompleteProvider(new CombinedAutocompleteProvider(commandEntries, workspace))
 
       const offQuestions = ctx.userQuestions.registerProvider({
         ask: async (request) => ({

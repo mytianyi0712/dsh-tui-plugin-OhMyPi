@@ -9,12 +9,13 @@ import {
   Markdown,
   Spacer,
   Text,
+  truncateToWidth,
   wrapTextWithAnsi,
   type Component,
 } from '@earendil-works/pi-tui'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, TodoItem } from '@deepseek-ai/dsh-session'
 import { frameBlock, gradientText, type MarkdownTheme, type Palette } from '../theme.ts'
 import { contentText, parseArguments, pretty, type ParsedArguments } from './content.ts'
 import { displayInlineText, displayText } from './text.ts'
@@ -313,5 +314,45 @@ export class StaticCardComponent implements Component {
 
   render(width: number): string[] {
     return ['', ...frameBlock(this.rows, width, this.palette.border, this.palette.toolPendingBg)]
+  }
+}
+
+/**
+ * The plan/todo panel rendered above the status line: the current goal plus
+ * the whole-list `todo/write` snapshot, omp `Plan` style. Renders nothing
+ * while there is neither a goal nor any todo.
+ */
+export class TodoPanelComponent implements Component {
+  private todos: readonly TodoItem[] = []
+  private goal: { readonly objective: string; readonly phase: string } | undefined
+
+  constructor(private readonly palette: Palette) {}
+
+  invalidate(): void {}
+
+  /** Replace the whole todo list (last `todo/write` wins). */
+  setTodos(todos: readonly TodoItem[]): void {
+    this.todos = todos
+  }
+
+  /** Replace the current goal snapshot, or clear it. */
+  setGoal(goal: { readonly objective: string; readonly phase: string } | undefined): void {
+    this.goal = goal
+  }
+
+  render(width: number): string[] {
+    if (this.todos.length === 0 && this.goal === undefined) return []
+    const lines: string[] = [this.palette.bold(this.palette.accent('Plan'))]
+    if (this.goal !== undefined) {
+      lines.push(this.palette.dim(`Goal · ${this.goal.phase}: ${displayText(this.goal.objective)}`))
+    }
+    for (const todo of this.todos) {
+      const mark = todo.status === 'completed' ? '✓' : todo.status === 'in_progress' ? '◐' : '○'
+      const color = todo.status === 'completed'
+        ? this.palette.dim
+        : todo.status === 'in_progress' ? this.palette.accent : this.palette.text
+      lines.push(color(`${mark} ${displayText(todo.content)}`))
+    }
+    return lines.map(line => truncateToWidth(line, Math.max(1, width), ''))
   }
 }
