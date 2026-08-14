@@ -20,13 +20,19 @@ import {
   type EditorTheme,
   type TerminalColorScheme,
 } from '@earendil-works/pi-tui'
-import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
-import { createUserMessage, type CallId } from '@deepseek-ai/dsh-llm'
+import type { Agent, AgentStatus, ModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
+import { installModelSelection } from '@deepseek-ai/dsh-agent'
+import { createUserMessage, errorChain, type CallId } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
-// Type-only imports pull in the declaration merges that expose `ctx.commands`
-// and `ctx.tokenMeter` on the cordis Context.
+import { foldSessionTitle } from '@deepseek-ai/dsh-session-title'
+// Type-only imports pull in the declaration merges that expose `ctx.commands`,
+// `ctx.tokenMeter`, `ctx.llm`, `ctx.userQuestions`, `ctx.sessionQuery`, and
+// `ctx.agentDefaultModel` on the cordis Context.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-token-meter'
+import type {} from '@deepseek-ai/dsh-user-questions'
+import type {} from '@deepseek-ai/dsh-session-query'
+import type {} from '@deepseek-ai/dsh-agent-default-model'
 import {
   TuiConfigSchema,
   resolveTuiConfig,
@@ -53,6 +59,12 @@ import {
   type ToolCardVisibility,
 } from './components/transcript.ts'
 import { StatusLineComponent } from './components/status.ts'
+import {
+  SelectDialog,
+  runModelFlow,
+  runQuestionFlow,
+  showOverlay,
+} from './components/dialogs.ts'
 import { contentText } from './components/content.ts'
 import { displayInlineText, displayText } from './components/text.ts'
 
@@ -72,7 +84,7 @@ function formatTokens(count: number): string {
 
 /** The terminal mode's plugin entry: mounts the whole UI in its constructor. */
 export class Tui extends Service {
-  static inject = ['tuiStartup', 'agents', 'tuiPrompt', 'commands', 'tokenMeter']
+  static inject = ['tuiStartup', 'agents', 'tuiPrompt', 'commands', 'tokenMeter', 'llm', 'userQuestions', 'sessionQuery', 'agentDefaultModel']
   static Config = TuiConfigSchema
 
   constructor(ctx: Context, config: Config) {
@@ -95,6 +107,12 @@ export class Tui extends Service {
     // The agent is published asynchronously on the resume path (persistence
     // load), so agent-dependent setup runs in mount() once it is live.
     let agent: Agent | undefined
+    // Agent-scoped helpers handed to the command surface by mount().
+    const handles: {
+      switchAgent: ((id: SessionId) => Promise<void>) | undefined
+      saveSelection: ((selection: ModelSelection) => Promise<void>) | undefined
+      selectionRef: ModelSelectionRef | undefined
+    } = { switchAgent: undefined, saveSelection: undefined, selectionRef: undefined }
 
     // --- components -------------------------------------------------------
     const chat = new Container()
@@ -190,7 +208,7 @@ export class Tui extends Service {
       if (current === undefined) return
       cwdValue.set(palette.bold(palette.accent(displayText(current.session.header.cwd ?? process.cwd()))))
       gitValue.set(undefined)
-      const model = current.options.model
+      const model = handles.selectionRef?.current?.model ?? current.options.model
       modelValue.set(model === undefined ? undefined : `  ${palette.model(displayText(model))}`)
       let inputTokens = 0
       let outputTokens = 0
@@ -325,6 +343,88 @@ export class Tui extends Service {
         ui.requestRender()
         return
       }
+      if (line === '/model' || line.startsWith('/model ')) {
+        const save = handles.saveSelection
+        if (save === undefined) return
+        try {
+          await runModelFlow(ui, palette, ctx.llm, save)
+        } catch (error: unknown) {
+          appendNotice(`Model selection failed: ${errorChain(error)}`, 'error')
+        }
+        ui.requestRender()
+        return
+      }
+      if (line === '/resume' || line.startsWith('/resume ')) {
+        const switcher = handles.switchAgent
+        if (switcher === undefined) return
+        const explicit = line.slice('/resume'.length).trim()
+        if (explicit !== '') {
+          await switcher(SessionId(explicit))
+          return
+        }
+        try {
+          const records = await ctx.sessionQuery.listSessions()
+          const persisted = records
+            .filter(record => record.persisted)
+            .sort((left, right) => (right.header.createdAt ?? 0) - (left.header.createdAt ?? 0))
+          if (persisted.length === 0) {
+            appendNotice('No persisted sessions.', 'warning')
+            return
+          }
+          const titles = await ctx.sessionQuery.readTitleSnapshots(persisted.map(record => record.header.id))
+          const titleById = new Map<string, string | undefined>()
+          for (const observation of titles) {
+            if (observation.status === 'fulfilled') {
+              titleById.set(String(observation.sessionId), observation.value.title?.title)
+            }
+          }
+          const picked = await showOverlay<string>(ui, (done) => new SelectDialog(
+            'Resume session',
+            persisted.map(record => ({
+              value: String(record.header.id),
+              label: titleById.get(String(record.header.id)) ?? '(untitled)',
+              description: `${record.header.id} · ${new Date(record.header.createdAt ?? 0).toLocaleString()}`,
+            })),
+            palette,
+            done,
+          ))
+          if (picked !== undefined) await switcher(SessionId(picked))
+        } catch (error: unknown) {
+          appendNotice(`Session listing failed: ${errorChain(error)}`, 'error')
+        }
+        return
+      }
+      if (line === '/details' || line.startsWith('/details ')) {
+        const folded = foldSessionTitle(current.session.events)
+        const model = handles.selectionRef?.current?.model ?? current.options.model
+        let inputTokens = 0
+        let outputTokens = 0
+        for (const event of current.session.events) {
+          if (event.type === 'assistant/message' && event.data.usage !== undefined) {
+            inputTokens += event.data.usage.inputTokens
+            outputTokens += event.data.usage.outputTokens
+          }
+        }
+        const contextWindow = current.session.requestContext()?.contextWindow
+        const usedTokens = ctx.tokenMeter.measure(current.session).totalTokens
+        const rows: Array<[string, string]> = [
+          ['Title', folded?.title ?? 'untitled'],
+          ['Session', String(current.session.id)],
+          ['Directory', current.session.header.cwd ?? process.cwd()],
+          ['Model', `${current.options.provider ?? '?'}/${model ?? '?'}`],
+          ['Agent', `${current.id} · ${current.status}`],
+          ['Tokens', `↑${formatTokens(inputTokens)} ↓${formatTokens(outputTokens)}`],
+          ['Context', contextWindow === undefined
+            ? `${formatTokens(usedTokens)} used · capacity unknown`
+            : `${Math.round(usedTokens / contextWindow * 100)}% · ${formatTokens(usedTokens)} / ${formatTokens(contextWindow)}`],
+        ]
+        const labelWidth = Math.max(...rows.map(([label]) => label.length))
+        const body = rows.map(([label, value]) =>
+          ` ${palette.dim(String(label).padEnd(labelWidth))}  ${displayText(String(value))}`)
+        chat.addChild(new StaticCardComponent(body, palette))
+        ui.requestRender()
+        return
+      }
       if (line === '/help' || line.startsWith('/help ')) {
         const commandRows = ctx.commands.list(current).map(command =>
           `/${command.name}${command.input === undefined ? '' : ` ${command.input.hint}`} — ${command.description}`)
@@ -398,11 +498,34 @@ export class Tui extends Service {
       mounted = true
       agent = liveAgent
 
+      // Couple one mutable selection to prompt assembly and request routing;
+      // `/model` swaps `selectionRef.current` for the next step.
+      const selectionRef: ModelSelectionRef = { current: undefined, assembled: undefined }
+      installModelSelection(liveAgent.ctx, selectionRef)
+      const saveSelection = async (selection: ModelSelection): Promise<void> => {
+        selectionRef.current = selection
+        await ctx.agentDefaultModel.saveSelection(selection)
+        updateStatusValues()
+        appendNotice(`Model set to ${selection.provider}/${selection.model}.`, 'info')
+      }
+
+      const updateTitle = (): void => {
+        const folded = foldSessionTitle(liveAgent.session.events)
+        terminal.setTitle(folded === undefined ? resolved.title : `${folded.title} — ${resolved.title}`)
+      }
+
       const header = new HeaderComponent(liveAgent, () => undefined, palette, truecolor)
       ui.addChild(header)
 
+      const offQuestions = ctx.userQuestions.registerProvider({
+        ask: async (request) => ({
+          answers: await runQuestionFlow(ui, palette, request.questions, request.signal),
+        }),
+      })
+
       offEvent = ctx.on('session/event', (session, event) => {
         if (session.id !== liveAgent.session.id) return
+        if (event.type === 'session/title') updateTitle()
         renderEvent(event)
         ui.requestRender()
       })
@@ -421,12 +544,49 @@ export class Tui extends Service {
         ui.requestRender()
       })
 
+      const switchAgent = async (targetId: SessionId): Promise<void> => {
+        if (liveAgent.id === targetId) {
+          appendNotice('Already on this session.', 'info')
+          return
+        }
+        appendNotice('Resuming session…', 'info')
+        const handle = await ctx.agents.resume({
+          resumeSessionId: targetId,
+          agentOptions: liveAgent.options,
+        })
+        const resumed = handle.agent
+        offEvent?.()
+        offStatus?.()
+        agent = resumed
+        offEvent = ctx.on('session/event', (session, event) => {
+          if (session.id !== resumed.session.id) return
+          if (event.type === 'session/title') updateTitle()
+          renderEvent(event)
+          ui.requestRender()
+        })
+        offStatus = ctx.on('agent/status', ({ agent: candidate, status }) => {
+          if (candidate.id !== resumed.id) return
+          setStatus(status)
+        })
+        rebuildTranscript()
+        live = true
+        setStatus(resumed.status)
+        updateTitle()
+        appendNotice(`Session ${targetId} resumed.`, 'info')
+      }
+
       // Replay the durable log first (constructor seeds never publish), then
       // go live so turn-end notices only surface for fresh work.
       rebuildTranscript()
       live = true
+      updateTitle()
       setStatus(liveAgent.status)
       ui.start()
+
+      // Store the switcher and helpers for the command surface below.
+      handles.switchAgent = switchAgent
+      handles.saveSelection = saveSelection
+      handles.selectionRef = selectionRef
     }
 
     const readyAgent = ctx.agents.get(sessionId)

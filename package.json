@@ -48,7 +48,8 @@
     "@deepseek-ai/dsh-token-meter": "^0.0.1",
     "@deepseek-ai/dsh-tools": "^0.0.1",
     "@deepseek-ai/dsh-user-questions": "^0.0.1",
-    "@deepseek-ai/schemastery": "^3.18.0"
+    "@deepseek-ai/schemastery": "^3.18.0",
+    "@deepseek-ai/dsh-agent-default-model": "^0.0.1"
   },
   "dependencies": {
     "commander": "^15.0.0"
@@ -78,7 +79,8 @@
     "@types/node": "^22.20.0",
     "commander": "^15.0.0",
     "tsdown": "^0.22.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "@deepseek-ai/dsh-agent-default-model": "0.1.0-rc.6"
   },
   "dsh": {
     "bundle": {

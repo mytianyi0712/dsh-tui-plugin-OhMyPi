@@ -30,6 +30,7 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-typert-protocol@0.1.0-rc.6'
   - '@deepseek-ai/dsh-user-approval@0.1.0-rc.6'
   - '@deepseek-ai/dsh-user-questions@0.1.0-rc.6'
+  - '@deepseek-ai/dsh-agent-default-model@0.1.0-rc.6'
 
 patchedDependencies:
   '@earendil-works/pi-tui@0.80.7': patches/@earendil-works__pi-tui@0.80.7.patch
