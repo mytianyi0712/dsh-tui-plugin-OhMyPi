@@ -42,6 +42,7 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-session-reference'
 import type {} from '@deepseek-ai/dsh-settings'
+import { PERMISSION_SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-compaction'
@@ -65,6 +66,7 @@ import {
   permissionCommandMetadata,
   registryPermissionName,
 } from './permission.ts'
+import { SkillAwareAutocompleteProvider } from './autocomplete.ts'
 import {
   BUILTIN_THEMES,
   createPalette,
@@ -865,11 +867,19 @@ export class Tui extends Service {
           const titleRoute = titleSettings?.provider === undefined || titleSettings.model === undefined
             ? `${current.options.provider ?? 'auto'}/${current.options.model ?? 'auto'}`
             : `${titleSettings.provider}/${titleSettings.model}`
+          const defaultSelection = ctx.agentDefaultModel.currentSelection()
+          const defaultPermission = displayPermissionName(ctx.permissionPresets.defaultPreset)
+          const defaultSummary = t('settingsDefaultsCurrent', {
+            model: `${defaultSelection.provider}/${defaultSelection.model}`,
+            effort: defaultSelection.reasoningEffort ?? '—',
+            permission: defaultPermission,
+          })
           const choice = await showOverlay<string>(ui, (done) => new SelectDialog(
             t('settingsTitle'),
             [
               { value: 'theme', label: `${t('settingsTheme')} ·`, description: t('settingsThemeCurrent', { name: themeName }) },
               { value: 'title-model', label: `${t('settingsTitleModel')} ·`, description: t('settingsTitleModelCurrent', { provider: titleRoute.split('/')[0]!, model: titleRoute.split('/').slice(1).join('/') }) },
+              { value: 'defaults', label: `${t('settingsDefaults')} ·`, description: defaultSummary },
             ],
             palette,
             done,
@@ -915,6 +925,55 @@ export class Tui extends Service {
             const sessionTitle = ctx.get('sessionTitle')
             if (sessionTitle !== undefined) void sessionTitle.refresh(current.session).catch(() => undefined)
             appendNotice(t('noticeTitleModelSet', { provider, model }), 'info')
+          } else if (choice === 'defaults') {
+            const defaultChoice = await showOverlay<string>(ui, (done) => new SelectDialog(
+              t('settingsDefaults'),
+              [
+                { value: 'permission', label: t('settingsDefaultPermission'), description: t('settingsDefaultsCurrent', { model: `${defaultSelection.provider}/${defaultSelection.model}`, effort: defaultSelection.reasoningEffort ?? '—', permission: defaultPermission }) },
+                { value: 'model', label: t('settingsDefaultModel'), description: `${defaultSelection.provider}/${defaultSelection.model}` },
+                { value: 'effort', label: t('settingsDefaultEffort'), description: defaultSelection.reasoningEffort ?? '—' },
+              ],
+              palette,
+              done,
+            ))
+            if (defaultChoice === 'permission') {
+              const picked = await showOverlay<string>(ui, (done) => new SelectDialog(
+                t('settingsDefaultPermission'),
+                permissionCommand.options,
+                palette,
+                done,
+              ))
+              if (picked !== undefined) {
+                const registryName = registryPermissionName(picked)
+                await settings.update(PERMISSION_SETTINGS_NAMESPACE, { defaultPreset: registryName })
+                appendNotice(t('noticeDefaultPermissionSet', { permission: displayPermissionName(registryName) }), 'info')
+              }
+            } else if (defaultChoice === 'model') {
+              await runModelFlow(ui, palette, t, ctx.llm, async (selection) => {
+                await ctx.agentDefaultModel.saveSelection(selection)
+                appendNotice(t('noticeDefaultModelSet', { provider: selection.provider, model: selection.model }), 'info')
+              })
+            } else if (defaultChoice === 'effort') {
+              const currentDefault = ctx.agentDefaultModel.currentSelection()
+              const efforts = await reasoningEffortsFor(currentDefault)
+              if (efforts.length === 0) {
+                appendNotice(t('noticeThinkUnsupported'), 'warning')
+              } else {
+                const picked = await showOverlay<string>(ui, (done) => new SelectDialog(
+                  t('settingsDefaultEffort'),
+                  efforts.map(effort => ({ value: effort.id, label: `${effort.id} — ${effort.name}`, description: effort.description })),
+                  palette,
+                  done,
+                ))
+                if (picked !== undefined) {
+                  const effort = efforts.find(candidate => candidate.id === picked)
+                  if (effort !== undefined) {
+                    await ctx.agentDefaultModel.saveSelection({ ...currentDefault, reasoningEffort: effort.id })
+                    appendNotice(t('noticeDefaultEffortSet', { effort: effort.name }), 'info')
+                  }
+                }
+              }
+            }
           }
         } catch (error: unknown) {
           appendNotice(t('noticeSettingsFailed', { error: errorChain(error) }), 'error')
@@ -1267,7 +1326,33 @@ export class Tui extends Service {
           }
         }),
       ]
-      editor.setAutocompleteProvider(new CombinedAutocompleteProvider(commandEntries, workspace))
+      const skillCommandNames = new Set<string>()
+      const refreshSkillCommands = async (): Promise<void> => {
+        try {
+          const snapshot = await ctx.skills.snapshot({ cwd: workspace })
+          const seen = new Set<string>()
+          for (const skill of snapshot.skills) {
+            const name = `skill:${skill.name}`
+            seen.add(name)
+            if (!skillCommandNames.has(name)) {
+              skillCommandNames.add(name)
+              commandEntries.push({ name, description: t('helpSkillInvoke') })
+            }
+          }
+          for (let index = commandEntries.length - 1; index >= 0; index--) {
+            const entry = commandEntries[index]
+            if (entry !== undefined && entry.name.startsWith('skill:') && !seen.has(entry.name)) {
+              commandEntries.splice(index, 1)
+              skillCommandNames.delete(entry.name)
+            }
+          }
+        } catch {
+          // Keep the current skill command list if the snapshot fails.
+        }
+      }
+      const baseAutocomplete = new CombinedAutocompleteProvider(commandEntries, workspace)
+      editor.setAutocompleteProvider(new SkillAwareAutocompleteProvider(baseAutocomplete))
+      void refreshSkillCommands()
       commandHintText = commandInputHint(editor.getText(), commandEntries)
       editor.onChange = (text: string): void => {
         commandHintText = commandInputHint(text, commandEntries)
@@ -1381,6 +1466,16 @@ export class Tui extends Service {
           },
           setup: async (agentCtx) => { await ctx.agentPresets.mount(agentCtx, preset) },
         })
+        // `/new` should continue the current session's permission instead of
+        // falling back to the global startup default.
+        const currentPermission = ctx.permissionPresets.current(current.session.events)
+        if (currentPermission !== 'custom') {
+          try {
+            ctx.permissionPresets.set(handle.agent.session, currentPermission)
+          } catch {
+            // If the preset cannot be applied, the new session keeps the default.
+          }
+        }
         activateAgent(handle.agent, handle)
         appendNotice(t('noticeSessionCreated', { id: String(id) }), 'info')
       }

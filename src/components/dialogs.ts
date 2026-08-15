@@ -5,7 +5,7 @@
  * omp-style frames and release focus back to the editor on completion.
  */
 
-import { Input, SelectList, type Component, type OverlayHandle, type TUI } from '@earendil-works/pi-tui'
+import { Input, SelectList, type Component, type OverlayHandle, type OverlayOptions, type TUI } from '@earendil-works/pi-tui'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { AskUserQuestionAnswerItem, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
@@ -130,15 +130,17 @@ export class InputDialog implements Component {
 export function showOverlay<T>(
   ui: TUI,
   make: (done: (value: T | undefined) => void) => Component,
+  options?: Partial<Pick<OverlayOptions, 'anchor' | 'width' | 'maxHeight' | 'offsetY' | 'margin'>>,
 ): Promise<T | undefined> {
   return new Promise((resolve) => {
     const handle = ui.showOverlay(make((value) => {
       handle.hide()
       resolve(value)
     }), {
-      anchor: 'bottom-center',
-      width: '70%',
-      maxHeight: '70%',
+      anchor: 'center',
+      width: '80%',
+      maxHeight: '85%',
+      ...options,
     })
     ui.requestRender()
   })
@@ -159,6 +161,7 @@ export async function runQuestionFlow(
   signal: AbortSignal | undefined,
 ): Promise<AskUserQuestionAnswerItem[]> {
   const answers: AskUserQuestionAnswerItem[] = []
+  const askOverlayOptions = { width: '90%', maxHeight: '90%' } as const
   for (const question of questions) {
     if (signal?.aborted) break
     const options = (question.options ?? []).map(option => ({
@@ -168,19 +171,19 @@ export async function runQuestionFlow(
     }))
     let selected: string[] | undefined
     if (options.length === 0) {
-      const custom = await showOverlay<string>(ui, (done) => new InputDialog(question.question, palette, done, t))
+      const custom = await showOverlay<string>(ui, (done) => new InputDialog(question.question, palette, done, t), askOverlayOptions)
       if (custom === undefined) break
       selected = [custom]
     } else if (question.multiSelect === true) {
-      const picked = await showOverlay<string[]>(ui, (done) => new ToggleDialog(question.question, options, palette, done))
+      const picked = await showOverlay<string[]>(ui, (done) => new ToggleDialog(question.question, options, palette, done), askOverlayOptions)
       if (picked === undefined) break
       selected = picked
     } else {
       const withCustom = [...options, { value: CUSTOM_ANSWER, label: '✎ 自定义回答…' }]
-      const picked = await showOverlay<string>(ui, (done) => new SelectDialog(question.question, withCustom, palette, done))
+      const picked = await showOverlay<string>(ui, (done) => new SelectDialog(question.question, withCustom, palette, done), askOverlayOptions)
       if (picked === undefined) break
       if (picked === CUSTOM_ANSWER) {
-        const custom = await showOverlay<string>(ui, (done) => new InputDialog(question.question, palette, done, t))
+        const custom = await showOverlay<string>(ui, (done) => new InputDialog(question.question, palette, done, t), askOverlayOptions)
         if (custom === undefined) break
         selected = [custom]
       } else {

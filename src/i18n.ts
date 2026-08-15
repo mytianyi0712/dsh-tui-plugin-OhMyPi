@@ -115,6 +115,14 @@ export type Messages = {
   settingsTitleModel: string
   settingsThemeCurrent: string
   settingsTitleModelCurrent: string
+  settingsDefaults: string
+  settingsDefaultsCurrent: string
+  settingsDefaultPermission: string
+  settingsDefaultModel: string
+  settingsDefaultEffort: string
+  noticeDefaultPermissionSet: string
+  noticeDefaultModelSet: string
+  noticeDefaultEffortSet: string
   untitled: string
   // --- mode / theme labels ------------------------------------------------
   modeStandard: string
@@ -173,6 +181,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     cmdResume: '恢复持久化会话',
     cmdDetails: '查看会话诊断',
     cmdSkills: '列出可用技能',
+
     cmdMode: '切换工作模式（官方预设与本地安装的预设）',
     cmdTheme: '查看或切换主题',
     helpPermission: '切换权限模式（沙箱 + 审批策略）',
@@ -233,6 +242,14 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsTitleModel: '标题模型',
     settingsThemeCurrent: '当前主题：{name}',
     settingsTitleModelCurrent: '当前标题模型：{provider}/{model}',
+    settingsDefaults: '默认配置',
+    settingsDefaultsCurrent: '模型 {model} · 强度 {effort} · 权限 {permission}',
+    settingsDefaultPermission: '默认权限模式',
+    settingsDefaultModel: '默认模型',
+    settingsDefaultEffort: '默认思考强度',
+    noticeDefaultPermissionSet: '默认权限模式已设为 {permission}。',
+    noticeDefaultModelSet: '默认模型已设为 {provider}/{model}。',
+    noticeDefaultEffortSet: '默认思考强度已设为 {effort}。',
     untitled: '（未命名）',
     modeStandard: '标准',
     modeMinimal: '极简',
@@ -287,6 +304,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     cmdResume: 'Resume a persisted session',
     cmdDetails: 'Show session diagnostics',
     cmdSkills: 'List available skills',
+
     cmdMode: 'Switch working mode (shipped or locally installed presets)',
     cmdTheme: 'Show or switch theme',
     cmdSettings: 'Open visual settings',
@@ -348,6 +366,14 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsTitleModel: 'Title model',
     settingsThemeCurrent: 'Current theme: {name}',
     settingsTitleModelCurrent: 'Current title model: {provider}/{model}',
+    settingsDefaults: 'Default config',
+    settingsDefaultsCurrent: 'model {model} · effort {effort} · permission {permission}',
+    settingsDefaultPermission: 'Default permission mode',
+    settingsDefaultModel: 'Default model',
+    settingsDefaultEffort: 'Default reasoning effort',
+    noticeDefaultPermissionSet: 'Default permission mode set to {permission}.',
+    noticeDefaultModelSet: 'Default model set to {provider}/{model}.',
+    noticeDefaultEffortSet: 'Default reasoning effort set to {effort}.',
     untitled: '(untitled)',
     modeStandard: 'standard',
     modeMinimal: 'minimal',
