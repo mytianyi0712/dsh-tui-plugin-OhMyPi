@@ -5,8 +5,8 @@
  * @module dsh-omp-tui
  */
 
-import { readFileSync } from 'node:fs'
-import { isAbsolute, join, resolve } from 'node:path'
+import { readFile } from 'node:fs/promises'
+import { basename, isAbsolute, join, resolve } from 'node:path'
 import { Service, type Context } from '@deepseek-ai/cordis'
 import {
   Container,
@@ -31,8 +31,9 @@ import { parseSessionReferenceText } from '@deepseek-ai/dsh-session-reference'
 import { renderSkillContent } from '@deepseek-ai/dsh-skill'
 // Type-only imports pull in the declaration merges that expose `ctx.commands`,
 // `ctx.tokenMeter`, `ctx.llm`, `ctx.userQuestions`, `ctx.sessionQuery`,
-// `ctx.agentDefaultModel`, `ctx.skills`, and `ctx.sessionReferenceResolver` on
-// the cordis Context, plus the goal/compaction/skill session-event extensions.
+// `ctx.agentDefaultModel`, `ctx.skills`, `ctx.sessionReferenceResolver`, and
+// `ctx.permissionPresets` on the cordis Context, plus the goal/compaction/skill
+// session-event extensions.
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-user-questions'
@@ -41,6 +42,7 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-session-reference'
 import type {} from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-compaction'
 // Declaration merges: `ctx.agentPresets` and the `agent-preset/selected`
@@ -56,6 +58,13 @@ import {
 import type { TuiStartup } from './startup.ts'
 import { parseTuiPromptTemplate } from './prompt.ts'
 import { createTranslator, type MessageKey, type Translator } from './i18n.ts'
+import {
+  FULL_ACCESS_REGISTRY_NAME,
+  FULL_ACCESS_UI_NAME,
+  displayPermissionName,
+  permissionCommandMetadata,
+  registryPermissionName,
+} from './permission.ts'
 import {
   BUILTIN_THEMES,
   createPalette,
@@ -109,6 +118,12 @@ const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', 
 const SPINNER_INTERVAL_MS = 80
 /** How long to wait for the configured agent to publish before giving up. */
 const AGENT_READY_TIMEOUT_MS = 10000
+/** Safety cap for a session resume's persistence load and setup phase. */
+const RESUME_TIMEOUT_MS = 30_000
+/** How many recent sessions to show in the `/resume` picker before title reads. */
+const RESUME_PICKER_LIMIT = 50
+/** Safety cap for loading title snapshots before showing the `/resume` picker. */
+const RESUME_TITLES_TIMEOUT_MS = 5_000
 /** Context fallback while exact model metadata is unavailable. */
 const DEFAULT_CONTEXT_WINDOW = 1_000_000
 
@@ -127,15 +142,20 @@ const MODE_LABEL_KEYS: Record<UiModeKey, MessageKey> = {
   cordis: 'modeCordis',
 }
 
-/** Restore a session's recorded backend mode, falling back for blank sessions. */
-function modeForSession(session: Session, fallback: UiModeKey): UiModeKey {
-  const recorded = resolveSessionPreset(session)
-  return recorded !== undefined && recorded in MODE_PRESETS ? recorded as UiModeKey : fallback
+/** Restore a session's recorded backend preset, falling back for blank sessions. */
+function modeForSession(session: Session, fallback: string): string {
+  return resolveSessionPreset(session) ?? fallback
 }
 
-/** The localized label of one mode id. */
-function modeLabel(t: Translator, mode: UiModeKey): string {
-  return t(MODE_LABEL_KEYS[mode])
+/** The localized label of a preset id, preferring the roster's own name. */
+function modeLabel(
+  t: Translator,
+  mode: string,
+  names: ReadonlyMap<string, string>,
+): string {
+  const rosterName = names.get(mode)
+  if (rosterName !== undefined) return rosterName
+  return mode in MODE_LABEL_KEYS ? t(MODE_LABEL_KEYS[mode as UiModeKey]) : mode
 }
 
 /** Filter preset argument choices while preserving their descriptions. */
@@ -165,11 +185,11 @@ function formatTokens(count: number): string {
 
 
 /** Resolve a regular repository or linked worktree branch without spawning Git. */
-function readGitBranch(cwd: string): string | undefined {
+async function readGitBranch(cwd: string): Promise<string | undefined> {
   const dotGit = join(cwd, '.git')
   let gitDir = dotGit
   try {
-    const pointer = readFileSync(dotGit, 'utf8').trim()
+    const pointer = (await readFile(dotGit, 'utf8')).trim()
     const match = /^gitdir:\s*(.+)$/i.exec(pointer)
     if (match?.[1] !== undefined) {
       gitDir = isAbsolute(match[1]) ? match[1] : resolve(cwd, match[1])
@@ -178,7 +198,7 @@ function readGitBranch(cwd: string): string | undefined {
     // A normal checkout exposes `.git` as a directory, not a pointer file.
   }
   try {
-    const head = readFileSync(join(gitDir, 'HEAD'), 'utf8').trim()
+    const head = (await readFile(join(gitDir, 'HEAD'), 'utf8')).trim()
     if (head.startsWith('ref:')) return head.slice(head.lastIndexOf('/') + 1)
     return head === '' ? undefined : head.slice(0, 7)
   } catch {
@@ -188,7 +208,7 @@ function readGitBranch(cwd: string): string | undefined {
 
 /** The terminal mode's plugin entry: mounts the whole UI in its constructor. */
 export class Tui extends Service {
-  static inject = ['tuiStartup', 'agents', 'tuiPrompt', 'commands', 'tokenMeter', 'llm', 'userQuestions', 'sessionQuery', 'agentDefaultModel', 'skills', 'sessionReferenceResolver', 'agentPresets', 'settings', 'sessionTitle']
+  static inject = ['tuiStartup', 'agents', 'tuiPrompt', 'commands', 'tokenMeter', 'llm', 'userQuestions', 'sessionQuery', 'agentDefaultModel', 'skills', 'sessionReferenceResolver', 'agentPresets', 'permissionPresets', 'settings', 'sessionTitle']
   static Config = TuiConfigSchema
 
   constructor(ctx: Context, config: Config) {
@@ -211,18 +231,25 @@ export class Tui extends Service {
     // Runtime theme state; `/theme` and `/settings` repaint in place.
     let themeName = tuiSettings?.get().themeName ?? resolved.theme.name
     const themeCustom: ThemeCustom | undefined = resolved.theme.custom
-    let uiMode: UiMode = resolved.mode
+    let uiMode: string = resolved.mode
+    // Roster display names (id → name); refreshed from ctx.agentPresets.list().
+    const presetNames = new Map<string, string>()
+    const permissionCommand = permissionCommandMetadata(ctx.permissionPresets, t)
     const themeOverride = (): ThemeOverride => ({ name: themeName, custom: themeCustom })
     const palette: Palette = createPalette(resolved.theme.color, 'dark', truecolor, themeOverride())
     const mdTheme = markdownTheme(palette)
     const terminal = new ProcessTerminal()
-    const ui = new TUI(terminal, false)
+    // Keep the hardware cursor visible at the editor's real cursor position;
+    // IMEs that preview pinyin/composition inline depend on it being shown there.
+    const ui = new TUI(terminal, true)
     ui.setClearOnShrink(true)
 
     // The agent is published asynchronously on the resume path (persistence
     // load), so agent-dependent setup runs in mount() once it is live.
     let agent: Agent | undefined
     let gitBranch: string | undefined
+    /** Running token usage for the active session; kept incrementally to avoid rescanning the whole log on every status update. */
+    let tokenTotals = { inputTokens: 0, outputTokens: 0 }
     // Agent-scoped helpers handed to the command surface by mount().
     const handles: {
       newAgent: (() => Promise<void>) | undefined
@@ -284,12 +311,20 @@ export class Tui extends Service {
 
     // --- prompt values ----------------------------------------------------
     const cwdValue = ctx.tuiPrompt.register('cwd')
+    const cwdCompactValue = ctx.tuiPrompt.register('cwd/compact')
     const gitValue = ctx.tuiPrompt.register('git/worktree')
+    const gitCompactValue = ctx.tuiPrompt.register('git/worktree/compact')
     const modeValue = ctx.tuiPrompt.register('mode')
+    const modeCompactValue = ctx.tuiPrompt.register('mode/compact')
     const modelValue = ctx.tuiPrompt.register('model')
+    const modelCompactValue = ctx.tuiPrompt.register('model/compact')
     const effortValue = ctx.tuiPrompt.register('effort')
+    const effortCompactValue = ctx.tuiPrompt.register('effort/compact')
     const tokensValue = ctx.tuiPrompt.register('tokens')
     const contextValue = ctx.tuiPrompt.register('context')
+    const contextCompactValue = ctx.tuiPrompt.register('context/compact')
+    const permissionValue = ctx.tuiPrompt.register('permission')
+    const permissionCompactValue = ctx.tuiPrompt.register('permission/compact')
     const queuedValue = ctx.tuiPrompt.register('queued')
     const symbolValue = ctx.tuiPrompt.register('symbol')
     const indicatorValue = ctx.tuiPrompt.register('indicator')
@@ -318,6 +353,12 @@ export class Tui extends Service {
         ui.requestRender()
       }, 5000)
       ui.requestRender()
+    }
+
+    const warnIfFullAccess = (target: Agent): void => {
+      if (ctx.permissionPresets.current(target.session.events) === FULL_ACCESS_REGISTRY_NAME) {
+        appendNotice(t('noticeFullAccessWarning'), 'warning')
+      }
     }
 
     // --- status -----------------------------------------------------------
@@ -351,26 +392,27 @@ export class Tui extends Service {
       if (current === undefined) return
       const cwd = displayText(current.session.header.cwd ?? process.cwd())
       cwdValue.set(palette.path(` ${cwd}`))
+      cwdCompactValue.set(palette.path(` ${displayText(basename(cwd))}`))
       gitValue.set(gitBranch === undefined
         ? undefined
         : ` ${palette.statusSep('')} ${palette.git(` ${displayText(gitBranch)}`)}`)
-      modeValue.set(`${palette.accent(modeLabel(t, uiMode))} ${palette.statusSep('')} `)
+      gitCompactValue.set(gitBranch === undefined
+        ? undefined
+        : palette.git(` ${displayText(gitBranch)}`))
+      const mode = modeLabel(t, uiMode, presetNames)
+      const compactMode = visibleWidth(mode) <= visibleWidth(uiMode) ? mode : uiMode
+      modeValue.set(`${palette.accent(mode)} ${palette.statusSep('')} `)
+      modeCompactValue.set(palette.accent(displayText(compactMode)))
       const selection = handles.selectionRef?.current
       const model = selection?.model ?? current.options.model
       modelValue.set(model === undefined ? undefined : palette.model(displayText(model)))
+      modelCompactValue.set(model === undefined ? undefined : palette.model(displayText(model)))
       const effort = selection?.reasoningEffort
       effortValue.set(effort === undefined
         ? undefined
         : ` ${palette.muted('·')} ${palette.accent(displayText(effort))}`)
-      let inputTokens = 0
-      let outputTokens = 0
-      for (const event of current.session.events) {
-        if (event.type === 'assistant/message' && event.data.usage !== undefined) {
-          inputTokens += event.data.usage.inputTokens
-          outputTokens += event.data.usage.outputTokens
-        }
-      }
-      tokensValue.set(` ${palette.muted('·')} ${palette.spend(`↑${formatTokens(inputTokens)} ↓${formatTokens(outputTokens)}`)}`)
+      effortCompactValue.set(effort === undefined ? undefined : palette.accent(displayText(effort)))
+      tokensValue.set(` ${palette.muted('·')} ${palette.spend(`↑${formatTokens(tokenTotals.inputTokens)} ↓${formatTokens(tokenTotals.outputTokens)}`)}`)
       const recordedContext = current.session.requestContext()
       const recordedWindow = recordedContext !== undefined
         && selection !== undefined
@@ -386,10 +428,30 @@ export class Tui extends Service {
         // Before assembly, some providers cannot estimate the input. Show the
         // required zero fallback rather than hiding the context segment.
       }
-      contextValue.set(` ${palette.muted('·')} ${palette.context(`ctx ${formatContextTokens(totalTokens)}/${formatContextTokens(contextWindow)}`)}`)
+      const contextText = `ctx ${formatContextTokens(totalTokens)}/${formatContextTokens(contextWindow)}`
+      contextValue.set(` ${palette.muted('·')} ${palette.context(contextText)}`)
+      contextCompactValue.set(palette.context(contextText))
+      const permission = ctx.permissionPresets.current(current.session.events)
+      const permissionRole = permission === FULL_ACCESS_REGISTRY_NAME
+        ? (text: string) => palette.bold(palette.accent(text))
+        : permission === 'read-only' ? palette.muted : palette.accent
+      const permissionText = permissionRole(displayText(displayPermissionName(permission)))
+      permissionValue.set(` ${palette.muted('·')} ${permissionText}`)
+      permissionCompactValue.set(permissionText)
       queuedValue.set(undefined)
       symbolValue.set(undefined)
       updateInputPrompt()
+    }
+
+    const refreshGitBranch = (workspace: string): void => {
+      const target = agent
+      gitBranch = undefined
+      void readGitBranch(workspace).then(branch => {
+        if (agent !== target) return
+        gitBranch = branch
+        updateStatusValues()
+        ui.requestRender()
+      })
     }
 
     const refreshContextEstimate = (target: Agent, selection: ModelSelection): void => {
@@ -436,7 +498,7 @@ export class Tui extends Service {
     let live = false
     let header: HeaderComponent | undefined
 
-    const renderEvent = (event: SessionEvent): void => {
+    const renderEvent = (event: SessionEvent, syncStatus = true, notify = true): void => {
       switch (event.type) {
         case 'user/message': {
           const source = event.data.source
@@ -459,6 +521,10 @@ export class Tui extends Service {
           break
         case 'assistant/message':
           assistantStream.settle(event.data.message.content)
+          if (event.data.usage !== undefined) {
+            tokenTotals.inputTokens += event.data.usage.inputTokens
+            tokenTotals.outputTokens += event.data.usage.outputTokens
+          }
           break
         case 'step/end':
           assistantStream.end()
@@ -492,10 +558,10 @@ export class Tui extends Service {
           }
           break
         case 'compaction/start':
-          if (live) appendNotice(t('noticeCompacting'), 'info')
+          if (live && notify) appendNotice(t('noticeCompacting'), 'info')
           break
         case 'compaction/end':
-          if (live) {
+          if (live && notify) {
             appendNotice(
               event.data.error === undefined ? t('noticeCompactionDone') : t('noticeCompactionFailed', { error: event.data.error }),
               event.data.error === undefined ? 'info' : 'error',
@@ -507,7 +573,7 @@ export class Tui extends Service {
           // after an abort cannot keep appending to the interrupted step;
           // its rendered partial content stays in the transcript.
           assistantStream.end()
-          if (live && event.data.reason.kind !== 'completed') {
+          if (live && notify && event.data.reason.kind !== 'completed') {
             appendNotice(t('noticeTurnEnded', { reason: event.data.reason.kind }), 'warning')
           }
           break
@@ -515,7 +581,7 @@ export class Tui extends Service {
         default:
           break
       }
-      updateStatusValues()
+      if (syncStatus) updateStatusValues()
     }
 
     const rebuildTranscript = (): void => {
@@ -523,8 +589,10 @@ export class Tui extends Service {
       toolCards.clear()
       allToolCards.clear()
       chat.clear()
+      tokenTotals = { inputTokens: 0, outputTokens: 0 }
       if (header !== undefined) chat.addChild(header)
-      for (const event of agent!.session.events) renderEvent(event)
+      for (const event of agent!.session.events) renderEvent(event, false, false)
+      updateStatusValues()
     }
 
     // --- input ---------------------------------------------------------------
@@ -538,7 +606,7 @@ export class Tui extends Service {
     const recordActivePreset = (target: Agent): void => {
       const mounted = ctx.agentPresets?.composedPreset(target.ctx)
       const preset = mounted ?? resolveSessionPreset(target.session)
-        ?? (target.id === agent?.id ? MODE_PRESETS[uiMode] : undefined)
+        ?? (target.id === agent?.id ? uiMode : undefined)
       if (preset !== undefined) recordConversationPreset(target.session, preset)
     }
 
@@ -555,6 +623,14 @@ export class Tui extends Service {
         chat.addChild(new StaticCardComponent(rows, palette))
         ui.requestRender()
         return
+      }
+      // The TUI presents the unrestricted preset as `full-access`; the host
+      // registry still knows it as `danger-full-access`, so translate before
+      // handing the slash command to the backend.
+      const permissionMatch = /^\/permission(?:\s+(.*))?$/.exec(line)
+      if (permissionMatch !== null) {
+        const arg = permissionMatch[1]?.trim() ?? ''
+        line = arg === '' ? '/permission' : `/permission ${registryPermissionName(arg)}`
       }
       if (line === '/model' || line.startsWith('/model ')) {
         const save = handles.saveSelection
@@ -622,11 +698,22 @@ export class Tui extends Service {
           const workspace = current.session.header.cwd ?? process.cwd()
           const persisted = filterProjectSessions(records, workspace)
             .sort((left, right) => (right.header.createdAt ?? 0) - (left.header.createdAt ?? 0))
+            .slice(0, RESUME_PICKER_LIMIT)
           if (persisted.length === 0) {
             appendNotice(t('noticeNoSessions'), 'warning')
             return
           }
-          const titles = await ctx.sessionQuery.readTitleSnapshots(persisted.map(record => record.header.id))
+          const titlesPromise = ctx.sessionQuery.readTitleSnapshots(
+            persisted.map(record => record.header.id),
+          ).catch(() => [] as Awaited<ReturnType<typeof ctx.sessionQuery.readTitleSnapshots>>)
+          let titleTimer: NodeJS.Timeout | undefined
+          const timeoutPromise = new Promise<Awaited<ReturnType<typeof ctx.sessionQuery.readTitleSnapshots>>>(
+            resolve => { titleTimer = setTimeout(() => resolve([]), RESUME_TITLES_TIMEOUT_MS) },
+          )
+          // Titles are decorative; if a slow/corrupt session blocks the batch,
+          // show the picker after the timeout with untitled labels instead of freezing.
+          const titles = await Promise.race([titlesPromise, timeoutPromise])
+          clearTimeout(titleTimer)
           const titleById = new Map<string, string | undefined>()
           for (const observation of titles) {
             if (observation.status === 'fulfilled') {
@@ -719,24 +806,30 @@ export class Tui extends Service {
         return
       }
       if (line === '/mode' || line.startsWith('/mode ')) {
-        const arg = line.slice('/mode'.length).trim()
-        if (arg !== '' && !(arg in MODE_PRESETS)) {
-          appendNotice(t('noticeModeUnknown', { name: arg }), 'warning')
-          return
-        }
         const presets = ctx.agentPresets
         if (presets === undefined) {
           appendNotice(t('noticeModeUnavailable'), 'warning')
           return
         }
-        const live = presets.composedPreset(current.ctx) as UiModeKey | undefined
+        const roster = (await presets.list()).filter(preset => preset.broken === undefined)
+        // Cycle order: the roster's own order (shipped first, then any number
+        // of locally installed presets), deduplicated against the shipped set.
+        const known = roster.length > 0
+          ? [...new Set([...MODE_ORDER, ...roster.map(preset => preset.id)])]
+          : [...MODE_ORDER]
+        const arg = line.slice('/mode'.length).trim()
+        if (arg !== '' && !known.includes(arg)) {
+          appendNotice(t('noticeModeUnknown', { name: arg }), 'warning')
+          return
+        }
+        const live = presets.composedPreset(current.ctx)
         const currentMode = live ?? uiMode
-        const liveIndex = MODE_ORDER.indexOf(currentMode)
-        const target: UiModeKey = arg === ''
-          ? MODE_ORDER[(liveIndex + 1) % MODE_ORDER.length]!
-          : arg as UiModeKey
+        const liveIndex = known.indexOf(currentMode)
+        const target = arg === ''
+          ? known[(liveIndex + 1) % known.length] ?? currentMode
+          : arg
         if (currentMode === target) {
-          appendNotice(t('noticeModeAlready', { mode: modeLabel(t, target) }), 'info')
+          appendNotice(t('noticeModeAlready', { mode: modeLabel(t, target, presetNames) }), 'info')
           return
         }
         // Swapping the composition mid-conversation would leave logged tool
@@ -748,12 +841,12 @@ export class Tui extends Service {
           return
         }
         try {
-          if (live === undefined) await presets.mount(current.ctx, MODE_PRESETS[target])
-          else await presets.recompose(current.ctx, MODE_PRESETS[target])
+          if (live === undefined) await presets.mount(current.ctx, target)
+          else await presets.recompose(current.ctx, target)
           uiMode = target
           updateStatusValues()
           ui.requestRender()
-          appendNotice(t('noticeModeSet', { mode: modeLabel(t, target) }), 'info')
+          appendNotice(t('noticeModeSet', { mode: modeLabel(t, target, presetNames) }), 'info')
         } catch (error: unknown) {
           appendNotice(t('noticeModeSwitchFailed', { error: errorChain(error) }), 'error')
         }
@@ -867,8 +960,12 @@ export class Tui extends Service {
         return
       }
       if (line === '/help' || line.startsWith('/help ')) {
-        const commandRows = ctx.commands.list(current).map(command =>
-          `/${command.name}${command.input === undefined ? '' : ` ${command.input.hint}`} — ${command.description}`)
+        const commandRows = ctx.commands.list(current).map(command => {
+          const permission = command.name === 'permission'
+          const hint = permission ? permissionCommand.argumentHint : command.input?.hint
+          const description = permission ? t('helpPermission') : command.description
+          return `/${command.name}${hint === undefined ? '' : ` ${hint}`} — ${description}`
+        })
         const rows = [
           palette.bold(palette.accent(t('helpShortcuts'))),
           '',
@@ -903,10 +1000,11 @@ export class Tui extends Service {
         return
       }
       const result = execution.result
+      const resultText = result.text?.replaceAll(FULL_ACCESS_REGISTRY_NAME, FULL_ACCESS_UI_NAME)
       if (result.kind === 'error') {
-        appendNotice(result.text, 'error')
-      } else if (result.text !== undefined && result.text !== '') {
-        appendNotice(result.text, 'info')
+        appendNotice(resultText ?? '', 'error')
+      } else if (resultText !== undefined && resultText !== '') {
+        appendNotice(resultText, 'info')
       }
     }
 
@@ -1065,7 +1163,7 @@ export class Tui extends Service {
       // Slash commands + @ / path completions (pi-tui's combined provider
       // scans the workspace rooted at the session cwd).
       const workspace = liveAgent.session.header.cwd ?? process.cwd()
-      gitBranch = readGitBranch(workspace)
+      refreshGitBranch(workspace)
       const modeOptions: AutocompleteItem[] = [
         { value: 'standard', label: `standard — ${t('modeStandard')}`, description: t('modeStandardHint') },
         { value: 'minimal', label: `minimal — ${t('modeMinimal')}`, description: t('modeMinimalHint') },
@@ -1125,8 +1223,26 @@ export class Tui extends Service {
         {
           name: 'mode',
           description: t('cmdMode'),
-          argumentHint: '<standard|minimal|code|cordis>',
-          getArgumentCompletions: prefix => filterCommandOptions(modeOptions, prefix),
+          argumentHint: '<standard|minimal|code|cordis|user preset>',
+          getArgumentCompletions: async (prefix) => {
+            const roster = ctx.agentPresets
+            let extra: AutocompleteItem[] = []
+            if (roster !== undefined) {
+              try {
+                const shipped = new Set(modeOptions.map(option => option.value))
+                extra = (await roster.list())
+                  .filter(preset => preset.broken === undefined && !shipped.has(preset.id))
+                  .map(preset => ({
+                    value: preset.id,
+                    label: `${preset.id} — ${preset.name ?? preset.id}`,
+                    description: preset.description,
+                  }))
+              } catch {
+                // Roster unreadable: shipped set only.
+              }
+            }
+            return filterCommandOptions([...modeOptions, ...extra], prefix)
+          },
         },
         {
           name: 'theme',
@@ -1135,11 +1251,21 @@ export class Tui extends Service {
           getArgumentCompletions: prefix => filterCommandOptions(themeOptions, prefix),
         },
         { name: 'settings', description: t('cmdSettings') },
-        ...ctx.commands.list(liveAgent).map(command => ({
-          name: command.name,
-          description: command.description,
-          ...command.input === undefined ? {} : { argumentHint: command.input.hint },
-        } satisfies SlashCommand)),
+        ...ctx.commands.list(liveAgent).map((command): SlashCommand => {
+          if (command.name === 'permission') {
+            return {
+              name: command.name,
+              description: t('cmdPermission'),
+              argumentHint: permissionCommand.argumentHint,
+              getArgumentCompletions: prefix => filterCommandOptions(permissionCommand.options, prefix),
+            }
+          }
+          return {
+            name: command.name,
+            description: command.description,
+            ...command.input === undefined ? {} : { argumentHint: command.input.hint },
+          }
+        }),
       ]
       editor.setAutocompleteProvider(new CombinedAutocompleteProvider(commandEntries, workspace))
       commandHintText = commandInputHint(editor.getText(), commandEntries)
@@ -1158,6 +1284,7 @@ export class Tui extends Service {
         if (session.id !== liveAgent.session.id) return
         if (event.type === 'session/title') updateTitle()
         renderEvent(event)
+        updateStatusValues()
         ui.requestRender()
       })
 
@@ -1183,7 +1310,7 @@ export class Tui extends Service {
         if (presets === undefined || presets.composedPreset(target.ctx) !== undefined) return
         const recorded = resolveSessionPreset(target.session)
         if (recorded === undefined && hasConversationData(target.session.events)) return
-        const wanted = recorded ?? MODE_PRESETS[uiMode]
+        const wanted = recorded ?? uiMode
         try {
           await presets.mount(target.ctx, wanted)
         } catch (error: unknown) {
@@ -1203,8 +1330,9 @@ export class Tui extends Service {
         offModelSelection = installModelSelection(next.ctx, selectionRef)
         agent = next
         activeHandle = handle
+        tokenTotals = { inputTokens: 0, outputTokens: 0 }
         refreshContextEstimate(next, nextSelection)
-        gitBranch = readGitBranch(next.session.header.cwd ?? process.cwd())
+        refreshGitBranch(next.session.header.cwd ?? process.cwd())
         header = new HeaderComponent(
           next,
           () => undefined,
@@ -1217,6 +1345,7 @@ export class Tui extends Service {
           if (session.id !== next.session.id) return
           if (event.type === 'session/title') updateTitle()
           renderEvent(event)
+          updateStatusValues()
           ui.requestRender()
         })
         offStatus = ctx.on('agent/status', ({ agent: candidate, status }) => {
@@ -1227,6 +1356,7 @@ export class Tui extends Service {
         live = true
         setStatus(next.status)
         updateTitle()
+        warnIfFullAccess(next)
         void composeAgentPreset(next)
         if (previousHandle !== undefined && previousHandle !== handle) {
           void previousHandle.dispose().catch(() => undefined)
@@ -1236,7 +1366,7 @@ export class Tui extends Service {
       const createAgent = async (): Promise<void> => {
         const current = agent ?? liveAgent
         const selection = selectionRef.current ?? selectionFor(current)
-        const preset = MODE_PRESETS[uiMode]
+        const preset = uiMode
         const id = SessionId(`tui-${crypto.randomUUID()}`)
         const handle = await ctx.agents.create({
           sessionId: id,
@@ -1276,17 +1406,49 @@ export class Tui extends Service {
         }
         appendNotice(t('noticeResuming'), 'info')
         const presets = ctx.agentPresets
-        const handle = await ctx.agents.resume({
+        const controller = new AbortController()
+        const resumePromise = ctx.agents.resume({
           resumeSessionId: targetId,
           agentOptions: current.options,
+          signal: controller.signal,
           setup: presets === undefined ? undefined : async (agentCtx) => {
             const resumed = agentCtx.agent
             const recorded = resumed === undefined ? undefined : resolveSessionPreset(resumed.session)
             if (recorded !== undefined) await presets.mount(agentCtx, recorded)
           },
         })
-        activateAgent(handle.agent, handle)
-        appendNotice(t('noticeSessionResumed', { id: String(targetId) }), 'info')
+        // Keep the original promise's late rejection from becoming unhandled if
+        // the timeout wins the race, and dispose a handle that only arrives late.
+        let timedOut = false
+        let settled = false
+        void resumePromise.then((handle) => {
+          if (timedOut) void handle.dispose().catch(() => undefined)
+        }).catch(() => undefined)
+        let resumeTimer: NodeJS.Timeout | undefined
+        const timeoutPromise = new Promise<AgentHandle>((_, reject) => {
+          resumeTimer = setTimeout(() => {
+            controller.abort()
+            if (!settled) {
+              timedOut = true
+              reject(new DOMException('Session resume timed out', 'AbortError'))
+            }
+          }, RESUME_TIMEOUT_MS)
+        })
+        try {
+          const handle = await Promise.race([resumePromise, timeoutPromise])
+          settled = true
+          clearTimeout(resumeTimer)
+          activateAgent(handle.agent, handle)
+          appendNotice(t('noticeSessionResumed', { id: String(targetId) }), 'info')
+        } catch (error: unknown) {
+          settled = true
+          clearTimeout(resumeTimer)
+          const aborted = error instanceof Error && error.name === 'AbortError'
+          appendNotice(
+            aborted ? t('noticeResumeTimeout') : t('noticeResumeFailed', { error: errorChain(error) }),
+            'error',
+          )
+        }
       }
 
       // Publish model helpers before the first status render; otherwise the
@@ -1306,7 +1468,21 @@ export class Tui extends Service {
       updateTitle()
       setStatus(liveAgent.status)
       void composeAgentPreset(liveAgent)
+      void (async () => {
+        const presets = ctx.agentPresets
+        if (presets === undefined) return
+        try {
+          for (const preset of await presets.list()) {
+            presetNames.set(preset.id, preset.name ?? preset.id)
+          }
+        } catch {
+          // Roster unreadable: keep the shipped labels.
+        }
+        updateStatusValues()
+        ui.requestRender()
+      })()
       ui.start()
+      warnIfFullAccess(liveAgent)
 
     }
 

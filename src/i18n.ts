@@ -55,6 +55,8 @@ export type Messages = {
   cmdMode: string
   cmdTheme: string
   cmdSettings: string
+  helpPermission: string
+  cmdPermission: string
   // --- notices ------------------------------------------------------------
   noticeNoSessions: string
   noticeSessionListFailed: string
@@ -69,6 +71,8 @@ export type Messages = {
   noticeSessionCreated: string
   noticeSessionCreateFailed: string
   noticeSessionResumed: string
+  noticeResumeFailed: string
+  noticeResumeTimeout: string
   noticeModelSet: string
   noticeThinkSet: string
   noticeThinkAlready: string
@@ -99,6 +103,7 @@ export type Messages = {
   noticeSettingsFailed: string
   noticeTitleModelSet: string
   noticeExitHint: string
+  noticeFullAccessWarning: string
   // --- dialogs and flows --------------------------------------------------
   dialogTypeAnswer: string
   modelProvider: string
@@ -120,6 +125,12 @@ export type Messages = {
   modeMinimalHint: string
   modeCodeHint: string
   modeCordisHint: string
+  permissionReadOnly: string
+  permissionReadOnlyHint: string
+  permissionWorkspaceWrite: string
+  permissionWorkspaceWriteHint: string
+  permissionFullAccess: string
+  permissionFullAccessHint: string
   themeCurrent: string
   themeCustomNote: string
 }
@@ -151,7 +162,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     helpSkills: '列出可用技能',
     helpSkillInvoke: '以指令方式调用技能',
     helpSettings: '打开可视化设置',
-    helpMode: '切换工作模式（标准 / 极简 / PTC / 创造）',
+    helpMode: '切换工作模式（官方预设与本地安装的预设）',
     helpTheme: '查看主题或切换主题',
     cmdPalette: '查看调色板角色表',
     cmdHelp: '查看快捷键与命令',
@@ -162,8 +173,10 @@ export const MESSAGES: Record<Locale, Messages> = {
     cmdResume: '恢复持久化会话',
     cmdDetails: '查看会话诊断',
     cmdSkills: '列出可用技能',
-    cmdMode: '切换工作模式（标准 / 极简 / PTC / 创造）',
+    cmdMode: '切换工作模式（官方预设与本地安装的预设）',
     cmdTheme: '查看或切换主题',
+    helpPermission: '切换权限模式（沙箱 + 审批策略）',
+    cmdPermission: '切换权限模式（沙箱 + 审批策略）',
     noticeNoSessions: '没有持久化会话。',
     noticeSessionListFailed: '会话列表获取失败：{error}',
     noticeNoSkills: '没有可用技能。',
@@ -177,6 +190,8 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeSessionCreated: '已新建会话 {id}。',
     noticeSessionCreateFailed: '新建会话失败：{error}',
     noticeSessionResumed: '会话 {id} 已恢复。',
+    noticeResumeFailed: '会话恢复失败：{error}',
+    noticeResumeTimeout: '会话恢复超时，已取消本次恢复。',
     noticeModelSet: '模型已设为 {provider}/{model}。',
     noticeThinkSet: '思考等级已切换为 {name}（{id}）。',
     noticeThinkAlready: '当前思考等级已是 {name}（{id}）。',
@@ -193,10 +208,10 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeModelFailed: '模型选择失败：{error}',
     noticeUnknownCommand: '未知命令：{name}',
     noticeReferenceFailed: '会话引用失败：{error}',
-    noticeModeSet: '已切换到{mode}模式。',
+    noticeModeSet: '已切换到「{mode}」。',
     noticeModeUnknown: '未知模式：{name}',
     noticeModeUnavailable: '当前组合未提供 agent-presets 服务。',
-    noticeModeAlready: '当前已是{mode}模式。',
+    noticeModeAlready: '当前已是「{mode}」。',
     noticeModeNotBlank: '会话已产生内容，无法切换模式；请在新会话中切换。',
     noticeModeMountFailed: '模式装配失败：{error}',
     noticeModeSwitchFailed: '模式切换失败：{error}',
@@ -207,6 +222,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeSettingsFailed: '设置保存失败：{error}',
     noticeTitleModelSet: '标题模型已设为 {provider}/{model}。',
     noticeExitHint: '再次按 Ctrl+C 退出',
+    noticeFullAccessWarning: '当前为完全访问模式：文件沙箱已禁用，且不会请求审批。请谨慎操作。',
     dialogTypeAnswer: '输入你的回答并回车',
     modelProvider: '服务商',
     modelTitle: '模型 · {provider}',
@@ -226,6 +242,12 @@ export const MESSAGES: Record<Locale, Messages> = {
     modeMinimalHint: 'bash + 编辑器双工具',
     modeCodeHint: 'PTC Code Mode SDK',
     modeCordisHint: '创建和调试 preset',
+    permissionReadOnly: '只读',
+    permissionReadOnlyHint: '只允许读取；写入或更高权限操作需要审批',
+    permissionWorkspaceWrite: '工作区写入',
+    permissionWorkspaceWriteHint: '允许写入工作区与临时目录；范围外操作需要审批',
+    permissionFullAccess: '完全访问',
+    permissionFullAccessHint: '不受文件沙箱限制，且不会请求审批',
     themeCurrent: '当前主题',
     themeCustomNote: '自定义主题需通过配置 theme.custom 提供。',
   },
@@ -254,7 +276,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     helpDetails: 'show session diagnostics',
     helpSkills: 'list available skills',
     helpSkillInvoke: 'invoke a skill as instructions',
-    helpMode: 'switch working mode (standard / minimal / PTC / creator)',
+    helpMode: 'switch working mode (shipped or locally installed presets)',
     helpTheme: 'show themes or switch theme',
     helpSettings: 'open visual settings',
     cmdPalette: 'Show the palette role table',
@@ -265,9 +287,11 @@ export const MESSAGES: Record<Locale, Messages> = {
     cmdResume: 'Resume a persisted session',
     cmdDetails: 'Show session diagnostics',
     cmdSkills: 'List available skills',
-    cmdMode: 'Switch working mode (standard/minimal/PTC/creator)',
+    cmdMode: 'Switch working mode (shipped or locally installed presets)',
     cmdTheme: 'Show or switch theme',
     cmdSettings: 'Open visual settings',
+    helpPermission: 'switch permission mode (sandbox + approval policy)',
+    cmdPermission: 'Switch permission mode (sandbox + approval policy)',
     noticeNoSessions: 'No persisted sessions.',
     noticeSessionListFailed: 'Session listing failed: {error}',
     noticeNoSkills: 'No skills available.',
@@ -281,6 +305,8 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeSessionCreated: 'Started session {id}.',
     noticeSessionCreateFailed: 'Failed to create session: {error}',
     noticeSessionResumed: 'Session {id} resumed.',
+    noticeResumeFailed: 'Failed to resume session: {error}',
+    noticeResumeTimeout: 'Session resume timed out and was cancelled.',
     noticeModelSet: 'Model set to {provider}/{model}.',
     noticeThinkSet: 'Reasoning effort switched to {name} ({id}).',
     noticeThinkAlready: 'Reasoning effort is already {name} ({id}).',
@@ -311,6 +337,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeSettingsFailed: 'Settings save failed: {error}',
     noticeTitleModelSet: 'Title model set to {provider}/{model}.',
     noticeExitHint: 'Press Ctrl+C again to exit',
+    noticeFullAccessWarning: 'Full access mode is active: file confinement is disabled and approval prompts are off. Proceed with care.',
     dialogTypeAnswer: 'type your answer and press enter',
     modelProvider: 'Provider',
     modelTitle: 'Model · {provider}',
@@ -330,6 +357,12 @@ export const MESSAGES: Record<Locale, Messages> = {
     modeMinimalHint: 'bash + editor only',
     modeCodeHint: 'PTC Code Mode SDK',
     modeCordisHint: 'create and debug presets',
+    permissionReadOnly: 'read only',
+    permissionReadOnlyHint: 'Allow reads; writes or higher-privilege operations require approval',
+    permissionWorkspaceWrite: 'workspace write',
+    permissionWorkspaceWriteHint: 'Allow writes inside the workspace and temporary directories; wider access requires approval',
+    permissionFullAccess: 'full access',
+    permissionFullAccessHint: 'Disable file confinement and approval prompts',
     themeCurrent: 'Current theme',
     themeCustomNote: 'Custom themes are provided through the theme.custom config.',
   },

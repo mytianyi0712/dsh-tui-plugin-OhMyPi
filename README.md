@@ -21,7 +21,7 @@ OMP 风格的 DeepSeek Harness（dsh）终端界面——一个独立的 profile
  ─── 标准   D:\Projects\dsh   main ─────────────────────────────────── 
 
  ────────────────────────────────────────────────────────────────────────── 
-  deepseek-v4-flash · max · ctx 100k/1m
+  deepseek-v4-flash · max · ctx 100k/1m · workspace-write
 
  Read: Reading theme implementation
 
@@ -35,6 +35,9 @@ OMP 风格的 DeepSeek Harness（dsh）终端界面——一个独立的 profile
 展示格式。新会话默认使用 `deepseek-v4-flash · max`；历史会话恢复最后一个真实
 `request/header` 的模型与思考等级。上下文显示「预估已用/模型容量」，无法解析
 模型容量或估算输入时回退为 `ctx 0/1m`。
+窄终端会优先保留完整的模式、工作目录和 Git 段；空间不足时切换为紧凑模式名与目录名，
+再按优先级隐藏目录或截短模式/分支，分隔符始终按完整状态段重建，不会留下孤立的 Powerline
+箭头。页脚在空间不足时优先保留 `ctx` 与权限状态。
 
 ## 架构
 
@@ -127,7 +130,8 @@ dsh web --port 8080                   # 透传，照常启动官方 web
 | `/resume [id]` | 进程内切换会话（无参仅列出当前项目的持久化会话；显式 ID 也会校验项目归属） |
 | `/details` | 会话诊断卡（标题/目录/模型/agent/tokens/context） |
 | `/skills`、`/skill:<name>` | 技能列表与调用 |
-| `/mode [standard\|minimal\|code\|cordis]` | 切换后端 agent 组合；输入空格后显示模式选项与说明 |
+| `/mode [preset]` | 切换后端 agent 组合（官方四预设 + `~/.dsh/.agent-presets` 下安装的预设）；无参循环，输入空格后显示选项 |
+| `/permission [preset]` | 切换权限模式；输入空格后显示当前部署可用的权限预设与说明 |
 | `/theme [name]` | 查看可用主题或切换主题 |
 | `/settings` | 打开可视化设置（主题、标题模型） |
 | `/help` | 快捷键与命令列表（随 locale 本地化） |
@@ -153,7 +157,7 @@ settings provider 时，`/theme` 与 `/settings` 的主题选择会写入
 ```yaml
 - id: tui
   config:
-    mode: standard           # standard | minimal | code | cordis
+    mode: standard           # 任意已发现预设 id：官方四值或本地安装的预设
     locale: zh-CN            # zh-CN（默认）| en
     defaultReasoningEffort: max # 新会话默认思考强度
     theme:
@@ -162,6 +166,18 @@ settings provider 时，`/theme` 与 `/settings` 的主题选择会写入
         accent: [255, 100, 100]
         userMessageBg: [24, 24, 37]
 ```
+
+- **本地预设**：`/mode` 从 dsh 预设注册表动态发现预设——官方四个
+  `standard`/`minimal`/`code`/`cordis` 之外，`$DSH_HOME/.agent-presets` 下安装的
+  任意预设（目录名即 id，需含 `agent.cordis.yml` 与可选 `preset.yml`）都会自动
+  进入 `/mode` 的无参循环与空格补全，并显示其元数据名称与描述。`mode` 配置项
+  也可直接写本地预设 id 作为启动默认。损坏的预设不会进入循环与补全，但仍会
+  在注册表中报告原因。
+- **权限模式**：`/permission` 管理沙箱与审批策略组合。dsh 默认提供
+  `read-only`（只读）、`workspace-write`（工作区写入）和
+  `full-access`（完全访问，不请求审批）；进入该模式时启动会弹出提醒，并以当前主题
+  的强调色显著标识。具体选项以当前部署的权限预设表为准，
+  自定义 preset 也会自动出现在命令提示与补全中。
 
 - **主题**：内置 `catppuccin`（OMP 17.2.15 当前主题）与 `tokyo-night`。
   `theme.custom` 可按角色名覆盖任意颜色（前景/背景均支持，值取 RGB 三元组）；

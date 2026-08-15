@@ -54,6 +54,7 @@ describe('parseArguments', () => {
 describe('text sanitizers', () => {
   it('strips control characters and collapses newlines inline', () => {
     assert.equal(displayText('a\u0007b'), 'ab')
+    assert.equal(displayText('a\rb'), 'a\nb')
     assert.equal(displayInlineText('a\r\nb'), 'a b')
   })
 })

@@ -3,10 +3,12 @@
  * differential renderer and collapse newlines for single-row contexts.
  */
 
-/** Replace control characters (except tab/newline handling by callers) with nothing. */
+/** Normalize carriage-return line endings, then remove terminal control characters. */
 export function displayText(text: string): string {
+  // Keep LF as the only line separator: CRLF and bare CR both become newlines.
+  const normalized = text.replace(/\r\n?/g, '\n')
   // eslint-disable-next-line no-control-regex
-  return text.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
+  return normalized.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '')
 }
 
 /** Collapse newlines and carriage returns into a single space for inline rows. */

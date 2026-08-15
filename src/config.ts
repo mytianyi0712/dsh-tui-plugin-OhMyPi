@@ -6,7 +6,7 @@
 import z from '@deepseek-ai/schemastery'
 import type { Locale } from './i18n.ts'
 
-/** Working modes map 1:1 to the shipped dsh agent presets (backend compositions). */
+/** Shipped working modes (backend compositions); locally installed presets use any other id. */
 export type UiMode = 'standard' | 'minimal' | 'code' | 'cordis'
 
 /** Theme and prompt-template settings. */
@@ -38,8 +38,8 @@ export interface TuiConfig {
   /** Reasoning effort used before a session has a recorded request header. */
   defaultReasoningEffort?: string
   theme?: TuiThemeConfig
-  /** Backend composition preset for blank sessions: `standard`, `minimal`, `code` (PTC), or `cordis` (creator). */
-  mode?: UiMode
+  /** Backend composition preset for blank sessions: any shipped or locally installed preset id. */
+  mode?: string
   /** UI language; `zh-CN` is the default, `en` is fully supported. */
   locale?: Locale
   /** Terminal title. */
@@ -47,12 +47,12 @@ export interface TuiConfig {
 }
 
 export const DEFAULT_LEFT_PROMPT = '${mode}${cwd}${git/worktree}'
-export const DEFAULT_RIGHT_PROMPT = '${model}${effort}${context}'
+export const DEFAULT_RIGHT_PROMPT = '${model}${effort}${context}${permission}'
 export const DEFAULT_INPUT_PROMPT = '${indicator}'
 export const DEFAULT_INPUT_PLACEHOLDER = ''
 
 export const DEFAULT_THEME = 'catppuccin'
-export const DEFAULT_MODE: UiMode = 'standard'
+export const DEFAULT_MODE: string = 'standard'
 export const DEFAULT_LOCALE: Locale = 'zh-CN'
 export const DEFAULT_REASONING_EFFORT = 'max'
 
@@ -76,7 +76,7 @@ export const TuiConfigSchema: z<TuiConfig> = z.object({
   maxToolOutputLines: z.number().step(1).min(1).default(6),
   defaultReasoningEffort: z.string().default(DEFAULT_REASONING_EFFORT),
   theme: themeSchema,
-  mode: z.union([z.const('standard'), z.const('minimal'), z.const('code'), z.const('cordis')]).default(DEFAULT_MODE),
+  mode: z.string().default(DEFAULT_MODE),
   locale: z.union([z.const('zh-CN'), z.const('en')]).default(DEFAULT_LOCALE),
   title: z.string().default('dsh'),
 })
@@ -99,7 +99,7 @@ export interface ResolvedTuiConfig {
   maxToolOutputLines: number
   defaultReasoningEffort: string
   theme: ResolvedTuiThemeConfig
-  mode: UiMode
+  mode: string
   locale: Locale
   title: string
 }

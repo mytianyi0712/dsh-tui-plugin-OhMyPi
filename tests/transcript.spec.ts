@@ -85,6 +85,19 @@ describe('transcript components respect the render width', () => {
     assert.match(settled[1]!, /^╭─── • Read: Reading entrypoint/)
     assert.match(settled[2]!, /^├─── Output /)
   })
+  it('strips carriage returns from multiline tool output', () => {
+    const powershell = new ToolCardComponent('powershell', '{}', 6, palette)
+    powershell.updateResult({
+      message: {
+        content: [{ content: [{ type: 'text', text: 'first\r\nsecond\rthird' }], isError: false }],
+      },
+    } as never)
+    const rows = render(powershell, 48)
+    assert.ok(rows.every(row => !row.includes('\r')))
+    assert.ok(rows.some(row => row.includes('first')))
+    assert.ok(rows.some(row => row.includes('second')))
+    assert.ok(rows.some(row => row.includes('third')))
+  })
 
   it('frames injected context separately from unframed model reasoning', () => {
     const context = render(new ContextCardComponent(
@@ -188,6 +201,35 @@ describe('composer chrome', () => {
     assert.ok(row!.includes(' main '))
     assert.ok(row!.endsWith(' '))
   })
+  it('uses compact built-in segments before truncating a narrow sidebar', () => {
+    const values: Record<string, string> = {
+      mode: 'Anchored Standard (experimental)  ',
+      cwd: ' D:/Projects/dsh',
+      'git/worktree': '   main',
+      'mode/compact': 'anchored-standard',
+      'cwd/compact': ' dsh',
+      'git/worktree/compact': ' main',
+    }
+    const status = new StatusLineComponent(
+      [{ type: 'value', name: 'mode' }, { type: 'value', name: 'cwd' }, { type: 'value', name: 'git/worktree' }],
+      name => values[name],
+      palette,
+    )
+    const [row] = status.render(42)
+    assert.equal(visibleWidth(row!), 42)
+    assert.ok(row!.includes('anchore'))
+    assert.ok(row!.includes('…'))
+    assert.ok(!row!.includes('anchored-standard'))
+    assert.ok(row!.includes(' dsh'))
+    assert.ok(row!.includes(' main'))
+    assert.ok(!row!.includes('Anchored Standard (experimental)'))
+
+    const [narrowRow] = status.render(30)
+    assert.equal(visibleWidth(narrowRow!), 30)
+    assert.ok(narrowRow!.includes('main'))
+    assert.ok(!narrowRow!.includes(' dsh'))
+  })
+
 
   it('renders the footer as model · effort · used/limit below the rail', () => {
     const values: Record<string, string> = {
@@ -203,6 +245,44 @@ describe('composer chrome', () => {
     const [row] = footer.render(48)
     assert.equal(row, '  deepseek-v4-flash · max · ctx 100k/1m')
     assert.ok(visibleWidth(row!) <= 48)
+  })
+  it('renders permission state immediately after context usage', () => {
+    const values: Record<string, string> = {
+      model: 'deepseek-v4-flash',
+      effort: ' · max',
+      context: ' · ctx 0/1m',
+      permission: ' · workspace-write',
+      'model/compact': 'deepseek-v4-flash',
+      'effort/compact': 'max',
+      'context/compact': 'ctx 0/1m',
+      'permission/compact': 'workspace-write',
+    }
+    const footer = new ComposerFooterComponent(
+      [
+        { type: 'value', name: 'model' },
+        { type: 'value', name: 'effort' },
+        { type: 'value', name: 'context' },
+        { type: 'value', name: 'permission' },
+      ],
+      name => values[name],
+      palette,
+    )
+    assert.equal(
+      footer.render(64)[0],
+      '  deepseek-v4-flash · max · ctx 0/1m · workspace-write',
+    )
+    assert.equal(
+      footer.render(42)[0],
+      '  de…sh · max · ctx 0/1m · workspace-write',
+    )
+    assert.equal(
+      footer.render(34)[0],
+      '  … · max · 0/1m · workspace-write',
+    )
+    assert.equal(
+      footer.render(30)[0],
+      '  max · 0/1m · workspace-write',
+    )
   })
 
   it('uses Flash/max for a new session and the last request route for history', () => {
@@ -279,8 +359,8 @@ describe('composer chrome', () => {
     assert.equal(visibleWidth(top!), 72)
   })
   it('renders a faint expected-argument hint inside the composer', () => {
-    const hint = new CommandHintComponent(() => '/mode <standard|minimal|code|cordis>', palette)
-    assert.deepEqual(hint.render(48), ['  /mode <standard|minimal|code|cordis>'])
+    const hint = new CommandHintComponent(() => '/mode <standard|minimal|code|cordis|user preset>', palette)
+    assert.deepEqual(hint.render(56), ['  /mode <standard|minimal|code|cordis|user preset>'])
     const hidden = new CommandHintComponent(() => undefined, palette)
     assert.deepEqual(hidden.render(48), [])
   })
