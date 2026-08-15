@@ -1,7 +1,8 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { Container, visibleWidth } from '@earendil-works/pi-tui'
+import { CombinedAutocompleteProvider, Container, Editor, visibleWidth } from '@earendil-works/pi-tui'
 import { createPalette, markdownTheme } from '../src/theme.ts'
+import { createTranslator } from '../src/i18n.ts'
 import {
   AssistantStreamController,
   ContextCardComponent,
@@ -12,11 +13,21 @@ import {
   ThinkingBlock,
   UserMessageComponent,
 } from '../src/components/transcript.ts'
-import { InputBorderComponent, StatusLineComponent } from '../src/components/status.ts'
+import {
+  CommandHintComponent,
+  ComposerFooterComponent,
+  InputBorderComponent,
+  StatusLineComponent,
+  chooseReasoningEffort,
+  formatContextTokens,
+  resolveSessionModelSelection,
+} from '../src/components/status.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 
 const palette = createPalette(false, 'dark', true)
 const mdTheme = markdownTheme(palette)
+const t = createTranslator('zh-CN')
 
 /** Collect a component's rows by rendering it inside a container. */
 function render(component: { render(width: number): string[] }, width: number): string[] {
@@ -109,9 +120,24 @@ describe('transcript components respect the render width', () => {
       session: { id: 'session-1', header: { cwd: 'C:/work' } },
     } as unknown as Agent
     for (const width of widths) {
-      const header = new HeaderComponent(agent, () => longText, palette, false)
+      const header = new HeaderComponent(agent, () => longText, palette, false, t)
       for (const row of render(header, width)) assert.ok(visibleWidth(row) <= width)
     }
+  })
+
+  it('shows the active session selection instead of Agent creation defaults', () => {
+    const agent = {
+      options: { model: 'deepseek-v4-flash', provider: 'deepseek-official' },
+      session: { id: 'session-1', header: { cwd: 'C:/work' } },
+    } as unknown as Agent
+    const header = new HeaderComponent(agent, () => undefined, palette, false, t, () => ({
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-pro',
+      reasoningEffort: ReasoningEffortId('max'),
+    }))
+    const output = render(header, 80).join('\n')
+    assert.ok(output.includes('deepseek-v4-pro'))
+    assert.ok(!output.includes('deepseek-v4-flash'))
   })
 })
 
@@ -143,21 +169,162 @@ describe('transcript chronology', () => {
 })
 
 describe('composer chrome', () => {
-  it('embeds left and right status groups in an exact-width top rail', () => {
-    const values: Record<string, string> = { left: 'path', right: 'model' }
+  it('keeps mode and Git visible while collapsing an overlong directory', () => {
+    const values: Record<string, string> = {
+      mode: '标准  ',
+      cwd: ' D:/Projects/a/very/long/workspace/path',
+      'git/worktree': '  main',
+    }
     const status = new StatusLineComponent(
-      [{ type: 'value', name: 'left' }],
-      [{ type: 'value', name: 'right' }],
+      [{ type: 'value', name: 'mode' }, { type: 'value', name: 'cwd' }, { type: 'value', name: 'git/worktree' }],
       name => values[name],
       palette,
     )
-    const [row] = status.render(40)
-    assert.equal(visibleWidth(row!), 40)
-    assert.ok(row!.startsWith('─── path '))
-    assert.ok(row!.endsWith(' model ───'))
+    const [row] = status.render(32)
+    assert.equal(visibleWidth(row!), 32)
+    assert.ok(row!.startsWith(' ─── '))
+    assert.ok(row!.includes('标准  '))
+    assert.ok(row!.includes('…'))
+    assert.ok(row!.includes(' main'))
+    assert.ok(row!.endsWith(' '))
   })
 
-  it('closes the editor with a full-width muted rail', () => {
-    assert.equal(new InputBorderComponent(palette).render(12)[0], '────────────')
+  it('renders the footer as model · effort · used/limit below the rail', () => {
+    const values: Record<string, string> = {
+      model: 'deepseek-v4-flash',
+      effort: ' · max',
+      context: ' · ctx 100k/1m',
+    }
+    const footer = new ComposerFooterComponent(
+      [{ type: 'value', name: 'model' }, { type: 'value', name: 'effort' }, { type: 'value', name: 'context' }],
+      name => values[name],
+      palette,
+    )
+    const [row] = footer.render(48)
+    assert.equal(row, '  deepseek-v4-flash · max · ctx 100k/1m')
+    assert.ok(visibleWidth(row!) <= 48)
+  })
+
+  it('uses Flash/max for a new session and the last request route for history', () => {
+    const fallback = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
+    assert.deepEqual(resolveSessionModelSelection(undefined, fallback, 'max'), {
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+      reasoningEffort: 'max',
+    })
+    assert.deepEqual(resolveSessionModelSelection({
+      config: {
+        provider: 'deepseek-official',
+        model: 'deepseek-v4-pro',
+        reasoningEffort: ReasoningEffortId('xhigh'),
+      },
+    }, fallback, 'max'), {
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-pro',
+      reasoningEffort: 'xhigh',
+    })
+    assert.deepEqual(resolveSessionModelSelection(undefined, {
+      ...fallback,
+      reasoningEffort: ReasoningEffortId('high'),
+    }, 'max'), {
+      ...fallback,
+      reasoningEffort: 'high',
+    })
+  })
+
+  it('selects or cycles only through efforts advertised by the active model', () => {
+    const off = { id: ReasoningEffortId('off'), name: 'Off' }
+    const high = { id: ReasoningEffortId('high'), name: 'High' }
+    const max = { id: ReasoningEffortId('max'), name: 'Max' }
+    const efforts = [off, high, max]
+
+    assert.deepEqual(chooseReasoningEffort(efforts, max.id, ''), { kind: 'selected', effort: off })
+    assert.deepEqual(chooseReasoningEffort(efforts, off.id, 'high'), { kind: 'selected', effort: high })
+    assert.deepEqual(chooseReasoningEffort(efforts, high.id, 'high'), { kind: 'already', effort: high })
+    assert.deepEqual(chooseReasoningEffort(efforts, high.id, 'extreme'), { kind: 'unknown', requested: 'extreme' })
+    assert.deepEqual(chooseReasoningEffort([], high.id, ''), { kind: 'unsupported' })
+  })
+
+  it('formats context usage as compact used/limit values', () => {
+    assert.equal(formatContextTokens(0), '0')
+    assert.equal(formatContextTokens(100_000), '100k')
+    assert.equal(formatContextTokens(1_000_000), '1m')
+    assert.equal(formatContextTokens(1_200_000), '1.2m')
+  })
+
+  it('paints inset composer rails blue and derives the Powerline tail from its surface', () => {
+    const enabled = createPalette(true, 'dark', true)
+    const border = '\u001b[38;2;137;180;250m'
+    const [rail] = new InputBorderComponent(enabled).render(12)
+    assert.equal(rail, ` ${border}${'─'.repeat(10)}\u001b[39m `)
+    const [top] = new StatusLineComponent([], () => undefined, enabled).render(20)
+    assert.ok(top!.startsWith(` ${border}───\u001b[39m`))
+    assert.equal(visibleWidth(top!), 20)
+    assert.equal(enabled.statusLineTail(''), '\u001b[38;2;17;17;27m\u001b[39m')
+  })
+  it('renders a faint expected-argument hint inside the composer', () => {
+    const hint = new CommandHintComponent(() => '/mode <standard|minimal|code|cordis>', palette)
+    assert.deepEqual(hint.render(48), ['  /mode <standard|minimal|code|cordis>'])
+    const hidden = new CommandHintComponent(() => undefined, palette)
+    assert.deepEqual(hidden.render(48), [])
+  })
+
+  it('returns annotated preset options immediately after a command space', async () => {
+    const provider = new CombinedAutocompleteProvider([{
+      name: 'mode',
+      description: '切换模式',
+      argumentHint: '<standard|minimal>',
+      getArgumentCompletions: () => [
+        { value: 'standard', label: 'standard — 标准', description: '完整 Agent 与工具链' },
+        { value: 'minimal', label: 'minimal — 极简', description: 'bash + 编辑器双工具' },
+      ],
+    }], 'D:/work')
+    const suggestions = await provider.getSuggestions(
+      ['/mode '],
+      0,
+      '/mode '.length,
+      { signal: new AbortController().signal },
+    )
+    assert.equal(suggestions?.prefix, '')
+    assert.deepEqual(suggestions?.items.map(item => [item.value, item.description]), [
+      ['standard', '完整 Agent 与工具链'],
+      ['minimal', 'bash + 编辑器双工具'],
+    ])
+  })
+
+  it('submits an exact slash-command argument with one Enter press', async () => {
+    const identity = (text: string): string => text
+    const editor = new Editor({
+      terminal: { rows: 24 },
+      requestRender: () => undefined,
+    } as never, {
+      borderColor: identity,
+      selectList: {
+        selectedPrefix: identity,
+        selectedText: identity,
+        description: identity,
+        scrollInfo: identity,
+        noMatch: identity,
+      },
+    })
+    editor.setAutocompleteProvider(new CombinedAutocompleteProvider([{
+      name: 'mode',
+      description: '切换模式',
+      argumentHint: '<standard|minimal>',
+      getArgumentCompletions: () => [
+        { value: 'standard', label: 'standard — 标准' },
+        { value: 'minimal', label: 'minimal — 极简' },
+      ],
+    }], 'D:/work'))
+    let submitted: string | undefined
+    editor.onSubmit = (text): void => { submitted = text }
+
+    for (const character of '/mode minimal') editor.handleInput(character)
+    await new Promise<void>(resolve => setImmediate(resolve))
+    assert.equal(editor.isShowingAutocomplete(), true)
+
+    editor.handleInput('\r')
+    assert.equal(submitted, '/mode minimal')
+    assert.equal(editor.getText(), '')
   })
 })

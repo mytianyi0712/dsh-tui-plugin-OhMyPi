@@ -9,7 +9,8 @@ OMP 风格的 DeepSeek Harness（dsh）终端界面——一个独立的 profile
 
 已适配的主要结构：响应式双栏欢迎页、无边框全宽用户消息、带来源标题与独立边框的
 注入上下文卡、无角色标题的助手正文、斜体弱化思考文本、OMP 三字符标题帽工具卡、
-`Output` 分隔栏，以及嵌入编辑器横线的左右状态段。
+`Output` 分隔栏，以及 Powerline「模式/目录/Git」顶栏 + 「模型 · 思考等级 · ctx
+占用」底栏的输入框。
 
 ```
 ╭─── dsh ─────────────────────────────────────────────────────────╮
@@ -17,7 +18,10 @@ OMP 风格的 DeepSeek Harness（dsh）终端界面——一个独立的 profile
 │          D S H              │ / for commands                     │
 │      deepseek-v4-pro        │ Session / Workspace                │
 ╰─────────────────────────────┴────────────────────────────────────╯
-───  D:\Projects\dsh   main ─────── 󰚩 deepseek-v4-pro  ↑0 ↓0 ───
+ ─── 标准   D:\Projects\dsh   main ─────────────────────────────────── 
+
+ ────────────────────────────────────────────────────────────────────────── 
+  deepseek-v4-flash · max · ctx 100k/1m
 
  Read: Reading theme implementation
 
@@ -26,6 +30,11 @@ OMP 风格的 DeepSeek Harness（dsh）终端界面——一个独立的 profile
 │ src/theme.ts                                                     │
 ╰──────────────────────────────────────────────────────────────────╯
 ```
+
+状态栏中的模型、思考等级和上下文用量均来自当前运行时与会话计量；上图数值仅用于
+展示格式。新会话默认使用 `deepseek-v4-flash · max`；历史会话恢复最后一个真实
+`request/header` 的模型与思考等级。上下文显示「预估已用/模型容量」，无法解析
+模型容量或估算输入时回退为 `ctx 0/1m`。
 
 ## 架构
 
@@ -105,22 +114,70 @@ dsh web --port 8080                   # 透传，照常启动官方 web
 
 | 键 | 作用 |
 |---|---|
-| `Ctrl+C` | 中断当前回合（流式内容保留） |
+| `Ctrl+C` | 中断当前回合（流式内容保留）；再次按下（2 秒内）退出程序 |
 | `Ctrl+O` | 工具卡折叠循环：collapsed → expanded → hidden |
 | `Ctrl+R` | 显示/隐藏思考块 |
-| `Tab` / `@` / 路径 | 斜杠命令、`@` 引用与文件路径补全 |
+| `Tab` / `@` / 路径 / 命令空格 | 斜杠命令、参数选项、`@` 引用与文件路径补全 |
 
 | 命令 | 作用 |
 |---|---|
 | `/model` | 选择 provider / model / reasoning effort（持久化到 settings） |
-| `/resume [id]` | 进程内切换会话（无参列出持久化会话选择器） |
+| `/think [level]` | 切换当前模型的思考等级；无参按模型声明顺序循环，输入空格后显示可用等级 |
+| `/new` | 在当前项目、模型和工作模式下新建会话 |
+| `/resume [id]` | 进程内切换会话（无参仅列出当前项目的持久化会话；显式 ID 也会校验项目归属） |
 | `/details` | 会话诊断卡（标题/目录/模型/agent/tokens/context） |
 | `/skills`、`/skill:<name>` | 技能列表与调用 |
-| `/palette` | 当前角色调色板表 |
-| `/help` | 快捷键与命令列表 |
+| `/mode [standard\|minimal\|code\|cordis]` | 切换后端 agent 组合；输入空格后显示模式选项与说明 |
+| `/theme [name]` | 查看可用主题或切换主题 |
+| `/settings` | 打开可视化设置（主题、标题模型） |
+| `/help` | 快捷键与命令列表（随 locale 本地化） |
 
 `@[label](dsh-session:<id>)` 提及会把目标会话的模型可见快照注入当前会话
 （`ctx.sessionReferenceResolver`），模型首步即可读到。
+
+新建但未产生用户消息、助手消息或工具调用的空白会话不会落库，也不会出现在
+`/resume` 列表中。首次提交对话时才会物化会话日志。
+
+## 主题、模式与本地化
+
+所有外观设置都由 `tui` 行的配置驱动（在 profile 的 `cordis.patch.yml` 中按
+`id: tui` 覆盖，或经 dsh settings 注入）。运行中可用 `/mode`、`/think`、`/theme`
+临时切换；`/think` 与 `/model` 使用同一模型选择设置并在后续会话中保留，存在官方
+settings provider 时，`/theme` 与 `/settings` 的主题选择会写入
+`$DSH_HOME/settings.yaml`，重启后保留。
+
+`/settings` 提供可扩展的选择器入口：当前包含主题和标题模型两项。标题模型
+设置写入 `session-title` 分区；新会话首条用户消息会先生成确定性短标题，再在
+后台用所选模型异步改写，模型失败时保留短标题。
+
+```yaml
+- id: tui
+  config:
+    mode: standard           # standard | minimal | code | cordis
+    locale: zh-CN            # zh-CN（默认）| en
+    defaultReasoningEffort: max # 新会话默认思考强度
+    theme:
+      name: catppuccin       # catppuccin（默认）| tokyo-night
+      custom:                # 可选：逐角色覆盖 truecolor
+        accent: [255, 100, 100]
+        userMessageBg: [24, 24, 37]
+```
+
+- **主题**：内置 `catppuccin`（OMP 17.2.15 当前主题）与 `tokyo-night`。
+  `theme.custom` 可按角色名覆盖任意颜色（前景/背景均支持，值取 RGB 三元组）；
+  非法角色名与畸形值会被静默忽略。`/theme` 列出主题，`/palette` 查看当前
+  角色的实际颜色。
+- **模式**：切换 **dsh 后端的 agent 组合**（官方 shipped presets），不改外观：
+  - `standard` 标准模式：完整编码 Agent（文件编辑、Shell、网页检索、Skills、计划、目标、子代理、工作流）
+  - `minimal` 极简模式：固定极简 system prompt，仅持久 bash + `str_replace_editor` 两个工具
+  - `code` PTC 模式：标准全部能力 + Code Mode SDK（模型用 TypeScript 程序组合多步操作）
+  - `cordis` 创造模式：标准全部能力 + 运行时检查与 preset 创作指导（用于创建自定义 Agent preset）
+  
+  切换仅对空白会话生效（官方规则：中途换组合会让已记录的工具调用失去对应 schema），
+  切换结果以 `agent-preset/selected` 事件写入会话日志，恢复会话时自动沿用；
+  `mode` 配置决定新会话的初始组合。`/mode` 无参时按顺序循环切换。
+- **本地化**：`locale` 选择 UI 语言，当前内置 `zh-CN` 与 `en`；新增语言只需
+  在 `src/i18n.ts` 的字典中添加同键集合的翻译（测试强制键集合一致）。
 
 ## 开发
 

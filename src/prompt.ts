@@ -69,9 +69,10 @@ export interface TuiPromptValueHandle {
 }
 
 /**
- * The prompt-value registry (`ctx.tuiPrompt`). Built-ins register cwd, git,
- * model, tokens, context, queued, symbol, and indicator; plugins may register
- * their own `${custom}` fragments and subscribe to any change.
+ * The prompt-value registry (`ctx.tuiPrompt`). Built-ins register cwd, Git,
+ * mode, model, reasoning effort, tokens, context, queue state, symbol, and
+ * indicator; plugins may register their own `${custom}` fragments and
+ * subscribe to any change.
  */
 export class TuiPrompt extends Service {
   static inject: string[] = []

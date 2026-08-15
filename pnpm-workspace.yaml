@@ -1,6 +1,9 @@
 packages:
   - .
 
+allowBuilds:
+  koffi: set this to true or false
+
 minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-agent-loop@0.1.0-rc.6'
   - '@deepseek-ai/dsh-agent@0.1.0-rc.6'

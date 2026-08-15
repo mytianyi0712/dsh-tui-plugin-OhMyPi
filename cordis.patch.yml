@@ -7,15 +7,19 @@
 # (--resume/--session/--help) and provides tuiStartup; agent-loop and the TUI
 # row both inject it, so the agent is created before the TUI mounts.
 
+- id: session-title-llm
+  name: '@deepseek-ai/dsh-session-title-first-prompt-llm'
+  disabled: true
+
 - id: agent-loop
-  inject: [tuiStartup]
+  inject: [tuiStartup, conversationPersistenceGate]
   config:
     agents:
       - id: main
         sessionId: !!js ctx.tuiStartup.sessionId
         resumeSessionId: !!js ctx.tuiStartup.resumeSessionId
         provider: deepseek-official
-        model: deepseek-v4-pro
+        model: deepseek-v4-flash
         cwd: !!js process.cwd()
 
 - id: system-prompt
@@ -42,6 +46,9 @@
     mode: native
 
 - insert:
+    - id: session-persistence-conversation-gate
+      name: 'dsh-omp-tui/session-persistence'
+
     - id: session-reference
       name: '@deepseek-ai/dsh-session-reference'
 
@@ -69,6 +76,24 @@
       config:
         refreshIntervalMs: 900000
 
+    # Preset roster: exposes ctx.agentPresets so the TUI can compose the agent
+    # from the shipped `standard`/`minimal`/`code`/`cordis` presets and switch
+    # between them on a blank session (official backend working modes).
+    - id: agent-presets
+      name: '@deepseek-ai/dsh-agent-presets'
+      config:
+        default: standard
+
+    # Profile-owned provider: same first-prompt contract with persistent route settings.
+    - id: session-title-llm-tui
+      name: 'dsh-omp-tui/session-title'
+      config:
+        targetWords: 5
+        targetCjkCharacters: 10
+        maxInputBytes: 4096
+        maxOutputTokens: 64
+        timeoutMs: 60000
+
     - id: tui-prompt
       name: 'dsh-omp-tui/prompt'
 
@@ -82,6 +107,7 @@
         sessionId: !!js ctx.tuiStartup.sessionId ?? ctx.tuiStartup.resumeSessionId
         showReasoning: true
         maxToolOutputLines: 6
+        defaultReasoningEffort: max
         title: dsh
 
     - id: tool-ask-user

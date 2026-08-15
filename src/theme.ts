@@ -59,6 +59,8 @@ export interface Palette {
   toolSuccessBg: ColorRole
   toolErrorBg: ColorRole
   statusLineBg: ColorRole
+  /** Powerline tail foreground, derived from `statusLineBg` so both always match. */
+  statusLineTail: ColorRole
   bold: AttributeRole
   italic: AttributeRole
   underline: AttributeRole
@@ -93,61 +95,186 @@ type SpecTable = {
   readonly attributes: Readonly<Record<typeof ATTRIBUTE_ROLES[number], RoleSpec>>
 }
 
+/** One RGB channel triple for a truecolor role. */
+export type Rgb = readonly [number, number, number]
+
+/** A named truecolor theme: every color role except `text` has an RGB value. */
+export interface ThemeDefinition {
+  readonly id: string
+  readonly label: string
+  readonly description: string
+  readonly roles: Readonly<Record<ColorRoleName, Rgb>>
+}
+
+export type ColorRoleName = typeof COLOR_ROLES[number]
+
+/** Role purpose sentences shown by `/palette`, shared by every theme. */
+const ROLE_PURPOSES: Readonly<Record<ColorRoleName, string>> = {
+  text: 'Body text, using the terminal foreground',
+  muted: 'Secondary prose and tool output',
+  dim: 'Quiet chrome, metadata, and inactive content',
+  accent: 'Primary emphasis and the composer rails',
+  code: 'Inline code',
+  success: 'Successful operations and additions',
+  warning: 'Pending operations and warnings',
+  error: 'Failures and removals',
+  border: 'Accent frame chrome',
+  borderMuted: 'Recessed frame and editor chrome',
+  toolTitle: 'Tool-card titles',
+  toolOutput: 'Tool-card output',
+  path: 'Status-line path',
+  git: 'Clean Git branch',
+  model: 'Status-line model',
+  context: 'Status-line context usage',
+  spend: 'Status-line token usage',
+  statusSep: 'Status-line separators',
+  thinking: 'Reasoning prose',
+  userMessageBg: 'User-message surface (mantle)',
+  toolPendingBg: 'Pending tool surface (surface0)',
+  toolSuccessBg: 'Successful tool surface (mantle)',
+  toolErrorBg: 'Failed tool surface (crust)',
+  statusLineBg: 'Status segment surface (crust)',
+}
+
+/** Background roles get `48;2;…` spans; everything else is foreground. */
+const BACKGROUND_ROLES = new Set<ColorRoleName>([
+  'userMessageBg', 'toolPendingBg', 'toolSuccessBg', 'toolErrorBg', 'statusLineBg',
+])
+
+/** OMP 17.2.15 `dark-catppuccin`, the default local OMP dark theme. */
+const CATPPUCCIN_ROLES: Readonly<Record<ColorRoleName, Rgb>> = {
+  text: [0, 0, 0], // placeholder: text stays the terminal default
+  muted: [127, 132, 156],
+  dim: [108, 112, 134],
+  accent: [250, 179, 135],
+  code: [245, 224, 220],
+  success: [166, 227, 161],
+  warning: [249, 226, 175],
+  error: [243, 139, 168],
+  border: [137, 180, 250],
+  borderMuted: [49, 50, 68],
+  toolTitle: [180, 190, 254],
+  toolOutput: [127, 132, 156],
+  path: [148, 226, 213],
+  git: [249, 226, 175],
+  model: [245, 194, 231],
+  context: [203, 166, 247],
+  spend: [116, 199, 236],
+  statusSep: [69, 71, 90],
+  thinking: [127, 132, 156],
+  userMessageBg: [24, 24, 37],
+  toolPendingBg: [49, 50, 68],
+  toolSuccessBg: [24, 24, 37],
+  toolErrorBg: [17, 17, 27],
+  statusLineBg: [17, 17, 27],
+}
+
+/** Tokyo Night variant, the alternative built-in theme. */
+const TOKYO_NIGHT_ROLES: Readonly<Record<ColorRoleName, Rgb>> = {
+  text: [0, 0, 0],
+  muted: [169, 177, 214],
+  dim: [86, 95, 137],
+  accent: [122, 162, 247],
+  code: [192, 202, 245],
+  success: [158, 206, 106],
+  warning: [224, 175, 104],
+  error: [247, 118, 142],
+  border: [76, 86, 106],
+  borderMuted: [41, 46, 66],
+  toolTitle: [192, 202, 245],
+  toolOutput: [169, 177, 214],
+  path: [125, 207, 255],
+  git: [224, 175, 104],
+  model: [187, 154, 247],
+  context: [42, 195, 222],
+  spend: [125, 207, 255],
+  statusSep: [59, 66, 97],
+  thinking: [122, 162, 247],
+  userMessageBg: [31, 35, 53],
+  toolPendingBg: [31, 35, 53],
+  toolSuccessBg: [31, 45, 42],
+  toolErrorBg: [45, 31, 42],
+  statusLineBg: [22, 22, 30],
+}
+
+/** Built-in themes; the first entry is the default when `theme.name` is unset or unknown. */
+export const BUILTIN_THEMES: readonly ThemeDefinition[] = [
+  { id: 'catppuccin', label: 'Catppuccin', description: 'OMP 17.2.15 dark-catppuccin (default)', roles: CATPPUCCIN_ROLES },
+  { id: 'tokyo-night', label: 'Tokyo Night', description: 'Tokyo-Night family variant', roles: TOKYO_NIGHT_ROLES },
+]
+
+/** Find a built-in theme by id, falling back to the default theme. */
+export function findTheme(id: string | undefined): ThemeDefinition {
+  return BUILTIN_THEMES.find(theme => theme.id === id) ?? BUILTIN_THEMES[0]!
+}
+
+/** User-supplied per-role overrides; triples are validated at resolve time. */
+export type ThemeCustom = Readonly<Record<string, readonly number[]>>
+
+/**
+ * Merge a built-in theme's roles with user overrides. Unknown role names and
+ * malformed RGB values are dropped silently; `text` cannot be overridden.
+ */
+export function resolveThemeRoles(
+  name: string | undefined,
+  custom: ThemeCustom | undefined,
+): Readonly<Record<ColorRoleName, Rgb>> {
+  const base = findTheme(name).roles
+  if (custom === undefined) return base
+  const merged = { ...base } as Record<ColorRoleName, Rgb>
+  for (const key of Object.keys(custom)) {
+    if (key === 'text') continue
+    const rgb = custom[key]
+    if (key in merged && Array.isArray(rgb) && rgb.length === 3 && rgb.every(channel => Number.isFinite(channel))) {
+      merged[key as ColorRoleName] = [rgb[0]!, rgb[1]!, rgb[2]!]
+    }
+  }
+  return merged
+}
+
+/** Attribute specs shared by every truecolor theme. */
+const ATTRIBUTE_SPECS: Readonly<Record<typeof ATTRIBUTE_ROLES[number], RoleSpec>> = {
+  bold: { open: '1', close: '22', purpose: 'Emphasis; composes with any color' },
+  italic: { open: '3', close: '23', purpose: 'Reasoning and hint prose' },
+  underline: { open: '4', close: '24', purpose: 'Links and selected labels' },
+  strike: { open: '9', close: '29', purpose: 'Struck-through Markdown' },
+  selected: { open: '7', close: '27', purpose: 'Reverse video for the active selection' },
+}
+
+/** The truecolor spec for one theme name plus optional per-role overrides. */
+export function themeSpec(
+  name: string | undefined,
+  custom: ThemeCustom | undefined,
+): SpecTable {
+  const roles = resolveThemeRoles(name, custom)
+  const colors = {} as Record<ColorRoleName, RoleSpec>
+  for (const role of COLOR_ROLES) {
+    if (role === 'text') {
+      colors.text = { open: '', close: '', purpose: ROLE_PURPOSES.text }
+      continue
+    }
+    const rgb = roles[role]
+    const bg = BACKGROUND_ROLES.has(role)
+    colors[role] = {
+      open: `${bg ? '48' : '38'};2;${rgb.join(';')}`,
+      close: bg ? '49' : '39',
+      purpose: ROLE_PURPOSES[role],
+    }
+  }
+  return { colors, attributes: ATTRIBUTE_SPECS }
+}
+
 /**
  * Every SGR code the TUI may emit, keyed by semantic role. `/palette` reads the
  * same table, preventing the diagnostic view from drifting from rendering.
  */
-export function paletteSpec(scheme: TerminalColorScheme, truecolor = false): SpecTable {
-  return truecolor && scheme === 'dark' ? catppuccinSpec() : ansiSpec(scheme)
-}
-
-/** OMP 17.2.15 `dark-catppuccin`, the active local OMP dark theme. */
-function catppuccinSpec(): SpecTable {
-  const fg = (rgb: readonly [number, number, number], purpose: string): RoleSpec => ({
-    open: `38;2;${rgb.join(';')}`,
-    close: '39',
-    purpose,
-  })
-  const bg = (rgb: readonly [number, number, number], purpose: string): RoleSpec => ({
-    open: `48;2;${rgb.join(';')}`,
-    close: '49',
-    purpose,
-  })
-  return {
-    colors: {
-      text: { open: '', close: '', purpose: 'Body text, using the terminal foreground' },
-      muted: fg([127, 132, 156], 'Secondary prose and tool output'),
-      dim: fg([108, 112, 134], 'Quiet chrome, metadata, and inactive content'),
-      accent: fg([250, 179, 135], 'Primary OMP emphasis (Catppuccin peach)'),
-      code: fg([245, 224, 220], 'Inline code (Catppuccin rosewater)'),
-      success: fg([166, 227, 161], 'Successful operations and additions'),
-      warning: fg([249, 226, 175], 'Pending operations and warnings'),
-      error: fg([243, 139, 168], 'Failures and removals'),
-      border: fg([137, 180, 250], 'Accent frame chrome'),
-      borderMuted: fg([49, 50, 68], 'Recessed frame and editor chrome'),
-      toolTitle: fg([180, 190, 254], 'Tool-card titles'),
-      toolOutput: fg([127, 132, 156], 'Tool-card output'),
-      path: fg([148, 226, 213], 'Status-line path'),
-      git: fg([166, 227, 161], 'Clean Git branch'),
-      model: fg([245, 194, 231], 'Status-line model'),
-      context: fg([203, 166, 247], 'Status-line context usage'),
-      spend: fg([116, 199, 236], 'Status-line token usage'),
-      statusSep: fg([69, 71, 90], 'Status-line separators'),
-      thinking: fg([127, 132, 156], 'Reasoning prose'),
-      userMessageBg: bg([24, 24, 37], 'User-message surface (mantle)'),
-      toolPendingBg: bg([49, 50, 68], 'Pending tool surface (surface0)'),
-      toolSuccessBg: bg([24, 24, 37], 'Successful tool surface (mantle)'),
-      toolErrorBg: bg([17, 17, 27], 'Failed tool surface (crust)'),
-      statusLineBg: bg([17, 17, 27], 'Status segment surface (crust)'),
-    },
-    attributes: {
-      bold: { open: '1', close: '22', purpose: 'Emphasis; composes with any color' },
-      italic: { open: '3', close: '23', purpose: 'Reasoning and hint prose' },
-      underline: { open: '4', close: '24', purpose: 'Links and selected labels' },
-      strike: { open: '9', close: '29', purpose: 'Struck-through Markdown' },
-      selected: { open: '7', close: '27', purpose: 'Reverse video for the active selection' },
-    },
-  }
+export function paletteSpec(
+  scheme: TerminalColorScheme,
+  truecolor = false,
+  themeName?: string,
+  themeCustom?: ThemeCustom,
+): SpecTable {
+  return truecolor && scheme === 'dark' ? themeSpec(themeName, themeCustom) : ansiSpec(scheme)
 }
 
 /** Scheme-adaptive ANSI fallback for terminals without truecolor. */
@@ -182,13 +309,7 @@ function ansiSpec(scheme: TerminalColorScheme): SpecTable {
       toolErrorBg: none('Failed tool background unavailable in ANSI fallback'),
       statusLineBg: none('Status background unavailable in ANSI fallback'),
     },
-    attributes: {
-      bold: { open: '1', close: '22', purpose: 'Emphasis; composes with any color' },
-      italic: { open: '3', close: '23', purpose: 'Reasoning and hint prose' },
-      underline: { open: '4', close: '24', purpose: 'Links and selected labels' },
-      strike: { open: '9', close: '29', purpose: 'Struck-through Markdown' },
-      selected: { open: '7', close: '27', purpose: 'Reverse video for the active selection' },
-    },
+    attributes: ATTRIBUTE_SPECS,
   }
 }
 
@@ -219,18 +340,36 @@ function ansi(spec: RoleSpec, enabled: boolean): (text: string) => string {
   }
 }
 
+/** Runtime theme selection: built-in name plus optional per-role RGB overrides. */
+export interface ThemeOverride {
+  readonly name?: string
+  readonly custom?: ThemeCustom
+}
+
 /**
- * Derive a palette from the active OMP-compatible spec.
+ * Derive a palette from the active theme spec.
  *
  * @param enabled - whether ANSI is emitted at all.
- * @param scheme - active terminal color scheme; the Catppuccin spec is dark-only.
+ * @param scheme - active terminal color scheme; truecolor themes apply to dark schemes only.
  * @param truecolor - terminal 24-bit support; omitted to auto-detect like OMP.
+ * @param theme - built-in theme name and per-role overrides; defaults to the first built-in theme.
  */
-export function createPalette(enabled: boolean, scheme: TerminalColorScheme = 'dark', truecolor?: boolean): Palette {
-  const spec = paletteSpec(scheme, truecolor ?? detectTruecolor())
+export function createPalette(
+  enabled: boolean,
+  scheme: TerminalColorScheme = 'dark',
+  truecolor?: boolean,
+  theme?: ThemeOverride,
+): Palette {
+  const spec = paletteSpec(scheme, truecolor ?? detectTruecolor(), theme?.name, theme?.custom)
   const roles = {} as Record<string, unknown>
   for (const name of COLOR_ROLES) roles[name] = ansi(spec.colors[name], enabled)
   for (const name of ATTRIBUTE_ROLES) roles[name] = ansi(spec.attributes[name], enabled)
+  const surface = spec.colors.statusLineBg
+  roles.statusLineTail = ansi({
+    open: surface.open.replace(/^48;/, '38;'),
+    close: surface.open.startsWith('48;') ? '39' : surface.close,
+    purpose: 'Powerline tail matching the status segment surface',
+  }, enabled)
   return roles as unknown as Palette
 }
 

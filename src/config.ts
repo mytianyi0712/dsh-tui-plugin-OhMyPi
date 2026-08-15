@@ -4,16 +4,24 @@
  */
 
 import z from '@deepseek-ai/schemastery'
+import type { Locale } from './i18n.ts'
+
+/** Working modes map 1:1 to the shipped dsh agent presets (backend compositions). */
+export type UiMode = 'standard' | 'minimal' | 'code' | 'cordis'
 
 /** Theme and prompt-template settings. */
 export interface TuiThemeConfig {
   /** Apply the ANSI palette at all. */
   color?: boolean
-  /** Paint the startup banner with the 24-bit DeepSeek brand gradient. */
+  /** Paint the startup banner with the 24-bit brand gradient. */
   truecolor?: boolean
-  /** Left-aligned template on the row above the editor. */
+  /** Built-in theme id, e.g. `catppuccin` or `tokyo-night`. */
+  name?: string
+  /** Per-role truecolor overrides on top of the built-in theme, e.g. `{ accent: [250, 179, 135] }`. */
+  custom?: Record<string, number[]>
+  /** Template embedded in the rail above the editor. */
   leftPrompt?: string
-  /** Right-aligned template on the row above the editor. */
+  /** Template rendered below the editor's bottom rail. */
   rightPrompt?: string
   /** Template used as the editor's first-line prefix. */
   inputPrompt?: string
@@ -27,19 +35,32 @@ export interface TuiConfig {
   showReasoning?: boolean
   /** Maximum tool-card body lines retained in its collapsed preview. */
   maxToolOutputLines?: number
+  /** Reasoning effort used before a session has a recorded request header. */
+  defaultReasoningEffort?: string
   theme?: TuiThemeConfig
+  /** Backend composition preset for blank sessions: `standard`, `minimal`, `code` (PTC), or `cordis` (creator). */
+  mode?: UiMode
+  /** UI language; `zh-CN` is the default, `en` is fully supported. */
+  locale?: Locale
   /** Terminal title. */
   title?: string
 }
 
-export const DEFAULT_LEFT_PROMPT = '${cwd}${git/worktree}'
-export const DEFAULT_RIGHT_PROMPT = '${model}${tokens}${context}'
+export const DEFAULT_LEFT_PROMPT = '${mode}${cwd}${git/worktree}'
+export const DEFAULT_RIGHT_PROMPT = '${model}${effort}${context}'
 export const DEFAULT_INPUT_PROMPT = '${indicator}'
 export const DEFAULT_INPUT_PLACEHOLDER = ''
+
+export const DEFAULT_THEME = 'catppuccin'
+export const DEFAULT_MODE: UiMode = 'standard'
+export const DEFAULT_LOCALE: Locale = 'zh-CN'
+export const DEFAULT_REASONING_EFFORT = 'max'
 
 const themeSchema = z.object({
   color: z.boolean().default(true),
   truecolor: z.boolean(),
+  name: z.string().default(DEFAULT_THEME),
+  custom: z.dict(z.array(z.number().min(0).max(255)).min(3).max(3), z.string()),
   leftPrompt: z.string().default(DEFAULT_LEFT_PROMPT),
   rightPrompt: z.string().default(DEFAULT_RIGHT_PROMPT),
   inputPrompt: z.string().default(DEFAULT_INPUT_PROMPT),
@@ -53,7 +74,10 @@ export type Config = TuiConfig
 export const TuiConfigSchema: z<TuiConfig> = z.object({
   showReasoning: z.boolean().default(true),
   maxToolOutputLines: z.number().step(1).min(1).default(6),
+  defaultReasoningEffort: z.string().default(DEFAULT_REASONING_EFFORT),
   theme: themeSchema,
+  mode: z.union([z.const('standard'), z.const('minimal'), z.const('code'), z.const('cordis')]).default(DEFAULT_MODE),
+  locale: z.union([z.const('zh-CN'), z.const('en')]).default(DEFAULT_LOCALE),
   title: z.string().default('dsh'),
 })
 
@@ -61,6 +85,8 @@ export const TuiConfigSchema: z<TuiConfig> = z.object({
 export interface ResolvedTuiThemeConfig {
   color: boolean
   truecolor: boolean
+  name: string
+  custom: Record<string, number[]> | undefined
   leftPrompt: string
   rightPrompt: string
   inputPrompt: string
@@ -71,7 +97,10 @@ export interface ResolvedTuiThemeConfig {
 export interface ResolvedTuiConfig {
   showReasoning: boolean
   maxToolOutputLines: number
+  defaultReasoningEffort: string
   theme: ResolvedTuiThemeConfig
+  mode: UiMode
+  locale: Locale
   title: string
 }
 
@@ -80,14 +109,19 @@ export function resolveTuiConfig(config: TuiConfig | undefined): ResolvedTuiConf
   return {
     showReasoning: config?.showReasoning ?? true,
     maxToolOutputLines: config?.maxToolOutputLines ?? 6,
+    defaultReasoningEffort: config?.defaultReasoningEffort ?? DEFAULT_REASONING_EFFORT,
     theme: {
       color: config?.theme?.color ?? true,
       truecolor: config?.theme?.truecolor ?? false,
+      name: config?.theme?.name ?? DEFAULT_THEME,
+      custom: config?.theme?.custom,
       leftPrompt: config?.theme?.leftPrompt ?? DEFAULT_LEFT_PROMPT,
       rightPrompt: config?.theme?.rightPrompt ?? DEFAULT_RIGHT_PROMPT,
       inputPrompt: config?.theme?.inputPrompt ?? DEFAULT_INPUT_PROMPT,
       inputPlaceholder: config?.theme?.inputPlaceholder ?? DEFAULT_INPUT_PLACEHOLDER,
     },
+    mode: config?.mode ?? DEFAULT_MODE,
+    locale: config?.locale ?? DEFAULT_LOCALE,
     title: config?.title ?? 'dsh',
   }
 }

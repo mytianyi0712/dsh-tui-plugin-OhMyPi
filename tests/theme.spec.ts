@@ -65,3 +65,33 @@ describe('palette spec selection', () => {
     assert.equal(ansi.toolSuccessBg('x'), 'x')
   })
 })
+
+describe('theme selection and overrides', () => {
+  it('switches accents between built-in themes', () => {
+    const catppuccin = createPalette(true, 'dark', true, { name: 'catppuccin' })
+    assert.equal(catppuccin.accent('x'), '\u001b[38;2;250;179;135mx\u001b[39m')
+    const tokyo = createPalette(true, 'dark', true, { name: 'tokyo-night' })
+    assert.equal(tokyo.accent('x'), '\u001b[38;2;122;162;247mx\u001b[39m')
+  })
+
+  it('applies per-role custom overrides on top of the built-in theme', () => {
+    const custom = createPalette(true, 'dark', true, {
+      name: 'catppuccin',
+      custom: { accent: [255, 0, 0], border: [0, 255, 0] },
+    })
+    assert.equal(custom.accent('x'), '\u001b[38;2;255;0;0mx\u001b[39m')
+    assert.equal(custom.border('x'), '\u001b[38;2;0;255;0mx\u001b[39m')
+    // Untouched roles keep the built-in value.
+    assert.equal(custom.success('x'), '\u001b[38;2;166;227;161mx\u001b[39m')
+  })
+
+  it('drops malformed overrides and unknown theme names', () => {
+    const malformed = createPalette(true, 'dark', true, {
+      name: 'catppuccin',
+      custom: { accent: [1, 2], bogus: [1, 2, 3] },
+    })
+    assert.equal(malformed.accent('x'), '\u001b[38;2;250;179;135mx\u001b[39m')
+    const unknown = createPalette(true, 'dark', true, { name: 'does-not-exist' })
+    assert.equal(unknown.accent('x'), '\u001b[38;2;250;179;135mx\u001b[39m')
+  })
+})

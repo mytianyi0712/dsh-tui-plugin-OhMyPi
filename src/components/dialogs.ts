@@ -10,6 +10,7 @@ import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { AskUserQuestionAnswerItem, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
 import { frameBlock, selectTheme, type ColorRole, type Palette } from '../theme.ts'
+import type { Translator } from '../i18n.ts'
 import { displayText } from './text.ts'
 
 /** A framed overlay hosting a single-select list. Resolves on Enter or Esc. */
@@ -98,6 +99,7 @@ export class InputDialog implements Component {
     title: string,
     palette: Palette,
     private readonly onDone: (value: string | undefined) => void,
+    private readonly t: Translator,
   ) {
     this.input = new Input()
     this.input.onSubmit = (value: string) => onDone(value)
@@ -119,7 +121,7 @@ export class InputDialog implements Component {
 
   render(width: number): string[] {
     const inner = Math.max(20, width - 4)
-    const rows = [`${this.palette.dim('type your answer and press enter')}`, this.input.render(inner - 4)[0] ?? '']
+    const rows = [`${this.palette.dim(this.t('dialogTypeAnswer'))}`, this.input.render(inner - 4)[0] ?? '']
     return frameBlock(rows, width, this.palette.accent, undefined, this.title)
   }
 }
@@ -152,6 +154,7 @@ const CUSTOM_ANSWER = '\u0000custom'
 export async function runQuestionFlow(
   ui: TUI,
   palette: Palette,
+  t: Translator,
   questions: readonly AskUserQuestionItem[],
   signal: AbortSignal | undefined,
 ): Promise<AskUserQuestionAnswerItem[]> {
@@ -165,7 +168,7 @@ export async function runQuestionFlow(
     }))
     let selected: string[] | undefined
     if (options.length === 0) {
-      const custom = await showOverlay<string>(ui, (done) => new InputDialog(question.question, palette, done))
+      const custom = await showOverlay<string>(ui, (done) => new InputDialog(question.question, palette, done, t))
       if (custom === undefined) break
       selected = [custom]
     } else if (question.multiSelect === true) {
@@ -177,7 +180,7 @@ export async function runQuestionFlow(
       const picked = await showOverlay<string>(ui, (done) => new SelectDialog(question.question, withCustom, palette, done))
       if (picked === undefined) break
       if (picked === CUSTOM_ANSWER) {
-        const custom = await showOverlay<string>(ui, (done) => new InputDialog(question.question, palette, done))
+        const custom = await showOverlay<string>(ui, (done) => new InputDialog(question.question, palette, done, t))
         if (custom === undefined) break
         selected = [custom]
       } else {
@@ -216,17 +219,18 @@ async function pickOne(
 export async function runModelFlow(
   ui: TUI,
   palette: Palette,
+  t: Translator,
   llm: LlmRuntime,
   save: (selection: ModelSelection) => Promise<void>,
 ): Promise<ModelSelection | undefined> {
   const providers = llm.listProviders()
-  const provider = await pickOne(ui, palette, 'Provider', providers.map(entry => ({
+  const provider = await pickOne(ui, palette, t('modelProvider'), providers.map(entry => ({
     value: entry.id,
     label: entry.name,
   })))
   if (provider === undefined) return undefined
   const models = await llm.listModels(provider)
-  const model = await pickOne(ui, palette, `Model · ${provider}`, models.map(entry => ({
+  const model = await pickOne(ui, palette, t('modelTitle', { provider }), models.map(entry => ({
     value: entry.id,
     label: entry.id,
     description: entry.name === undefined ? undefined : displayText(entry.name),
@@ -236,7 +240,7 @@ export async function runModelFlow(
   let reasoningEffort: string | undefined
   const efforts = resolved.reasoning?.efforts
   if (efforts !== undefined && efforts.length > 1) {
-    const picked = await pickOne(ui, palette, 'Reasoning effort', efforts.map(entry => ({
+    const picked = await pickOne(ui, palette, t('modelEffort'), efforts.map(entry => ({
       value: entry.id,
       label: entry.name,
       description: entry.description,

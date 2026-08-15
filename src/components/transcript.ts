@@ -13,10 +13,11 @@ import {
   visibleWidth,
   type Component,
 } from '@earendil-works/pi-tui'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, TodoItem } from '@deepseek-ai/dsh-session'
 import { frameBlock, gradientLogo, type MarkdownTheme, type Palette } from '../theme.ts'
+import type { Translator } from '../i18n.ts'
 import { contentText, parseArguments } from './content.ts'
 import { displayText } from './text.ts'
 
@@ -47,6 +48,8 @@ export class HeaderComponent implements Component {
     private readonly subtitle: () => string | undefined,
     private readonly palette: Palette,
     private readonly gradient: boolean,
+    private readonly t: Translator,
+    private readonly selection?: () => ModelSelection | undefined,
   ) {}
 
   invalidate(): void {}
@@ -61,11 +64,12 @@ export class HeaderComponent implements Component {
     const logo = this.gradient
       ? gradientLogo(DSH_LOGO)
       : DSH_LOGO.map(line => this.palette.accent(line))
-    const model = displayText(String(this.agent.options.model ?? 'No model'))
-    const provider = displayText(String(this.agent.options.provider ?? 'DeepSeek'))
+    const selection = this.selection?.()
+    const model = displayText(String(selection?.model ?? this.agent.options.model ?? 'No model'))
+    const provider = displayText(String(selection?.provider ?? this.agent.options.provider ?? 'DeepSeek'))
     const leftLines = [
       '',
-      center(this.palette.bold('Welcome back!'), leftWidth),
+      center(this.palette.bold(this.t('headerWelcome')), leftWidth),
       '',
       ...logo.map(line => center(line, leftWidth)),
       '',
@@ -79,15 +83,15 @@ export class HeaderComponent implements Component {
     const workspace = displayText(this.agent.session.header.cwd ?? process.cwd())
     const extra = this.subtitle()
     const rightLines = [
-      ` ${this.palette.bold(this.palette.accent('Tips'))}`,
-      ` ${this.palette.dim('/')} ${this.palette.muted('for commands')}`,
-      ` ${this.palette.dim('@')} ${this.palette.muted('for sessions and files')}`,
-      ` ${this.palette.dim('Tab')} ${this.palette.muted('to complete')}`,
-      ` ${this.palette.dim('Ctrl+O')} ${this.palette.muted('to expand tool output')}`,
+      ` ${this.palette.bold(this.palette.accent(this.t('headerTips')))}`,
+      ` ${this.palette.dim('/')} ${this.palette.muted(this.t('headerCommands'))}`,
+      ` ${this.palette.dim('@')} ${this.palette.muted(this.t('headerSessions'))}`,
+      ` ${this.palette.dim('Tab')} ${this.palette.muted(this.t('headerComplete'))}`,
+      ` ${this.palette.dim('Ctrl+O')} ${this.palette.muted(this.t('headerExpand'))}`,
       separator,
-      ` ${this.palette.bold(this.palette.accent('Session'))}`,
+      ` ${this.palette.bold(this.palette.accent(this.t('headerSession')))}`,
       ` ${this.palette.muted(session)}`,
-      ` ${this.palette.dim('Workspace')}`,
+      ` ${this.palette.dim(this.t('headerWorkspace'))}`,
       ` ${this.palette.muted(workspace)}`,
       ...extra === undefined ? [] : [` ${this.palette.dim(displayText(extra))}`],
       '',
@@ -116,7 +120,7 @@ export class HeaderComponent implements Component {
     lines.push(this.palette.dim(bottom))
     if (boxWidth >= 24) {
       const tip = this.palette.italic(
-        ` ${this.palette.accent('Tip:')} ${this.palette.muted('Use /help to discover the migrated command surface.')}`,
+        ` ${this.palette.accent(this.t('headerTip'))} ${this.palette.muted(this.t('headerTipBody'))}`,
       )
       lines.push(truncateToWidth(tip, boxWidth, ''))
     }

@@ -39,6 +39,8 @@
     ".": "./lib/index.js",
     "./startup": "./lib/startup.js",
     "./prompt": "./lib/prompt.js",
+    "./session-title": "./lib/session-title.js",
+    "./session-persistence": "./lib/session-persistence.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./src/*": "./src/*",
     "./package.json": "./package.json"
@@ -46,9 +48,7 @@
   "files": [
     "CHANGELOG.md",
     "docs/INSTALL.md",
-    "lib/index.js",
-    "lib/startup.js",
-    "lib/prompt.js",
+    "lib/*.js",
     "patches",
     "scripts/dsh",
     "scripts/dsh.cmd",
@@ -60,6 +60,7 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-agent": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-agent-loop": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-cmdline": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-commands": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-compaction": "^0.1.0-rc.6",
@@ -80,6 +81,10 @@
     "@deepseek-ai/dsh-agent-default-model": "^0.1.0-rc.6"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-agent-presets": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-session-title-llm": "^0.1.0-rc.6",
+    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
+    "@deepseek-ai/schemastery": "3.18.1",
     "commander": "^15.0.0"
   },
   "devDependencies": {
@@ -97,6 +102,8 @@
     "@deepseek-ai/dsh-session-query": "0.1.0-rc.6",
     "@deepseek-ai/dsh-session-reference": "0.1.0-rc.6",
     "@deepseek-ai/dsh-session-title": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-session-title-llm": "0.1.0-rc.6",
+    "@deepseek-ai/dsh-settings": "0.1.0-rc.6",
     "@deepseek-ai/dsh-skill": "0.1.0-rc.6",
     "@deepseek-ai/dsh-system-prompt": "0.1.0-rc.6",
     "@deepseek-ai/dsh-token-meter": "0.1.0-rc.6",
