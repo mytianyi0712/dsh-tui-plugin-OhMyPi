@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here.
 
-## [Unreleased]
+## [0.1.1] - 2026-08-15
 
 - Add `/new` for in-process fresh-session creation.
 - Keep abandoned sessions unmaterialized until they contain conversation data.

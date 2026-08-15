@@ -3,221 +3,247 @@
 ## 重要提示！
 - 本项目尚处于早期开发测试阶段，目前项目文档由ai完成，后续功能开发完全后会重新编写readme以增强可读性
 
-OMP 风格的 DeepSeek Harness（dsh）终端界面——一个独立的 profile bundle（插件）。
-当前视觉基线是本机 `omp v17.2.15` 的实际配置：`dark-catppuccin`、Nerd Font
-符号与 minimal/powerline 状态栏，而不是早期实现中误认的 Tokyo Night/titanium 配色。
+OMP 风格的 DeepSeek Harness（dsh）终端界面。它是一个独立的 profile bundle（插件），负责终端呈现、输入交互与会话相关的 TUI 能力；agent、模型、工具、持久化和沙箱仍由 dsh harness 提供。
 
-已适配的主要结构：响应式双栏欢迎页、无边框全宽用户消息、带来源标题与独立边框的
-注入上下文卡、无角色标题的助手正文、斜体弱化思考文本、OMP 三字符标题帽工具卡、
-`Output` 分隔栏，以及 Powerline「模式/目录/Git」顶栏 + 「模型 · 思考等级 · ctx
-占用」底栏的输入框。
+## 目录
 
-```
-╭─── dsh ─────────────────────────────────────────────────────────╮
-│        Welcome back!        │ Tips                               │
-│          D S H              │ / for commands                     │
-│      deepseek-v4-pro        │ Session / Workspace                │
-╰─────────────────────────────┴────────────────────────────────────╯
- ─── 标准   D:\Projects\dsh   main ─────────────────────────────────── 
+- [界面预览](#界面预览)
+- [功能概览](#功能概览)
+- [安装](#安装)
+- [启动与日常使用](#启动与日常使用)
+- [配置](#配置)
+- [开发](#开发)
+- [项目结构](#项目结构)
+- [相关文档](#相关文档)
+- [许可](#许可)
 
- ────────────────────────────────────────────────────────────────────────── 
-  deepseek-v4-flash · max · ctx 100k/1m · workspace-write
+## 界面预览
 
- Read: Reading theme implementation
+截图来自本机 WezTerm 中实际启动的 `dsh --profile tui`。演示实例未配置 API key，因此截图聚焦于启动页、状态栏和内置帮助面板，不代表模型响应效果。
 
-╭─── • Read: Reading theme implementation ────────────────────────╮
-├─── Output ───────────────────────────────────────────────────────┤
-│ src/theme.ts                                                     │
-╰──────────────────────────────────────────────────────────────────╯
-```
+<p align="center">
+  <img src="docs/assets/tui-welcome.png" alt="dsh-omp-tui 欢迎页" width="900">
+</p>
 
-状态栏中的模型、思考等级和上下文用量均来自当前运行时与会话计量；上图数值仅用于
-展示格式。新会话默认使用 `deepseek-v4-flash · max`；历史会话恢复最后一个真实
-`request/header` 的模型与思考等级。上下文显示「预估已用/模型容量」，无法解析
-模型容量或估算输入时回退为 `ctx 0/1m`。
-窄终端会优先保留完整的模式、工作目录和 Git 段；空间不足时切换为紧凑模式名与目录名，
-再按优先级隐藏目录或截短模式/分支，分隔符始终按完整状态段重建，不会留下孤立的 Powerline
-箭头。页脚在空间不足时优先保留 `ctx` 与权限状态。
+欢迎页
 
-## 架构
+<p align="center">
+  <img src="docs/assets/tui-help.png" alt="dsh-omp-tui 帮助面板" width="900">
+</p>
 
-- **定位**：与官方 turtle-ui 平级的"前门" bundle，骑在 `@deepseek-ai/dsh-base` 之上。
-  harness 负责 agent/模型/工具/持久化/沙箱；本 bundle 只拥有终端呈现与输入。
-- **渲染**：`@earendil-works/pi-tui@0.80.7`（含 vendored pnpm patch，见
-  `patches/NOTICE.md`），打包进 `lib/`，消费者无需安装 pi-tui。
-- **harness 合约**：`docs/contracts.md` 是唯一真相源（rc.6 逐字类型 + 服务签名 +
-  配置行 schema）；上游接口变更时先改该表再改代码。
-- **自持仓库**：本仓库无任何上游 remote（非 fork）。唯一 vendor 物是 pi-tui 的
-  pnpm patch（BSD-3，attribution 见 `patches/NOTICE.md`）。
+输入 `/help` 可查看快捷键和命令。工具卡支持折叠、展开和隐藏；助手正文、思考块、上下文卡和 `Output` 分隔栏使用独立的视觉层级。
+
+## 功能概览
+
+- **OMP 风格 TUI**：`dark-catppuccin` 默认主题、truecolor、Nerd Font 图标和 Powerline 状态栏。
+- **响应式布局**：窄终端优先保留模式、工作目录、Git 与 `ctx`，空间不足时逐级压缩或隐藏低优先级字段。
+- **会话管理**：支持新建、命名、恢复和进程内切换持久化会话。
+- **模型与思考等级**：通过 `/model`、`/think` 选择 provider、model 和 reasoning effort。
+- **工作模式**：支持 dsh 官方 `standard`、`minimal`、`code`、`cordis` 预设，也能发现本地安装的 agent preset。
+- **权限模式**：通过 `/permission` 在 `read-only`、`workspace-write`、`full-access` 等部署可用预设间切换。
+- **主题与本地化**：内置 `catppuccin`、`tokyo-night`，支持逐角色 RGB 覆盖；内置 `zh-CN` 与 `en`。
+- **命令与补全**：支持斜杠命令、`@` 会话/文件引用、路径补全和参数补全。
 
 ## 安装
 
-发布版、GitHub tag、升级、卸载和本地开发的完整说明见
-[`docs/INSTALL.md`](docs/INSTALL.md)。GitHub 发布前的仓库配置、`dsh-plugin` topic、
-Release tarball 和 CI 说明见 [`docs/PUBLISHING.md`](docs/PUBLISHING.md)。
+### 运行要求
 
-快速安装当前 GitHub Release tarball：
+| 项目 | 要求 |
+|---|---|
+| Node.js | `^22.19.0` 或 `>=24.0.0` |
+| pnpm | `11.7.0` 或兼容的 pnpm 11 |
+| dsh | `0.1.0-rc.6` |
+| 终端 | 推荐支持 truecolor；Nerd Font 可获得完整图标显示 |
+
+当前 dsh 仍处于 developer preview。首次安装建议固定 dsh 版本和插件 release tag。
+
+### 安装 GitHub Release
+
+没有 pnpm 时先安装固定版本：
 
 ```sh
 npm install --global pnpm@11.7.0
+```
+
+然后安装当前 release tarball：
+
+```sh
 npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
-  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.1.0/dsh-omp-tui-0.1.0.tgz
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.1.1/dsh-omp-tui-0.1.1.tgz
+```
+
+tarball 已包含构建后的 `lib/`，用户机器无需编译本项目。
+
+### 从 GitHub tag 安装
+
+Git 安装会执行本项目的 `prepare` 构建。pnpm 11 默认阻止依赖构建脚本，因此必须显式允许本包：
+
+```sh
+npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
+  --allow-build=dsh-omp-tui \
+  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.1.1
+```
+
+固定 tag 比直接使用 `#main` 更容易复现。完整的升级、卸载和安装排障说明见 [`docs/INSTALL.md`](docs/INSTALL.md)。
+
+## 启动与日常使用
+
+### 启动会话
+
+```sh
+# 使用 npx
 npx --yes @deepseek-ai/dsh@0.1.0-rc.6 --profile tui
+npx --yes @deepseek-ai/dsh@0.1.0-rc.6 --profile tui --session my-id
+npx --yes @deepseek-ai/dsh@0.1.0-rc.6 --profile tui --resume <session-id>
+
+# 已安装 dsh launcher 后
+dsh --profile tui
+dsh --profile tui --session my-id
+dsh --profile tui --resume <session-id>
 ```
 
-从 GitHub tag 安装时，需要显式允许 Git 依赖执行构建：
+`--resume` 与 `--session` 互斥。新会话只有在首次产生用户消息、助手消息或工具调用后才会落库；空白会话不会出现在 `/resume` 列表中。
 
-```sh
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
-  --allow-build=dsh-omp-tui github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.1.0
-```
+### 快捷键
 
-本地开发仍可使用 `link:`；先运行 `pnpm install && pnpm run prepare`，再执行：
-
-```sh
-dsh plugin --profile tui add link:/path/to/dsh-omp-tui
-```
-
-模型配置走 dsh 的 settings 文档（`~/.dsh/settings.yaml`，热加载）：
-
-```yaml
-llm-deepseek:
-  baseURL: http://localhost:3000/v1   # 例：本地网关
-```
-
-## 使用
-
-```sh
-dsh --profile tui                      # 新会话
-dsh --profile tui --session my-id      # 显式命名新会话
-dsh --profile tui --resume <id>        # 恢复持久化会话
-```
-
-### 让裸 `dsh` 默认进 TUI
-
-dsh 启动器硬性要求 `--profile`（只有 `web`/`plugin` 是内建子命令），没有默认
-profile 机制。仓库提供了包装脚本，把裸 `dsh`（或任何非 launcher 参数调用）
-注入 `--profile tui`，`web`/`plugin`/`--profile`/`--patch`/`--dump*`/帮助/版本
-原样透传：
-
-```sh
-# Git Bash / zsh
-export PATH="$HOME/dsh-omp-tui/scripts:$PATH"   # 或 alias dsh=<仓库>/scripts/dsh
-dsh                                   # → dsh --profile tui
-dsh --resume <id>                     # → dsh --profile tui --resume <id>
-dsh web --port 8080                   # 透传，照常启动官方 web
-
-# cmd / PowerShell：把 scripts 目录加进 PATH，或直接用 scripts\dsh.cmd
-```
-
-后端解析顺序：`DSH_REAL`（显式可执行文件）→ PATH 上的全局 `dsh`（跳过包装器
-自身目录）→ 全局安装的 `@deepseek-ai/dsh` → `npx --yes @deepseek-ai/dsh`。
-可选加速：`npm i -g @deepseek-ai/dsh@0.1.0-rc.6`，之后包装器直连全局二进制。
-排障：`DSH_DEBUG=1 dsh` 打印解析后的真实命令行。
-
-| 键 | 作用 |
+| 快捷键 | 作用 |
 |---|---|
-| `Ctrl+C` | 中断当前回合（流式内容保留）；再次按下（2 秒内）退出程序 |
-| `Ctrl+O` | 工具卡折叠循环：collapsed → expanded → hidden |
-| `Ctrl+R` | 显示/隐藏思考块 |
-| `Tab` / `@` / 路径 / 命令空格 | 斜杠命令、参数选项、`@` 引用与文件路径补全 |
+| `Ctrl+C` | 中断当前回合；2 秒内再次按下退出程序 |
+| `Ctrl+O` | 工具卡显示循环：折叠 → 展开 → 隐藏 |
+| `Ctrl+R` | 显示或隐藏思考块 |
+| `Tab` | 补全当前斜杠命令、参数或路径 |
+| `@` | 开始会话或文件引用补全 |
+
+### 常用命令
 
 | 命令 | 作用 |
 |---|---|
-| `/model` | 选择 provider / model / reasoning effort（持久化到 settings） |
-| `/think [level]` | 切换当前模型的思考等级；无参按模型声明顺序循环，输入空格后显示可用等级 |
-| `/new` | 在当前项目、模型和工作模式下新建会话 |
-| `/resume [id]` | 进程内切换会话（无参仅列出当前项目的持久化会话；显式 ID 也会校验项目归属） |
-| `/details` | 会话诊断卡（标题/目录/模型/agent/tokens/context） |
-| `/skills`、`/skill:<name>` | 技能列表与调用 |
-| `/mode [preset]` | 切换后端 agent 组合（官方四预设 + `~/.dsh/.agent-presets` 下安装的预设）；无参循环，输入空格后显示选项 |
-| `/permission [preset]` | 切换权限模式；输入空格后显示当前部署可用的权限预设与说明 |
-| `/theme [name]` | 查看可用主题或切换主题 |
-| `/settings` | 打开可视化设置（主题、标题模型） |
-| `/help` | 快捷键与命令列表（随 locale 本地化） |
+| `/help` | 查看快捷键和完整命令列表 |
+| `/model` | 选择 provider、model 和 reasoning effort，并持久化设置 |
+| `/think [level]` | 切换当前模型的思考等级；无参时循环切换 |
+| `/new` | 在当前项目、模型和权限模式下新建会话 |
+| `/resume [id]` | 列出或切换当前项目的持久化会话 |
+| `/details` | 查看会话标题、目录、模型、agent、tokens 和 context |
+| `/mode [preset]` | 切换 dsh agent 组合；无参时循环切换 |
+| `/permission [preset]` | 切换沙箱和审批策略 |
+| `/theme [name]` | 查看或切换主题 |
+| `/palette` | 查看当前主题实际使用的颜色角色 |
+| `/settings` | 打开可视化设置 |
+| `/skills` | 列出可用技能 |
 
-`@[label](dsh-session:<id>)` 提及会把目标会话的模型可见快照注入当前会话
-（`ctx.sessionReferenceResolver`），模型首步即可读到。
+`@[label](dsh-session:<id>)` 会将目标会话的模型可见快照注入当前会话。更多命令以运行中的 `/help` 为准。
 
-新建但未产生用户消息、助手消息或工具调用的空白会话不会落库，也不会出现在
-`/resume` 列表中。首次提交对话时才会物化会话日志。
+### 让裸 `dsh` 默认进入 TUI
 
-## 主题、模式与本地化
+项目提供 `scripts/dsh` 与 `scripts/dsh.cmd` 包装器。将 `scripts` 目录放到 `PATH` 前面后，裸 `dsh` 会自动注入 `--profile tui`；`web`、`plugin`、显式 `--profile`、帮助、版本和配置导出参数保持原样透传。
 
-所有外观设置都由 `tui` 行的配置驱动（在 profile 的 `cordis.patch.yml` 中按
-`id: tui` 覆盖，或经 dsh settings 注入）。运行中可用 `/mode`、`/think`、`/theme`
-临时切换；`/think` 与 `/model` 使用同一模型选择设置并在后续会话中保留，存在官方
-settings provider 时，`/theme` 与 `/settings` 的主题选择会写入
-`$DSH_HOME/settings.yaml`，重启后保留。
+```sh
+# Git Bash / zsh
+export PATH="$HOME/dsh-omp-tui/scripts:$PATH"
+dsh                         # 等价于 dsh --profile tui
+dsh --resume <session-id>   # 自动补 profile
+dsh web --port 8080         # 透传给官方 web 子命令
 
-`/settings` 提供可扩展的选择器入口：当前包含主题和标题模型两项。标题模型
-设置写入 `session-title` 分区；新会话首条用户消息会先生成确定性短标题，再在
-后台用所选模型异步改写，模型失败时保留短标题。
+# Windows cmd / PowerShell
+# 将 <仓库>\scripts 加入 PATH，或直接运行 <仓库>\scripts\dsh.cmd
+```
+
+需要指定真实 dsh 可执行文件时设置 `DSH_REAL`；设置 `DSH_DEBUG=1` 可以只打印包装器解析出的命令，不启动后端。
+
+## 配置
+
+### 模型连接
+
+官方 DeepSeek API：
+
+```sh
+# Git Bash / zsh
+export DEEPSEEK_API_KEY='your-key'
+
+# PowerShell
+$env:DEEPSEEK_API_KEY = 'your-key'
+```
+
+本地 OpenAI-compatible 网关：
+
+```sh
+# Git Bash / zsh
+export DEEPSEEK_BASE_URL='http://localhost:3000/v1'
+
+# PowerShell
+$env:DEEPSEEK_BASE_URL = 'http://localhost:3000/v1'
+```
+
+环境变量必须在启动 dsh 的同一个 shell 中可见。启动后可用 `/model` 选择并持久化 provider、model 和思考等级。
+
+### TUI profile 配置
+
+在 profile 的 `cordis.patch.yml` 中配置 `id: tui` 行，或使用 dsh settings 注入同一配置：
 
 ```yaml
 - id: tui
   config:
-    mode: standard           # 任意已发现预设 id：官方四值或本地安装的预设
-    locale: zh-CN            # zh-CN（默认）| en
-    defaultReasoningEffort: max # 新会话默认思考强度
+    mode: standard              # standard | minimal | code | cordis 或本地 preset id
+    locale: zh-CN               # zh-CN | en
+    defaultReasoningEffort: max
     theme:
-      name: catppuccin       # catppuccin（默认）| tokyo-night
-      custom:                # 可选：逐角色覆盖 truecolor
+      name: catppuccin          # catppuccin | tokyo-night
+      custom:
         accent: [255, 100, 100]
         userMessageBg: [24, 24, 37]
 ```
 
-- **本地预设**：`/mode` 从 dsh 预设注册表动态发现预设——官方四个
-  `standard`/`minimal`/`code`/`cordis` 之外，`$DSH_HOME/.agent-presets` 下安装的
-  任意预设（目录名即 id，需含 `agent.cordis.yml` 与可选 `preset.yml`）都会自动
-  进入 `/mode` 的无参循环与空格补全，并显示其元数据名称与描述。`mode` 配置项
-  也可直接写本地预设 id 作为启动默认。损坏的预设不会进入循环与补全，但仍会
-  在注册表中报告原因。
-- **权限模式**：`/permission` 管理沙箱与审批策略组合。dsh 默认提供
-  `read-only`（只读）、`workspace-write`（工作区写入）和
-  `full-access`（完全访问，不请求审批）；进入该模式时启动会弹出提醒，并以当前主题
-  的强调色显著标识。具体选项以当前部署的权限预设表为准，
-  自定义 preset 也会自动出现在命令提示与补全中。
-
-- **主题**：内置 `catppuccin`（OMP 17.2.15 当前主题）与 `tokyo-night`。
-  `theme.custom` 可按角色名覆盖任意颜色（前景/背景均支持，值取 RGB 三元组）；
-  非法角色名与畸形值会被静默忽略。`/theme` 列出主题，`/palette` 查看当前
-  角色的实际颜色。
-- **模式**：切换 **dsh 后端的 agent 组合**（官方 shipped presets），不改外观：
-  - `standard` 标准模式：完整编码 Agent（文件编辑、Shell、网页检索、Skills、计划、目标、子代理、工作流）
-  - `minimal` 极简模式：固定极简 system prompt，仅持久 bash + `str_replace_editor` 两个工具
-  - `code` PTC 模式：标准全部能力 + Code Mode SDK（模型用 TypeScript 程序组合多步操作）
-  - `cordis` 创造模式：标准全部能力 + 运行时检查与 preset 创作指导（用于创建自定义 Agent preset）
-  
-  切换仅对空白会话生效（官方规则：中途换组合会让已记录的工具调用失去对应 schema），
-  切换结果以 `agent-preset/selected` 事件写入会话日志，恢复会话时自动沿用；
-  `mode` 配置决定新会话的初始组合。`/mode` 无参时按顺序循环切换。
-- **本地化**：`locale` 选择 UI 语言，当前内置 `zh-CN` 与 `en`；新增语言只需
-  在 `src/i18n.ts` 的字典中添加同键集合的翻译（测试强制键集合一致）。
+- `mode` 只对空白会话生效；切换结果会写入会话日志，恢复会话时沿用。
+- `/theme` 和 `/settings` 的选择在存在官方 settings provider 时写入 `$DSH_HOME/settings.yaml`。
+- `theme.custom` 只接受 RGB 三元组；未知角色和非法值会被忽略。
+- `/permission` 的可用选项以当前部署的权限预设为准，自定义 preset 也会进入命令提示和补全。
 
 ## 开发
 
 ```sh
 pnpm install
-npx tsc -p tsconfig.json --noEmit   # 类型门（devDeps 固定 rc.6 精确版本）
-npm run test                        # node:test + 类型转换模式（Node ≥ 23.6）
-pnpm run prepare                    # 消费者构建（tsdown，pi-tui 打入 lib/）
-node --experimental-transform-types scripts/perf-probe.ts   # 长会话渲染成本探针
+pnpm run typecheck
+pnpm run test
+pnpm run prepare
 ```
 
-测试用 Node 原生 `node:test` 运行 `.ts`（`--experimental-transform-types`），
-不依赖兄弟 harness checkout；vitest 4 在本机环境启动挂起，已弃用。
+常用辅助命令：
 
-### 上游同步
+```sh
+pnpm run check
+node --experimental-transform-types scripts/perf-probe.ts
+```
 
-dsh 处于 rc 阶段（0.1.0-rc.6），接口会变：
+测试使用 Node 原生 `node:test` 运行 `.ts` 文件，不依赖兄弟 harness checkout。修改源码后重新运行 `pnpm run prepare`，再使用 `link:` profile 验证：
 
-1. `docs/contracts.md` 是唯一真相源——服务签名变更先改表；
-2. devDependencies 固定到实际安装版本（`0.1.0-rc.6`），升级时先 `pnpm install`
-   对齐 npx 缓存里的真实版本，再按新类型修代码；
-3. 每轮升级后跑 `npm run test` + 实机 smoke（`dsh --profile tui`）。
+```sh
+npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add link:.
+```
+
+dsh 仍处于 rc 阶段。上游接口变更时，先更新 [`docs/contracts.md`](docs/contracts.md)，再同步代码、依赖版本，并运行测试与 `dsh --profile tui` 实机 smoke。
+
+## 项目结构
+
+```text
+src/                    TUI、主题、提示、会话和设置实现
+src/components/         状态栏、消息、工具卡和转录组件
+tests/                  node:test 行为测试
+cordis.patch.yml        将本 bundle 组合进 dsh profile 的配置
+scripts/dsh*             裸 dsh 包装器
+patches/                pi-tui 的 vendored pnpm patch 与声明
+docs/                   安装、发布和 harness 合约文档
+docs/assets/            README 使用的实机截图
+```
+
+架构边界保持简单：dsh harness 负责 agent、模型、工具、持久化与沙箱；本仓库负责终端呈现和输入。渲染层使用 `@earendil-works/pi-tui@0.80.7`，并通过 vendored patch 打入发布包，消费者无需单独安装 pi-tui。
+
+## 相关文档
+
+- [`docs/INSTALL.md`](docs/INSTALL.md)：安装、升级、卸载、本地开发和常见问题
+- [`docs/contracts.md`](docs/contracts.md)：dsh harness 合约唯一真相源
+- [`docs/PUBLISHING.md`](docs/PUBLISHING.md)：GitHub release、tarball 和 CI 发布流程
+- [`CHANGELOG.md`](CHANGELOG.md)：版本变更记录
 
 ## 许可
 
-BSD-3-Clause。`patches/@earendil-works__pi-tui@0.80.7.patch` vendored from
-turtle1999/turtle-ui（BSD-3），完整声明见 `patches/NOTICE.md`。
+BSD-3-Clause。`patches/@earendil-works__pi-tui@0.80.7.patch` vendored from `turtle1999/turtle-ui`（BSD-3），完整声明见 [`patches/NOTICE.md`](patches/NOTICE.md)。
