@@ -173,7 +173,7 @@ describe('composer chrome', () => {
     const values: Record<string, string> = {
       mode: '标准  ',
       cwd: ' D:/Projects/a/very/long/workspace/path',
-      'git/worktree': '  main',
+      'git/worktree': '  main',
     }
     const status = new StatusLineComponent(
       [{ type: 'value', name: 'mode' }, { type: 'value', name: 'cwd' }, { type: 'value', name: 'git/worktree' }],
@@ -185,7 +185,7 @@ describe('composer chrome', () => {
     assert.ok(row!.startsWith(' ─── '))
     assert.ok(row!.includes('标准  '))
     assert.ok(row!.includes('…'))
-    assert.ok(row!.includes(' main'))
+    assert.ok(row!.includes(' main '))
     assert.ok(row!.endsWith(' '))
   })
 
@@ -252,15 +252,31 @@ describe('composer chrome', () => {
     assert.equal(formatContextTokens(1_200_000), '1.2m')
   })
 
-  it('paints inset composer rails blue and derives the Powerline tail from its surface', () => {
+  it('paints inset rails and the complete mode/path/Git prompt surface', () => {
     const enabled = createPalette(true, 'dark', true)
     const border = '\u001b[38;2;137;180;250m'
+    const surface = '\u001b[48;2;17;17;27m'
+    const tail = '\u001b[38;2;17;17;27m\u001b[39m'
     const [rail] = new InputBorderComponent(enabled).render(12)
     assert.equal(rail, ` ${border}${'─'.repeat(10)}\u001b[39m `)
-    const [top] = new StatusLineComponent([], () => undefined, enabled).render(20)
-    assert.ok(top!.startsWith(` ${border}───\u001b[39m`))
-    assert.equal(visibleWidth(top!), 20)
-    assert.equal(enabled.statusLineTail(''), '\u001b[38;2;17;17;27m\u001b[39m')
+    const [emptyTop] = new StatusLineComponent([], () => undefined, enabled).render(20)
+    assert.ok(emptyTop!.startsWith(` ${border}───\u001b[39m`))
+    assert.equal(visibleWidth(emptyTop!), 20)
+
+    const values: Record<string, string> = {
+      mode: `${enabled.accent('标准')} ${enabled.statusSep('')} `,
+      cwd: enabled.path(' D:/Projects/dsh'),
+      'git/worktree': ` ${enabled.statusSep('')} ${enabled.git(' main')}`,
+    }
+    const [top] = new StatusLineComponent(
+      [{ type: 'value', name: 'mode' }, { type: 'value', name: 'cwd' }, { type: 'value', name: 'git/worktree' }],
+      name => values[name],
+      enabled,
+    ).render(72)
+    assert.ok(top!.includes(`${surface} `))
+    assert.ok(top!.includes(`${enabled.path(' D:/Projects/dsh')} `))
+    assert.ok(top!.includes(`\u001b[49m${tail}`))
+    assert.equal(visibleWidth(top!), 72)
   })
   it('renders a faint expected-argument hint inside the composer', () => {
     const hint = new CommandHintComponent(() => '/mode <standard|minimal|code|cordis>', palette)

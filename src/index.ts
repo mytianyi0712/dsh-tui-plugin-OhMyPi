@@ -353,7 +353,7 @@ export class Tui extends Service {
       cwdValue.set(palette.path(` ${cwd}`))
       gitValue.set(gitBranch === undefined
         ? undefined
-        : ` ${palette.statusSep('')}${palette.statusLineBg(` ${palette.git(` ${displayText(gitBranch)}`)} `)}${palette.statusLineTail('')}`)
+        : ` ${palette.statusSep('')} ${palette.git(` ${displayText(gitBranch)}`)}`)
       modeValue.set(`${palette.accent(modeLabel(t, uiMode))} ${palette.statusSep('')} `)
       const selection = handles.selectionRef?.current
       const model = selection?.model ?? current.options.model

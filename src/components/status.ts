@@ -65,9 +65,9 @@ function compactUnit(value: number): string {
 }
 
 /**
- * The composer's inset top rail. The directory stays on the terminal surface;
- * optional Git/mode prompt values may add their own Powerline segments. When
- * space is tight only `cwd` collapses, so the branch remains visible.
+ * The composer's inset top rail. The complete mode/path/Git prompt is rendered
+ * on one theme surface with a Powerline tail. When space is tight only `cwd`
+ * collapses, so the branch and mode remain visible.
  */
 export class StatusLineComponent implements Component {
   constructor(
@@ -84,11 +84,14 @@ export class StatusLineComponent implements Component {
 
     const innerWidth = safeWidth - 2
     const capWidth = Math.min(3, innerWidth)
-    const promptBudget = Math.max(0, innerWidth - capWidth - 1)
+    const segmentOverhead = 3 // leading/trailing padding plus the Powerline tail
+    const promptBudget = Math.max(0, innerWidth - capWidth - segmentOverhead)
     const left = this.renderLeft(promptBudget)
-    const gap = left === '' ? '' : ' '
-    const fillWidth = Math.max(0, innerWidth - capWidth - visibleWidth(gap) - visibleWidth(left))
-    return [` ${this.palette.border('─'.repeat(capWidth))}${gap}${left}${this.palette.border('─'.repeat(fillWidth))} `]
+    const segment = left === ''
+      ? ''
+      : `${this.palette.statusLineBg(` ${left} `)}${this.palette.statusLineTail('')}`
+    const fillWidth = Math.max(0, innerWidth - capWidth - visibleWidth(segment))
+    return [` ${this.palette.border('─'.repeat(capWidth))}${segment}${this.palette.border('─'.repeat(fillWidth))} `]
   }
 
   private renderLeft(width: number): string {
