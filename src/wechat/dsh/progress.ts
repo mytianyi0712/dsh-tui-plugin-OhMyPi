@@ -93,8 +93,9 @@ async function handleTurnEnd(agent: Agent, event: SessionEvent & { type: 'turn/e
     (account.userId ? { accountId: account.id, userId: account.userId } : undefined)
   if (!peer) return
   void cancelTyping(account, peer.userId).catch(() => {})
-  if (!cfg.progress.enabled) return
 
+  // 结果/错误推送不归“进度汇报”管：progress.enabled 只控制周期性的
+  // 进度注入，任务开始回执和最终结果仍然要推送给用户。
   if (reason.kind === 'aborted' || reason.kind === 'error' || reason.kind === 'interrupted') {
     const errorText = reason.kind === 'error' && 'error' in reason && reason.error
       ? typeof reason.error.message === 'string' ? reason.error.message : ''

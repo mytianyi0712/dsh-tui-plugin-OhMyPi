@@ -6,14 +6,14 @@
 
 import type { Agent } from '@deepseek-ai/dsh-agent'
 
-/** 当前插件选中的主 agent（由 WechatBridge 在 agent/created 时设置）。 */
+/** 当前插件选中的主 agent（由 WechatBridge 在 agent/created 时设置，TUI 切换会话时同步更新）。 */
 let activeAgent: Agent | undefined
 
 export function setActiveAgent(agent: Agent | undefined): void {
   activeAgent = agent
 }
 
-/** 返回当前 dsh 活动 agent（未设置时回退到 registry 的第一个 root）。 */
+/** 返回当前 dsh 活动 agent（未设置时由调用方按无活动会话处理）。 */
 export function getActiveAgent(): Agent | undefined {
   return activeAgent
 }

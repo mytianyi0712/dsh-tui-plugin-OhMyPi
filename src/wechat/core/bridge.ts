@@ -185,7 +185,9 @@ export async function handleInbound(
   void signalTyping(account, userId, TYPING_START).catch(() => {})
 
   // Inject the message into the session as-is (no prefix), then confirm
-  // receipt to the WeChat user with a fixed notice.
+  // receipt to the WeChat user with a fixed notice. This notice is not a
+  // progress report: it tells the user the task has started, so it is sent
+  // even when progress reporting is disabled.
   const body = text || '(媒体消息，暂不支持解析)'
   deps.log(`wechat: steering inbound from ${userId}`)
   await deps.sendUserMessage(body)

@@ -126,6 +126,7 @@ import { displayInlineText, displayText } from './components/text.ts'
 import { filterProjectSessions, sameProject } from './session-filter.ts'
 import { hasConversationData, recordConversationPreset } from './session-lifecycle.ts'
 import type { BridgeConfig, WechatBridge } from './wechat/index.ts'
+import { setActiveAgent } from './wechat/dsh/session.ts'
 
 export const name = 'tui'
 
@@ -1020,9 +1021,7 @@ export class Tui extends Service {
               return undefined
             }
           }
-          const getWechatConfig = (): BridgeConfig | undefined => {
-            return wechatBridge()?.getBridgeConfig()
-          }
+          const getWechatConfig = (): BridgeConfig | undefined => wechatBridge()?.getBridgeConfig()
           const setWechatConfig = (next: BridgeConfig): void => {
             const bridge = wechatBridge()
             if (bridge !== undefined) bridge.setBridgeConfig(next)
@@ -1280,7 +1279,6 @@ export class Tui extends Service {
             screen.setTabs(buildSettingsTabs(), t('settingsTitle'))
             ui.requestRender()
           }
-
           const promptCustom = async (title: string, initialValue?: string): Promise<string | undefined> => {
             const value = await showOverlay<string>(
               ui,
@@ -2252,6 +2250,8 @@ export class Tui extends Service {
       uiMode = modeForSession(liveAgent.session, resolveDefaultMode())
       mounted = true
       agent = liveAgent
+      // 让微信桥跟随 TUI 当前会话；/resume、/new 等切换也走 activateAgent。
+      setActiveAgent(liveAgent)
 
       const selectionFor = (target: Agent): ModelSelection => {
         const configured = ctx.agentDefaultModel.currentSelection()
@@ -2522,6 +2522,7 @@ export class Tui extends Service {
         offModelSelection = installModelSelection(next.ctx, selectionRef)
         agent = next
         activeHandle = handle
+        setActiveAgent(next)
         tokenTotals = { inputTokens: 0, outputTokens: 0 }
         refreshContextEstimate(next, nextSelection)
         refreshGitBranch(next.session.header.cwd ?? process.cwd())
