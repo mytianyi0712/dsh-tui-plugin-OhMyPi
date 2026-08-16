@@ -71,7 +71,7 @@ npm install --global pnpm@11.7.0
 
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
-  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.1.1/dsh-omp-tui-0.1.1.tgz
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.1.2/dsh-omp-tui-0.1.2.tgz
 ```
 
 tarball 已包含构建后的 `lib/`，用户机器无需编译本项目。
@@ -83,7 +83,7 @@ Git 安装会执行本项目的 `prepare` 构建。pnpm 11 默认阻止依赖构
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
   --allow-build=dsh-omp-tui \
-  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.1.1
+  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.1.2
 ```
 
 固定 tag 比直接使用 `#main` 更容易复现。完整的升级、卸载和安装排障说明见 [`docs/INSTALL.md`](docs/INSTALL.md)。
@@ -158,6 +158,19 @@ dsh 会话；模型可用 `wechat_send` 工具回复。
 
 状态目录：`~/.dsh/wechat-ilink/`（可用环境变量 `DSH_WECHAT_ILINK_STATE` 覆盖）。
 登录二维码同时写入 `~/.dsh/wechat-ilink/login-qr.txt`，方便无界面场景查看。
+
+#### 微信推送
+
+微信桥支持把任务进度与结果自动推送到微信：
+
+- **微信消息触发的任务**：默认开启进度汇报。模型回合每达到配置的间隔轮数时，会向微信推送一次进度；任务完成后自动推送结果。
+- **终端任务也推送**：默认关闭。使用 `/wechat-notify on` 开启后，终端发起的任务也会在进度/完成时推送到微信；`/wechat-notify off` 关闭。
+- **可视化配置**：在 `/settings` 的 `微信claw` 标签页中可配置：
+  - 进度汇报：开 / 关
+  - 进度汇报间隔（轮）
+  - 终端任务推送微信：开 / 关
+
+配置保存在 `~/.dsh/wechat-ilink/config.json`，可通过环境变量 `DSH_WECHAT_ILINK_STATE` 改变状态目录。
 
 ### 让裸 `dsh` 默认进入 TUI
 
