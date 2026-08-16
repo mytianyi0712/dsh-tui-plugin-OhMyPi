@@ -57,7 +57,11 @@ export function registerWechatTools(ctx: Context): void {
         ? first.id
         : activePeers.get(first.id)?.accountId ?? first.id
       const result = await sendToPeer(accountId, args.to, args.text)
-      return { ok: result.ok, ...(result.error !== undefined ? { error: result.error } : {}), to: args.to }
+      return {
+        ok: result.ok,
+        ...(result.error !== undefined ? { error: result.error } : {}),
+        ...(args.to !== undefined ? { to: args.to } : {}),
+      }
     },
   }))
 

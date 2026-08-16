@@ -74,7 +74,7 @@ export async function sendToPeer(
       text,
       getContextToken(target.account.id, target.userId),
     )
-    return { ok: true, error: n > 0 ? undefined : 'empty message' }
+    return n > 0 ? { ok: true } : { ok: false, error: 'empty message' }
   } catch (err) {
     log(`wechat: send failed: ${String(err)}`)
     return { ok: false, error: String(err) }
