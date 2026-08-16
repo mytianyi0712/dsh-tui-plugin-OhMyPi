@@ -124,7 +124,7 @@ import { contentText } from './components/content.ts'
 import { displayInlineText, displayText } from './components/text.ts'
 import { filterProjectSessions, sameProject } from './session-filter.ts'
 import { hasConversationData, recordConversationPreset } from './session-lifecycle.ts'
-import type { WechatBridge } from './wechat/index.ts'
+import type { BridgeConfig, WechatBridge } from './wechat/index.ts'
 
 export const name = 'tui'
 
@@ -927,6 +927,8 @@ export class Tui extends Service {
             | 'default-mode'
             | 'max-parallel-tool-calls'
             | 'model-actions'
+            | 'wechat-progress-enabled'
+            | 'wechat-notify'
 
           interface ProviderCatalogEntry {
             id: string
@@ -946,6 +948,21 @@ export class Tui extends Service {
           const CUSTOM_MODEL = '\u0000custom-model'
           const EDIT_CUSTOM_PROVIDER = '\u0000edit-custom-provider'
           const EDIT_CUSTOM_MODEL = '\u0000edit-custom-model'
+
+          const wechatBridge = (): WechatBridge | undefined => {
+            try {
+              return ctx.get('wechat') as WechatBridge | undefined
+            } catch {
+              return undefined
+            }
+          }
+          const getWechatConfig = (): BridgeConfig | undefined => {
+            return wechatBridge()?.getBridgeConfig()
+          }
+          const setWechatConfig = (next: BridgeConfig): void => {
+            const bridge = wechatBridge()
+            if (bridge !== undefined) bridge.setBridgeConfig(next)
+          }
 
           let providerCatalog: ProviderCatalogEntry[] = []
           let modelCatalog: Array<{ provider: string; model: string }> = []
@@ -1074,6 +1091,7 @@ export class Tui extends Service {
               default?: string
             } | undefined)?.default
             const defaultMode = defaultPreset ?? ctx.agentPresets?.defaultId ?? resolved.mode
+            const wechatConfig = getWechatConfig()
             return [
               {
                 id: 'general',
@@ -1114,6 +1132,17 @@ export class Tui extends Service {
                 items: [
                   { value: 'max-parallel-tool-calls', label: t('settingsMaxParallelToolCalls'), currentValue: String(maxParallelToolCalls) },
                 ],
+              },
+              {
+                id: 'wechat',
+                label: t('settingsTabWechat'),
+                items: wechatConfig === undefined
+                  ? [{ value: 'wechat-unavailable', label: t('settingsWechatUnavailable'), currentValue: '' }]
+                  : [
+                    { value: 'wechat-progress-enabled', label: t('settingsWechatProgressEnabled'), currentValue: wechatConfig.progress.enabled ? t('settingsOn') : t('settingsOff') },
+                    { value: 'wechat-progress-interval', label: t('settingsWechatProgressInterval'), currentValue: String(wechatConfig.progress.interval) },
+                    { value: 'wechat-notify', label: t('settingsWechatNotify'), currentValue: wechatConfig.notify ? t('settingsOn') : t('settingsOff') },
+                  ],
               },
             ]
           }
@@ -1483,6 +1512,48 @@ export class Tui extends Service {
                     t('settingsMaxParallelToolCalls'),
                     String(current),
                   )
+                } else if (item.value === 'wechat-progress-enabled') {
+                  const wechatConfig = getWechatConfig()
+                  if (wechatConfig === undefined) {
+                    appendNotice(t('settingsWechatUnavailable'), 'warning')
+                    return
+                  }
+                  showItems(
+                    'wechat-progress-enabled',
+                    booleanItems,
+                    t('settingsWechatProgressEnabled'),
+                    String(wechatConfig.progress.enabled),
+                  )
+                } else if (item.value === 'wechat-progress-interval') {
+                  const wechatConfig = getWechatConfig()
+                  if (wechatConfig === undefined) {
+                    appendNotice(t('settingsWechatUnavailable'), 'warning')
+                    return
+                  }
+                  const value = await promptCustom(t('settingsWechatProgressInterval'), String(wechatConfig.progress.interval))
+                  if (value === undefined) return
+                  const next = Number(value)
+                  if (!Number.isInteger(next) || next <= 0) {
+                    appendNotice(t('noticeWechatInvalidInterval'), 'warning')
+                    return
+                  }
+                  setWechatConfig({ ...wechatConfig, progress: { ...wechatConfig.progress, interval: next } })
+                  appendNotice(t('noticeSettingsSaved'), 'info')
+                  if (selectedVersion === viewVersion && view === selectedView) showMain()
+                } else if (item.value === 'wechat-notify') {
+                  const wechatConfig = getWechatConfig()
+                  if (wechatConfig === undefined) {
+                    appendNotice(t('settingsWechatUnavailable'), 'warning')
+                    return
+                  }
+                  showItems(
+                    'wechat-notify',
+                    booleanItems,
+                    t('settingsWechatNotify'),
+                    String(wechatConfig.notify),
+                  )
+                } else if (item.value === 'wechat-unavailable') {
+                  appendNotice(t('settingsWechatUnavailable'), 'warning')
                 } else if (item.value === 'permission') {
                   showItems(
                     'default-permission',
@@ -1633,6 +1704,33 @@ export class Tui extends Service {
               if (selectedView === 'max-parallel-tool-calls') {
                 const next = Number(item.value)
                 await settings.update(settingsNamespace('agent-loop'), { maxParallelToolCalls: next })
+                appendNotice(t('noticeSettingsSaved'), 'info')
+                if (selectedVersion === viewVersion && view === selectedView) showMain()
+                return
+              }
+
+              if (selectedView === 'wechat-progress-enabled') {
+                const wechatConfig = getWechatConfig()
+                if (wechatConfig === undefined) {
+                  appendNotice(t('settingsWechatUnavailable'), 'warning')
+                  return
+                }
+                setWechatConfig({
+                  ...wechatConfig,
+                  progress: { ...wechatConfig.progress, enabled: item.value === 'true' },
+                })
+                appendNotice(t('noticeSettingsSaved'), 'info')
+                if (selectedVersion === viewVersion && view === selectedView) showMain()
+                return
+              }
+
+              if (selectedView === 'wechat-notify') {
+                const wechatConfig = getWechatConfig()
+                if (wechatConfig === undefined) {
+                  appendNotice(t('settingsWechatUnavailable'), 'warning')
+                  return
+                }
+                setWechatConfig({ ...wechatConfig, notify: item.value === 'true' })
                 appendNotice(t('noticeSettingsSaved'), 'info')
                 if (selectedVersion === viewVersion && view === selectedView) showMain()
                 return

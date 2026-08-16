@@ -176,6 +176,12 @@ export type Messages = {
   settingsDefaultMode: string
   settingsMaxParallelToolCalls: string
   settingsTabAdvanced: string
+  settingsTabWechat: string
+  settingsWechatProgressEnabled: string
+  settingsWechatProgressInterval: string
+  settingsWechatNotify: string
+  settingsWechatUnavailable: string
+  noticeWechatInvalidInterval: string
   noticeDefaultPermissionSet: string
   noticeDefaultModelSet: string
   noticeDefaultEffortSet: string
@@ -360,6 +366,12 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsDefaultMode: '默认模式',
     settingsMaxParallelToolCalls: '最大并行工具调用数',
     settingsTabAdvanced: '高级',
+    settingsTabWechat: '微信claw',
+    settingsWechatProgressEnabled: '进度汇报',
+    settingsWechatProgressInterval: '进度汇报间隔（轮）',
+    settingsWechatNotify: '终端任务推送微信',
+    settingsWechatUnavailable: '微信桥不可用',
+    noticeWechatInvalidInterval: '进度汇报间隔必须是正整数。',
     noticeDefaultPermissionSet: '默认权限模式已设为 {permission}。',
     noticeDefaultModelSet: '默认模型已设为 {provider}/{model}。',
     noticeDefaultEffortSet: '默认思考强度已设为 {effort}。',
@@ -541,6 +553,12 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsDefaultMode: 'Default mode',
     settingsMaxParallelToolCalls: 'Max parallel tool calls',
     settingsTabAdvanced: 'Advanced',
+    settingsTabWechat: 'WeChat Claw',
+    settingsWechatProgressEnabled: 'Progress reports',
+    settingsWechatProgressInterval: 'Progress interval (rounds)',
+    settingsWechatNotify: 'Push terminal tasks to WeChat',
+    settingsWechatUnavailable: 'WeChat bridge unavailable',
+    noticeWechatInvalidInterval: 'Progress interval must be a positive integer.',
     noticeDefaultPermissionSet: 'Default permission mode set to {permission}.',
     noticeDefaultModelSet: 'Default model set to {provider}/{model}.',
     noticeDefaultEffortSet: 'Default reasoning effort set to {effort}.',

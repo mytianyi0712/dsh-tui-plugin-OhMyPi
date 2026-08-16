@@ -12,10 +12,11 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { AskUserQuestionAnswer, AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
 import type { WeixinMessage } from './core/api.ts'
-import { loadAccounts, type Account } from './core/state.ts'
+import { loadAccounts, type Account, type BridgeConfig } from './core/state.ts'
 import {
   reloadConfig,
   getConfig,
+  setConfig,
   markWechatPending,
   setReceiverHeld,
   isReceiverHeld,
@@ -44,7 +45,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-export type { WechatOutputMessage, WechatOutputListener }
+export type { WechatOutputMessage, WechatOutputListener, BridgeConfig }
 
 /** TUI 尚未订阅时缓冲的最大条数，避免无 TUI 场景下无限增长。 */
 const OUTPUT_BUFFER_LIMIT = 500
@@ -161,6 +162,16 @@ export class WechatBridge extends Service {
     terminalAsk: (request: AskUserQuestionRequest) => Promise<AskUserQuestionAnswer>,
   ): Promise<AskUserQuestionAnswer> {
     return bridgeAsk(request, terminalAsk)
+  }
+
+  /** 读取微信桥配置（policy / progress / notify）。 */
+  getBridgeConfig(): BridgeConfig {
+    return getConfig()
+  }
+
+  /** 更新微信桥配置并持久化到 config.json。 */
+  setBridgeConfig(next: BridgeConfig): void {
+    setConfig(next)
   }
 
   private buildMonitorHooks(ctx: Context): MonitorHooks {
