@@ -126,14 +126,22 @@ export type Messages = {
   settingsAddProvider: string
   settingsEditProvider: string
   settingsProviderName: string
+  settingsProviderId: string
+  settingsCredentialConfigured: string
   settingsApi: string
-  settingsApiChat: string
-  settingsApiCompletion: string
-  settingsApiResponses: string
+  settingsApiOpenAiCompletions: string
+  settingsApiOpenAiResponses: string
+  settingsApiAnthropicMessages: string
   settingsBaseURL: string
   settingsApiKey: string
   settingsModels: string
-  settingsManualModels: string
+  settingsManageModels: string
+  settingsAddModel: string
+  settingsModelListHint: string
+  settingsModelListEmpty: string
+  settingsModelValue: string
+  settingsModelRequired: string
+  settingsModelDuplicate: string
   settingsProviderTemplate: string
   settingsBlankProvider: string
   settingsDiscoverModels: string
@@ -147,6 +155,11 @@ export type Messages = {
   settingsSetTitleModel: string
   providerFormHint: string
   providerConfigRequired: string
+  providerIdRequired: string
+  providerIdInvalid: string
+  providerBaseURLRequired: string
+  providerApiRequired: string
+  providerModelsRequired: string
   noticeProviderSaved: string
   noticeProviderFailed: string
   noticeDiscoveryUnavailable: string
@@ -171,6 +184,7 @@ export type Messages = {
   settingsDefaultEffort: string
   settingsOn: string
   settingsOff: string
+  settingsEnabled: string
   settingsShowReasoning: string
   settingsToolOutputLines: string
   settingsDefaultMode: string
@@ -316,14 +330,22 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsAddProvider: '＋ 新增供应商',
     settingsEditProvider: '编辑供应商',
     settingsProviderName: '供应商名称',
+    settingsProviderId: '供应商 ID',
+    settingsCredentialConfigured: '已配置（留空保持不变）',
     settingsApi: '接口类型',
-    settingsApiChat: 'Chat Completions',
-    settingsApiCompletion: 'Completions',
-    settingsApiResponses: 'Responses',
+    settingsApiOpenAiCompletions: 'OAI 兼容（OpenAI Completions）',
+    settingsApiOpenAiResponses: 'Response（OpenAI Responses）',
+    settingsApiAnthropicMessages: 'Message（Anthropic Messages）',
     settingsBaseURL: 'Base URL',
     settingsApiKey: 'API Key',
     settingsModels: '模型列表',
-    settingsManualModels: '手动编辑模型',
+    settingsManageModels: '管理模型列表',
+    settingsAddModel: '新增模型',
+    settingsModelListHint: '↑/↓ 选择模型 · Enter 编辑 · Delete/Backspace 删除当前模型 · Enter 执行操作 · Esc 取消；修改只在保存后生效',
+    settingsModelListEmpty: '暂无模型。请选择“新增模型”。',
+    settingsModelValue: '完整模型 ID',
+    settingsModelRequired: '模型 ID 不能为空',
+    settingsModelDuplicate: '模型 ID 已存在',
     settingsProviderTemplate: '选择供应商模板',
     settingsBlankProvider: '空白自定义',
     settingsDiscoverModels: '探测上游模型',
@@ -337,6 +359,11 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsSetTitleModel: '设为标题模型',
     providerFormHint: '↑/↓/←/→ 移动 · Enter 编辑/执行 · Esc 返回',
     providerConfigRequired: '供应商名称不能为空',
+    providerIdRequired: '供应商 ID 不能为空',
+    providerIdInvalid: '供应商 ID 必须是小写字母开头的 kebab-case',
+    providerApiRequired: '自定义供应商必须选择有效接口类型',
+    providerBaseURLRequired: '自定义供应商必须填写 Base URL',
+    providerModelsRequired: '自定义供应商至少需要一个模型',
     noticeProviderSaved: '供应商已保存。',
     noticeProviderFailed: '供应商保存失败：{error}',
     noticeDiscoveryUnavailable: '当前部署未提供模型探测服务。',
@@ -361,6 +388,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsDefaultEffort: '默认思考强度',
     settingsOn: '开',
     settingsOff: '关',
+    settingsEnabled: '启用',
     settingsShowReasoning: '显示思考过程',
     settingsToolOutputLines: '工具输出行数',
     settingsDefaultMode: '默认模式',
@@ -503,14 +531,22 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsAddProvider: '＋ Add provider',
     settingsEditProvider: 'Edit provider',
     settingsProviderName: 'Provider name',
+    settingsProviderId: 'Provider ID',
+    settingsCredentialConfigured: 'Configured (leave blank to keep)',
     settingsApi: 'API type',
-    settingsApiChat: 'Chat Completions',
-    settingsApiCompletion: 'Completions',
-    settingsApiResponses: 'Responses',
+    settingsApiOpenAiCompletions: 'OAI-compatible (OpenAI Completions)',
+    settingsApiOpenAiResponses: 'Response (OpenAI Responses)',
+    settingsApiAnthropicMessages: 'Message (Anthropic Messages)',
     settingsBaseURL: 'Base URL',
     settingsApiKey: 'API Key',
     settingsModels: 'Models',
-    settingsManualModels: 'Edit models manually',
+    settingsManageModels: 'Manage model list',
+    settingsAddModel: 'Add model',
+    settingsModelListHint: '↑/↓ select model · Enter edit · Delete/Backspace delete current model · Enter run action · Esc cancel; changes apply only on Save',
+    settingsModelListEmpty: 'No models. Choose “Add model”.',
+    settingsModelValue: 'Full model ID',
+    settingsModelRequired: 'Model ID is required',
+    settingsModelDuplicate: 'Model ID already exists',
     settingsProviderTemplate: 'Choose provider template',
     settingsBlankProvider: 'Blank custom',
     settingsDiscoverModels: 'Discover upstream models',
@@ -524,6 +560,11 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsSetTitleModel: 'Set as title model',
     providerFormHint: '↑/↓/←/→ move · Enter edit/run · Esc back',
     providerConfigRequired: 'Provider name is required',
+    providerIdRequired: 'Provider ID is required',
+    providerIdInvalid: 'Provider ID must be lowercase kebab-case',
+    providerApiRequired: 'A custom provider must use a supported API type',
+    providerBaseURLRequired: 'A custom provider must specify a Base URL',
+    providerModelsRequired: 'A custom provider needs at least one model',
     noticeProviderSaved: 'Provider saved.',
     noticeProviderFailed: 'Provider save failed: {error}',
     noticeDiscoveryUnavailable: 'Model discovery is not available in this deployment.',
@@ -548,6 +589,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsDefaultEffort: 'Default reasoning effort',
     settingsOn: 'On',
     settingsOff: 'Off',
+    settingsEnabled: 'Enabled',
     settingsShowReasoning: 'Show reasoning',
     settingsToolOutputLines: 'Tool output lines',
     settingsDefaultMode: 'Default mode',

@@ -25,7 +25,7 @@ import {
 import type { Agent, AgentHandle, AgentStatus, ModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import { CombinedAutocompleteProvider, type AutocompleteItem, type SlashCommand } from '@earendil-works/pi-tui'
-import { createUserMessage, errorChain, type CallId, type LlmConfigurableProvider, type LlmDiscoveredModel, type LlmReasoningEffortInfo } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, errorChain, type CallId, type LlmConfigurableProvider, type LlmReasoningEffortInfo } from '@deepseek-ai/dsh-llm'
 import { SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { foldSessionTitle } from '@deepseek-ai/dsh-session-title'
 import { parseSessionReferenceText } from '@deepseek-ai/dsh-session-reference'
@@ -42,7 +42,7 @@ import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-session-reference'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-settings'
 import { PERMISSION_SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-permission-presets'
@@ -82,13 +82,9 @@ import {
   type ThemeOverride,
 } from './theme.ts'
 import {
-  LLM_PROVIDERS_SETTINGS_NAMESPACE,
-  LlmProvidersSettingsSchema,
   SESSION_TITLE_SETTINGS_NAMESPACE,
   TUI_SETTINGS_NAMESPACE,
   TuiSettingsSchema,
-  type LlmProviderProfile,
-  type LlmProvidersSettings,
 } from './settings.ts'
 import {
   ContextCardComponent,
@@ -112,14 +108,19 @@ import {
 import {
   InputDialog,
   SelectDialog,
-  ToggleDialog,
   runInlineQuestionFlow,
   runModelFlow,
   showOverlay,
 } from './components/dialogs.ts'
+import { ModelListDialog } from './components/model-list-dialog.ts'
 import { SettingsScreen, type SettingsItem, type SettingsTab } from './components/settings-screen.ts'
 import { CustomModelForm, type CustomModelDraft } from './components/custom-model-form.ts'
-import { ProviderForm, type DiscoveredModel, type ProviderDraft } from './components/provider-form.ts'
+import {
+  ProviderForm,
+  SUPPORTED_PROVIDER_APIS,
+  type DiscoveredModel,
+  type ProviderDraft,
+} from './components/provider-form.ts'
 import { contentText } from './components/content.ts'
 import { displayInlineText, displayText } from './components/text.ts'
 import { filterProjectSessions, sameProject } from './session-filter.ts'
@@ -244,12 +245,75 @@ export class Tui extends Service {
     const tuiSettings = settings?.register(TUI_SETTINGS_NAMESPACE, TuiSettingsSchema, {
       base: { themeName: resolved.theme.name },
     })
-    // Provider profiles are owned by the dsh settings service. The TUI only
-    // reads/writes through this scope and never keeps the source of truth in
-    // component state.
-    const llmProvidersSettings = settings?.register(LLM_PROVIDERS_SETTINGS_NAMESPACE, LlmProvidersSettingsSchema, {
-      base: { providers: {} },
-    })
+    interface ProviderModelProfile {
+      id: string
+      name?: string
+      contextWindow?: number
+      maxTokens?: number
+    }
+    interface ConfiguredProviderProfile {
+      apiKeyEnv?: string
+      displayName?: string
+      api?: string
+      baseURL?: string
+      models?: ProviderModelProfile[]
+    }
+    const asRecord = (value: unknown): Record<string, unknown> | undefined => (
+      value !== null && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown>
+        : undefined
+    )
+    const readPath = (value: unknown, path: readonly string[]): unknown => {
+      let current = value
+      for (const key of path) {
+        const record = asRecord(current)
+        if (record === undefined) return undefined
+        current = record[key]
+      }
+      return current
+    }
+    const configurableProviderList = (): LlmConfigurableProvider[] => (
+      typeof ctx.llm.listConfigurableProviders === 'function'
+        ? ctx.llm.listConfigurableProviders()
+        : []
+    )
+    const readConfiguredProvider = (entry: LlmConfigurableProvider): ConfiguredProviderProfile | undefined => {
+      const value = readPath(settings?.get(settingsNamespace(entry.settingsNs)), entry.settingsPath)
+      const record = asRecord(value)
+      if (record === undefined) return undefined
+      const profile: ConfiguredProviderProfile = {}
+      if (typeof record.apiKeyEnv === 'string') profile.apiKeyEnv = record.apiKeyEnv
+      if (typeof record.displayName === 'string') profile.displayName = record.displayName
+      if (typeof record.api === 'string') profile.api = record.api
+      if (typeof record.baseURL === 'string') profile.baseURL = record.baseURL
+      if (Array.isArray(record.models) && record.models.length > 0) {
+        const models = record.models.flatMap(model => {
+          if (typeof model === 'string') return [{ id: model }]
+          const modelRecord = asRecord(model)
+          return typeof modelRecord?.id === 'string'
+            ? [{
+              id: modelRecord.id,
+              ...(typeof modelRecord.name === 'string' ? { name: modelRecord.name } : {}),
+              ...(typeof modelRecord.contextWindow === 'number' ? { contextWindow: modelRecord.contextWindow } : {}),
+              ...(typeof modelRecord.maxTokens === 'number' ? { maxTokens: modelRecord.maxTokens } : {}),
+            }]
+            : []
+        })
+        if (models.length > 0) profile.models = models
+      }
+      return profile
+    }
+    const configuredProviderProfiles = (): Readonly<Record<string, ConfiguredProviderProfile>> => {
+      const profiles: Record<string, ConfiguredProviderProfile> = {}
+      for (const entry of configurableProviderList()) {
+        const profile = readConfiguredProvider(entry)
+        if (profile !== undefined) profiles[entry.provider] = profile
+      }
+      return profiles
+    }
+    // Provider configuration belongs to the adapter that declares it through
+    // dsh-llm's configurable-provider directory. The TUI only follows the
+    // declared namespace/path and never invents a provider-owned namespace.
     // Runtime theme state; `/theme` and `/settings` repaint in place.
     let themeName = tuiSettings?.get().themeName ?? resolved.theme.name
     // Runtime presentation state; `/settings` can persist these through the
@@ -933,9 +997,9 @@ export class Tui extends Service {
           interface ProviderCatalogEntry {
             id: string
             name: string
-            source: 'registered' | 'configurable' | 'custom'
+            source: 'registered' | 'configurable'
             configurable?: LlmConfigurableProvider
-            custom?: LlmProviderProfile
+            profile?: ConfiguredProviderProfile
           }
 
           const booleanItems: SelectItem[] = [
@@ -966,37 +1030,35 @@ export class Tui extends Service {
 
           let providerCatalog: ProviderCatalogEntry[] = []
           let modelCatalog: Array<{ provider: string; model: string }> = []
-
           const refreshProviderModelCatalog = async (): Promise<void> => {
             const providers = new Map<string, ProviderCatalogEntry>()
+            const configurableProviders = configurableProviderList()
+            const configurableIds = new Set(configurableProviders.map(entry => entry.provider))
             const registeredProviders = typeof ctx.llm.listProviders === 'function'
               ? ctx.llm.listProviders()
               : []
             for (const entry of registeredProviders) {
-              providers.set(entry.id, { id: entry.id, name: entry.name, source: 'registered' })
+              if (configurableIds.has(entry.id)) {
+                providers.set(entry.id, { id: entry.id, name: entry.name, source: 'registered' })
+              }
             }
-            const configurableProviders = typeof ctx.llm.listConfigurableProviders === 'function'
-              ? ctx.llm.listConfigurableProviders()
-              : []
+            const profiles = configuredProviderProfiles()
             for (const entry of configurableProviders) {
               const existing = providers.get(entry.provider)
+              const profile = profiles[entry.provider]
               if (existing !== undefined) {
                 existing.configurable = entry
-                if (existing.name === existing.id) existing.name = entry.displayName
-              }
-              // Dormant preset providers are not shown here; they are offered as
-              // templates when adding a new provider instead.
-            }
-            const customSettings = llmProvidersSettings?.get() as LlmProvidersSettings | undefined
-            const customProviders = customSettings?.providers ?? {}
-            for (const [id, profile] of Object.entries(customProviders)) {
-              const existing = providers.get(id)
-              if (existing !== undefined) {
-                existing.custom = profile
-                if (existing.source === 'custom' || existing.source === 'registered') existing.source = 'custom'
-                if (profile.name !== '') existing.name = profile.name
+                existing.profile = profile
+                if (profile?.displayName !== undefined && profile.displayName !== '') existing.name = profile.displayName
+                else if (existing.name === existing.id) existing.name = entry.displayName
               } else {
-                providers.set(id, { id, name: profile.name || id, source: 'custom', custom: profile })
+                providers.set(entry.provider, {
+                  id: entry.provider,
+                  name: profile?.displayName || entry.displayName,
+                  source: 'configurable',
+                  configurable: entry,
+                  ...(profile === undefined ? {} : { profile }),
+                })
               }
             }
             providerCatalog = [...providers.values()]
@@ -1008,8 +1070,8 @@ export class Tui extends Service {
             }
             const modelLoaders: Promise<void>[] = []
             for (const entry of providerCatalog) {
-              if (entry.custom?.models !== undefined) {
-                for (const model of entry.custom.models) addModel(entry.id, model)
+              if (entry.profile?.models !== undefined) {
+                for (const model of entry.profile.models) addModel(entry.id, model.id)
                 continue
               }
               modelLoaders.push((async () => {
@@ -1017,7 +1079,7 @@ export class Tui extends Service {
                   const found = await ctx.llm.listModels(entry.id)
                   for (const model of found) addModel(entry.id, model.id)
                 } catch {
-                  // A dormant or user-entered provider may not expose a catalog yet.
+                  // Dormant providers may have no live model catalog yet.
                 }
               })())
             }
@@ -1034,9 +1096,17 @@ export class Tui extends Service {
             modelCatalog = [...models.values()]
           }
 
+          const listModelsForProvider = async (provider: string): Promise<Awaited<ReturnType<typeof ctx.llm.listModels>>> => {
+            try {
+              return await ctx.llm.listModels(provider)
+            } catch {
+              return []
+            }
+          }
+
           const providerModelCount = (provider: string): number => {
             const entry = providerCatalog.find(candidate => candidate.id === provider)
-            if (entry?.custom?.models !== undefined) return entry.custom.models.length
+            if (entry?.profile?.models !== undefined) return entry.profile.models.length
             return modelCatalog.filter(model => model.provider === provider).length
           }
 
@@ -1151,23 +1221,23 @@ export class Tui extends Service {
             label: `${theme.id} — ${theme.label}`,
             description: theme.description,
           }))
-          const registeredProviderIds = new Set(
-            (typeof ctx.llm.listProviders === 'function' ? ctx.llm.listProviders() : []).map(entry => entry.id),
-          )
-          const customProviders = (llmProvidersSettings?.get() as LlmProvidersSettings | undefined)?.providers ?? {}
-          const providerItems: SelectItem[] = [
-            ...(typeof ctx.llm.listProviders === 'function' ? ctx.llm.listProviders() : []).map(entry => ({
-              value: entry.id,
-              label: entry.name,
-            })),
-            ...Object.entries(customProviders)
-              .filter(([id]) => !registeredProviderIds.has(id))
-              .map(([id, profile]) => ({
-                value: id,
-                label: profile.name || id,
+          const providerItems = (): SelectItem[] => {
+            const registeredProviders = typeof ctx.llm.listProviders === 'function' ? ctx.llm.listProviders() : []
+            const registeredProviderIds = new Set(registeredProviders.map(entry => entry.id))
+            return [
+              ...registeredProviders.map(entry => ({
+                value: entry.id,
+                label: entry.name,
               })),
-            { value: CUSTOM_PROVIDER, label: t('settingsCustomProvider') },
-          ]
+              ...Object.entries(configuredProviderProfiles())
+                .filter(([id]) => !registeredProviderIds.has(id))
+                .map(([id, profile]) => ({
+                  value: id,
+                  label: profile.displayName || id,
+                })),
+              { value: CUSTOM_PROVIDER, label: t('settingsCustomProvider') },
+            ]
+          }
 
           const screen = new SettingsScreen(
             buildSettingsTabs()[0]?.items ?? [],
@@ -1223,9 +1293,9 @@ export class Tui extends Service {
           const providerPickerItems = (selected: string | undefined): SelectItem[] => {
             const known = new Set([
               ...(typeof ctx.llm.listProviders === 'function' ? ctx.llm.listProviders() : []).map(entry => entry.id),
-              ...Object.keys((llmProvidersSettings?.get() as LlmProvidersSettings | undefined)?.providers ?? {}),
+              ...Object.keys(configuredProviderProfiles()),
             ])
-            const items = [...providerItems]
+            const items = providerItems()
             if (selected !== undefined && selected !== CUSTOM_PROVIDER && !known.has(selected)) {
               items.unshift({ value: selected, label: `${selected} — ${t('settingsCustomProvider')}` })
               items.splice(1, 0, { value: EDIT_CUSTOM_PROVIDER, label: t('settingsEditCustomProvider') })
@@ -1251,73 +1321,102 @@ export class Tui extends Service {
             return items
           }
 
+
+          interface ProviderSettingsTarget {
+            ns: SettingsNamespace
+            path: string[]
+            entry: LlmConfigurableProvider
+          }
+          const providerSettingsTarget = (
+            providerId: string,
+            editingId?: string,
+          ): ProviderSettingsTarget | undefined => {
+            const entries = configurableProviderList()
+            const entry = entries.find(candidate => candidate.provider === (editingId ?? providerId))
+              ?? (editingId === undefined ? entries.find(candidate => candidate.settingsPath.length > 0) : undefined)
+            if (entry === undefined || (editingId === undefined && entry.settingsPath.length === 0)) return undefined
+            const path = editingId === undefined
+              ? [...entry.settingsPath.slice(0, -1), providerId]
+              : [...entry.settingsPath]
+            return { ns: settingsNamespace(entry.settingsNs), path, entry }
+          }
+
           const providerDiscoveryNamespace = (providerId: string | undefined): string | undefined => {
-            if (providerId !== undefined) {
-              const entry = providerCatalog.find(candidate => candidate.id === providerId)
-              if (entry?.configurable !== undefined) return entry.configurable.settingsNs
+            const entries = configurableProviderList()
+            const entry = entries.find(candidate => candidate.provider === providerId)
+              ?? entries.find(candidate => candidate.settingsPath.length > 0)
+              ?? entries[0]
+            if (entry === undefined || typeof ctx.llm.discoverModels !== 'function') return undefined
+            const runtime = ctx.llm as typeof ctx.llm & {
+              listModelDiscoveryNamespaces?: () => readonly string[]
             }
-            const configurable = typeof ctx.llm.listConfigurableProviders === 'function'
-              ? ctx.llm.listConfigurableProviders()
-              : []
-            return configurable[0]?.settingsNs
+            const namespaces = runtime.listModelDiscoveryNamespaces?.()
+            if (namespaces !== undefined && !namespaces.includes(entry.settingsNs)) return undefined
+            return entry.settingsNs
+          }
+
+          const credentialReference = (providerId: string): string => {
+            const normalized = providerId.toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '')
+            return `${normalized || 'DSH_PROVIDER'}_API_KEY`
           }
 
           const saveProvider = async (providerId: string | undefined, draft: ProviderDraft): Promise<void> => {
-            if (llmProvidersSettings === undefined) throw new Error('settings unavailable')
-            const current = (llmProvidersSettings.get() as LlmProvidersSettings | undefined)?.providers ?? {}
-            const id = providerId ?? draft.name
-            if (id.trim() === '') throw new Error('provider name required')
-            const providers = {
-              ...current,
-              [id]: {
-                name: draft.name,
-                api: draft.api,
-                baseURL: draft.baseURL,
-                apiKey: draft.apiKey,
-                models: draft.models,
-              },
-            }
-            await llmProvidersSettings.update({ providers })
-            const entry = providerCatalog.find(candidate => candidate.id === id)?.configurable
-            if (entry !== undefined) {
-              try {
-                const ns = settingsNamespace(entry.settingsNs)
-                const path = entry.settingsPath
-                const ops: Array<{ op: 'set'; path: readonly string[]; value: unknown }> = []
-                if (draft.baseURL !== '') ops.push({ op: 'set', path: [...path, 'baseURL'], value: draft.baseURL })
-                if (draft.apiKey !== '') ops.push({ op: 'set', path: [...path, 'apiKey'], value: draft.apiKey })
-                if (ops.length > 0) await settings!.mutate(ns, ops)
-              } catch {
-                // The TUI-owned namespace is already persisted; the adapter may
-                // not expose these fields or its namespace may not be writable.
+            if (settings === undefined) throw new Error('settings unavailable')
+            const id = draft.id.trim()
+            if (id === '') throw new Error(t('providerIdRequired'))
+            if (providerId !== undefined && providerId !== id) throw new Error(t('providerIdInvalid'))
+            const target = providerSettingsTarget(id, providerId)
+            if (target === undefined) throw new Error(t('settingsDiscoveryUnavailable'))
+            const nestedProfile = target.entry.settingsPath.length > 0
+            const catalogEntry = configurableProviderList().find(entry => entry.provider === id)
+            const isCatalogProvider = catalogEntry?.declared === false || !nestedProfile
+            if (nestedProfile && !isCatalogProvider && draft.models.length === 0) throw new Error(t('providerModelsRequired'))
+
+            const apiKeyEnv = draft.apiKeyEnv ?? (draft.apiKey.trim() === '' ? undefined : credentialReference(id))
+            if (draft.apiKey.trim() !== '') {
+              const credentials = ctx.get('credentials') as { set?: (ref: string, value: string) => Promise<void> } | undefined
+              if (credentials?.set === undefined || apiKeyEnv === undefined) {
+                throw new Error('credentials service unavailable')
               }
+              await credentials.set(apiKeyEnv, draft.apiKey.trim())
             }
+
+            type SettingsMutation =
+              | { op: 'set'; path: readonly string[]; value: unknown }
+              | { op: 'unset'; path: readonly string[] }
+            const ops: SettingsMutation[] = []
+            const set = (field: string, value: unknown): void => { ops.push({ op: 'set', path: [...target.path, field], value }) }
+            const unset = (field: string): void => { ops.push({ op: 'unset', path: [...target.path, field] }) }
+            if (nestedProfile) {
+              const displayName = draft.name.trim()
+              if (displayName === '' || displayName === id) unset('displayName')
+              else set('displayName', displayName)
+              if (draft.api.trim() === '') unset('api')
+              else set('api', draft.api.trim())
+              if (draft.models.length === 0) unset('models')
+              else set('models', draft.models.map(model => ({ id: model })))
+            }
+            if (draft.baseURL.trim() === '') unset('baseURL')
+            else set('baseURL', draft.baseURL.trim())
+            if (apiKeyEnv !== undefined) set('apiKeyEnv', apiKeyEnv)
+            await settings.mutate(target.ns, ops)
             appendNotice(t('noticeProviderSaved'), 'info')
           }
-
-          const configurableProviderList = (): LlmConfigurableProvider[] => {
-            return typeof ctx.llm.listConfigurableProviders === 'function'
-              ? ctx.llm.listConfigurableProviders()
-              : []
-          }
-
           const openProviderForm = async (providerId?: string): Promise<void> => {
-            if (llmProvidersSettings === undefined) {
+            if (settings === undefined) {
               appendNotice(t('noticeSettingsUnavailable'), 'warning')
               return
             }
             const existing = providerId === undefined ? undefined : providerCatalog.find(candidate => candidate.id === providerId)
-            const custom = existing?.custom ?? (providerId === undefined
-              ? undefined
-              : (llmProvidersSettings.get() as LlmProvidersSettings | undefined)?.providers?.[providerId])
+            const profile = providerId === undefined ? undefined : configuredProviderProfiles()[providerId]
 
+            let templateId = ''
             let templateName = ''
-            let templateApi = ''
             if (providerId === undefined) {
-              const configurableProviders = configurableProviderList()
+              const addableProviders = configurableProviderList().filter(entry => entry.settingsPath.length > 0)
               const templateItems: SelectItem[] = [
                 { value: '', label: t('settingsBlankProvider') },
-                ...configurableProviders.map(entry => ({
+                ...addableProviders.map(entry => ({
                   value: `preset:${entry.provider}`,
                   label: entry.displayName,
                 })),
@@ -1330,17 +1429,37 @@ export class Tui extends Service {
               if (template === undefined) return
               if (template.startsWith('preset:')) {
                 const presetId = template.slice('preset:'.length)
-                const preset = configurableProviders.find(entry => entry.provider === presetId)
+                const preset = addableProviders.find(entry => entry.provider === presetId)
+                templateId = presetId
                 templateName = preset?.displayName ?? ''
               }
             }
 
+            const id = providerId ?? templateId
+            const catalogEntry = configurableProviderList().find(entry => entry.provider === id)
+            const isCatalogProvider = catalogEntry?.declared === false || catalogEntry?.settingsPath.length === 0
+            const apiKeyEnv = profile?.apiKeyEnv
+            const apiKeyConfigured = apiKeyEnv === undefined
+              ? false
+              : await (async () => {
+                const credentials = ctx.get('credentials') as { describe?: (ref: string) => Promise<{ configured: boolean }> } | undefined
+                if (credentials?.describe === undefined) return true
+                try {
+                  return (await credentials.describe(apiKeyEnv)).configured
+                } catch {
+                  return false
+                }
+              })()
             const draft: ProviderDraft = {
-              name: custom?.name ?? existing?.name ?? templateName,
-              api: custom?.api ?? templateApi,
-              baseURL: custom?.baseURL ?? '',
-              apiKey: custom?.apiKey ?? '',
-              models: custom?.models ?? modelCatalog.filter(model => model.provider === providerId).map(model => model.model),
+              id,
+              name: profile?.displayName ?? existing?.name ?? templateName,
+              api: profile?.api ?? '',
+              baseURL: profile?.baseURL ?? '',
+              apiKey: '',
+              apiKeyEnv: profile?.apiKeyEnv,
+              apiKeyConfigured,
+              models: profile?.models?.map(model => model.id)
+                ?? modelCatalog.filter(model => model.provider === providerId).map(model => model.model),
             }
             const submitted = await showOverlay<ProviderDraft>(
               ui,
@@ -1351,22 +1470,16 @@ export class Tui extends Service {
                 draft,
                 done,
                 {
-                  discover: async (current) => {
-                    if (typeof ctx.llm.discoverModels !== 'function') {
-                      appendNotice(t('noticeDiscoveryUnavailable'), 'warning')
-                      return undefined
-                    }
+                  discover: async (currentDraft) => {
+                    if (typeof ctx.llm.discoverModels !== 'function') return undefined
                     const ns = providerDiscoveryNamespace(providerId)
-                    if (ns === undefined) {
-                      appendNotice(t('noticeDiscoveryUnavailable'), 'warning')
-                      return undefined
-                    }
+                    if (ns === undefined) return undefined
                     try {
                       const found = await ctx.llm.discoverModels(ns, {
                         ...(providerId !== undefined ? { provider: providerId } : {}),
-                        baseURL: current.baseURL || undefined,
-                        apiKey: current.apiKey || undefined,
-                        api: current.api || undefined,
+                        baseURL: currentDraft.baseURL || undefined,
+                        apiKey: currentDraft.apiKey || undefined,
+                        api: currentDraft.api || undefined,
                       })
                       return found as DiscoveredModel[]
                     } catch (error: unknown) {
@@ -1374,51 +1487,38 @@ export class Tui extends Service {
                       return undefined
                     }
                   },
-                  pickApi: async () => {
-                    return await showOverlay<string>(
+                  pickApi: async () => await showOverlay<string>(
+                    ui,
+                    done => new SelectDialog(
+                      t('settingsApi'),
+                      [
+                        { value: SUPPORTED_PROVIDER_APIS[0], label: t('settingsApiOpenAiCompletions') },
+                        { value: SUPPORTED_PROVIDER_APIS[1], label: t('settingsApiOpenAiResponses') },
+                        { value: SUPPORTED_PROVIDER_APIS[2], label: t('settingsApiAnthropicMessages') },
+                      ],
+                      palette,
+                      done,
+                    ),
+                    { width: '70%', maxHeight: '50%' },
+                  ),
+                  manageModels: async (currentDraft, discovered) => {
+                    const all = [...new Set([
+                      ...currentDraft.models,
+                      ...discovered.map(model => model.id),
+                    ])]
+                    return showOverlay<string[]>(
                       ui,
-                      done => new SelectDialog(
-                        t('settingsApi'),
-                        [
-                          { value: 'chat', label: t('settingsApiChat') },
-                          { value: 'completion', label: t('settingsApiCompletion') },
-                          { value: 'responses', label: t('settingsApiResponses') },
-                        ],
-                        palette,
-                        done,
-                      ),
-                      { width: '60%', maxHeight: '50%' },
+                      done => new ModelListDialog(t('settingsModels'), all, palette, t, done),
+                      { width: '90%', maxHeight: '85%' },
                     )
-                  },
-                  pickModels: async (current, discovered) => {
-                    const all: readonly DiscoveredModel[] = discovered.length > 0
-                      ? discovered
-                      : current.models.map(id => ({ id }))
-                    return await showOverlay<string[]>(
-                      ui,
-                      done => new ToggleDialog(
-                        t('settingsModels'),
-                        all.map(model => ({
-                          value: model.id,
-                          label: model.name === undefined ? model.id : `${model.id} — ${model.name}`,
-                        })),
-                        palette,
-                        done,
-                      ),
-                      { width: '70%', maxHeight: '70%' },
-                    )
-                  },
-                  editModelsManually: async (current) => {
-                    const value = await showOverlay<string>(
-                      ui,
-                      done => new InputDialog(t('settingsManualModels'), palette, done, t, current.models.join(', ')),
-                      { width: '70%', maxHeight: '50%' },
-                    )
-                    if (value === undefined) return undefined
-                    const models = value.split(/[\s,，、]+/).map(model => model.trim()).filter(Boolean)
-                    return [...new Set(models)]
-                  },
+                  }
                 },
+                {
+                  idEditable: providerId === undefined,
+                  requireModels: !isCatalogProvider,
+                  requireApi: !isCatalogProvider,
+                  requireBaseURL: !isCatalogProvider,
+                }
               ),
               { width: '90%', maxHeight: '85%' },
             )
@@ -1430,11 +1530,11 @@ export class Tui extends Service {
 
           const handleBack = (): void => {
             if (view === 'title-model') {
-              showItems('title-provider', providerItems, t('modelProvider'), pendingProvider)
+              showItems('title-provider', providerItems(), t('modelProvider'), pendingProvider)
               return
             }
             if (view === 'default-model') {
-              showItems('default-provider', providerItems, t('modelProvider'), pendingProvider)
+              showItems('default-provider', providerItems(), t('modelProvider'), pendingProvider)
               return
             }
             if (view === 'default-model-effort' && modelActionsBack) {
@@ -1573,7 +1673,7 @@ export class Tui extends Service {
                   const provider = defaultSelection.provider
                   let models: Awaited<ReturnType<typeof ctx.llm.listModels>> = []
                   try {
-                    models = await ctx.llm.listModels(provider)
+                    models = await listModelsForProvider(provider)
                   } catch {
                     // Keep the list empty and still allow a custom model id.
                   }
@@ -1748,13 +1848,7 @@ export class Tui extends Service {
                     ? await promptCustom(t('settingsEditCustomProvider'), savedProvider)
                     : item.value
                 if (provider === undefined) return
-                let models: Awaited<ReturnType<typeof ctx.llm.listModels>> = []
-                try {
-                  models = await ctx.llm.listModels(provider)
-                } catch {
-                  // A user-entered provider may not be in the live catalog yet;
-                  // keep the list empty and still allow a custom model id.
-                }
+                const models = await listModelsForProvider(provider)
                 if (selectedVersion !== viewVersion || view !== selectedView) return
                 pendingProvider = provider
                 const savedModel = titleSettings?.provider === provider ? titleSettings.model : undefined
@@ -1806,13 +1900,7 @@ export class Tui extends Service {
                     ? await promptCustom(t('settingsEditCustomProvider'), savedProvider)
                     : item.value
                 if (provider === undefined) return
-                let models: Awaited<ReturnType<typeof ctx.llm.listModels>> = []
-                try {
-                  models = await ctx.llm.listModels(provider)
-                } catch {
-                  // A user-entered provider may not be in the live catalog yet;
-                  // keep the list empty and still allow a custom model id.
-                }
+                const models = await listModelsForProvider(provider)
                 if (selectedVersion !== viewVersion || view !== selectedView) return
                 pendingProvider = provider
                 const savedModel = defaultSelection.provider === provider ? defaultSelection.model : undefined

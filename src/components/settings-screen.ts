@@ -171,9 +171,15 @@ export class SettingsScreen implements Component, Focusable {
   private renderContent(width: number, height: number): string[] {
     if (this.items.length === 0) return [this.palette.dim(this.t('settingsEmpty'))]
     const selected = this.items[this.selectedIndex]
-    const description = selected?.description === undefined
+    const selectedDetails = [
+      selected?.description,
+      selected !== undefined && isSettingsItem(selected) && selected.currentValue !== ''
+        ? `${selected.label}: ${selected.currentValue}`
+        : undefined
+    ].filter((value): value is string => value !== undefined && value !== '')
+    const description = selectedDetails.length === 0
       ? []
-      : wrapTextWithAnsi(selected.description, Math.max(1, width - 2)).slice(0, 3)
+      : wrapTextWithAnsi(selectedDetails.join(' · '), Math.max(1, width - 2))
     const descriptionRows = description.length === 0 ? 0 : description.length + 1
     const availableRows = Math.max(1, height - descriptionRows)
     const needsScroll = this.items.length > Math.min(this.maxVisible, availableRows)
@@ -184,7 +190,8 @@ export class SettingsScreen implements Component, Focusable {
     ))
     const end = Math.min(this.items.length, start + visibleRows)
     const lines: string[] = []
-    const labelWidth = Math.min(30, Math.max(...this.items.map(item => visibleWidth(item.label))))
+    const maximumLabelWidth = Math.max(...this.items.map(item => visibleWidth(item.label)))
+    const labelWidth = Math.min(maximumLabelWidth, Math.max(1, Math.floor(width * 0.45)))
     for (let index = start; index < end; index++) {
       const item = this.items[index]!
       lines.push(this.renderItem(item, index === this.selectedIndex, width, labelWidth))

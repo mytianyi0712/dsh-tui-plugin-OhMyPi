@@ -407,30 +407,60 @@ export async function runModelFlow(
   llm: LlmRuntime,
   save: (selection: ModelSelection) => Promise<void>,
 ): Promise<ModelSelection | undefined> {
-  const providers = llm.listProviders()
-  const provider = await pickOne(ui, palette, t('modelProvider'), providers.map(entry => ({
+  const CUSTOM_MODEL = '\u0000custom-model'
+  const providerEntries = llm.listProviders().map(entry => ({
+    id: entry.id,
+    name: entry.name,
+  }))
+  const provider = await pickOne(ui, palette, t('modelProvider'), providerEntries.map(entry => ({
     value: entry.id,
     label: entry.name,
   })))
   if (provider === undefined) return undefined
-  const models = await llm.listModels(provider)
-  const model = await pickOne(ui, palette, t('modelTitle', { provider }), models.map(entry => ({
-    value: entry.id,
-    label: entry.id,
-    description: entry.name === undefined ? undefined : displayText(entry.name),
-  })))
-  if (model === undefined) return undefined
-  const resolved = await llm.resolveModelInfo(provider, model)
-  let reasoningEffort: string | undefined
-  const efforts = resolved.reasoning?.efforts
-  if (efforts !== undefined && efforts.length > 1) {
-    const picked = await pickOne(ui, palette, t('modelEffort'), efforts.map(entry => ({
+
+  let models: Array<{ id: string; name?: string }> = []
+  try {
+    const found = await llm.listModels(provider)
+    models = found.map(entry => ({ id: entry.id, name: entry.name }))
+  } catch {
+    // Keep the custom model entry available when the adapter has no catalog.
+  }
+
+  const modelEntries = [
+    ...models.map(entry => ({
       value: entry.id,
-      label: entry.name,
-      description: entry.description,
-    })))
-    if (picked === undefined) return undefined
-    reasoningEffort = picked
+      label: entry.id,
+      description: entry.name === undefined ? undefined : displayText(entry.name),
+    })),
+    { value: CUSTOM_MODEL, label: t('settingsCustomModel') },
+  ]
+  const picked = await pickOne(ui, palette, t('modelTitle', { provider }), modelEntries)
+  if (picked === undefined) return undefined
+  let model = picked
+  if (picked === CUSTOM_MODEL) {
+    const custom = await showOverlay<string>(
+      ui,
+      done => new InputDialog(t('modelTitle', { provider }), palette, done, t),
+    )
+    if (custom === undefined || custom.trim() === '') return undefined
+    model = custom.trim()
+  }
+
+  let reasoningEffort: string | undefined
+  try {
+    const resolved = await llm.resolveModelInfo(provider, model)
+    const efforts = resolved.reasoning?.efforts
+    if (efforts !== undefined && efforts.length > 1) {
+      const picked = await pickOne(ui, palette, t('modelEffort'), efforts.map(entry => ({
+        value: entry.id,
+        label: entry.name,
+        description: entry.description,
+      })))
+      if (picked === undefined) return undefined
+      reasoningEffort = picked
+    }
+  } catch {
+    // Providers may accept dynamic model ids without exposing metadata.
   }
   const selection: ModelSelection = {
     provider,

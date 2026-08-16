@@ -112,4 +112,17 @@ describe('SettingsScreen', () => {
 
     assert.equal(selected, 'last')
   })
+  it('wraps the complete selected option value instead of hiding its tail', () => {
+    const screen = new SettingsScreen([], 'Settings', palette, t, 10)
+    screen.setItems([
+      {
+        value: 'url',
+        label: 'Base URL',
+        currentValue: 'https://gateway.example/company/region/v1/chat/completions',
+      },
+    ], 'Provider')
+    const rendered = screen.render(40).join('\n')
+    assert.ok(rendered.includes('https://gateway.example'))
+    assert.ok(rendered.includes('chat/completions'))
+  })
 })

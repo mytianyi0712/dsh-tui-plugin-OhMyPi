@@ -234,7 +234,7 @@ $env:DEEPSEEK_BASE_URL = 'http://localhost:3000/v1'
 
 - `mode` 只对空白会话生效；切换结果会写入会话日志，恢复会话时沿用。
 - `/theme` 和 `/settings` 的选择在存在官方 settings provider 时写入 `$DSH_HOME/settings.yaml`。
-- `/settings` 分为“常规 / 模型与供应商 / 高级”三页：常规管理外观、默认模型与默认会话配置；模型与供应商页只列出已配置供应商与模型，支持新增/编辑供应商（名称、接口类型、Base URL、API Key、模型列表；模型既可探测上游后勾选加入，也可手动填写；新建时可选预设模板）。接口类型采用与 WebUI 一致的固定选项（Chat Completions / Completions / Responses）；高级保留最大并行工具调用数等设置。供应商配置通过 dsh settings 持久化，不保存在 TUI 层。
+- `/settings` 分为“常规 / 模型与供应商 / 高级”三页；模型与供应商页支持新增/编辑供应商、模型探测与手动模型列表。接口类型使用 dsh-llm-pi-ai 官方值：OAI 兼容 `openai-completions`、Response `openai-responses`、Message `anthropic-messages`。
 - 默认模式会读取 dsh settings 中保存的 `agent-presets.default`：设置页修改后，新会话启动会使用该默认模式，而不是固定回退到 `standard`。
 - `theme.custom` 只接受 RGB 三元组；未知角色和非法值会被忽略。
 - `/permission` 的可用选项以当前部署的权限预设为准，自定义 preset 也会进入命令提示和补全。

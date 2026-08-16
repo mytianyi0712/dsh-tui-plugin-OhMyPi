@@ -1,8 +1,7 @@
 /**
  * Single-page provider form for the settings screen. It collects the provider
- * name, base URL, API key, and selected model ids. Model discovery and model
- * picking are delegated to callbacks supplied by the caller so the component
- * stays UI-only while the actual dsh/llm work happens in the host flow.
+ * name, base URL, API key, and a fully editable model catalog. Model discovery
+ * and catalog editing are delegated to callbacks supplied by the host flow.
  */
 
 import {
@@ -10,17 +9,36 @@ import {
   getKeybindings,
   truncateToWidth,
   visibleWidth,
+  wrapTextWithAnsi,
   type Component,
   type Focusable,
 } from '@earendil-works/pi-tui'
 import type { Translator } from '../i18n.ts'
 import { frameBlock, type Palette } from '../theme.ts'
+/** Protocol identifiers accepted by dsh-llm-pi-ai for hand-declared routes. */
+export const SUPPORTED_PROVIDER_APIS = [
+  'openai-completions',
+  'openai-responses',
+  'anthropic-messages',
+] as const
+
+export type SupportedProviderApi = typeof SUPPORTED_PROVIDER_APIS[number]
+
 
 export interface ProviderDraft {
+  /** Permanent dsh route id; lowercase kebab-case. */
+  id: string
+  /** Human-readable provider display name. */
   name: string
+  /** dsh WebUI-compatible protocol type. */
   api: string
   baseURL: string
+  /** New key value; an empty value keeps an existing credential. */
   apiKey: string
+  /** Credential reference persisted in the provider profile. */
+  apiKeyEnv?: string
+  /** Whether the existing credential reference currently resolves. */
+  apiKeyConfigured?: boolean
   models: string[]
 }
 
@@ -28,25 +46,23 @@ export interface DiscoveredModel {
   id: string
   name?: string
 }
-
 export interface ProviderFormCallbacks {
   /** Probe the upstream endpoint; return discovered models or undefined. */
   discover?: (draft: ProviderDraft) => Promise<readonly DiscoveredModel[] | undefined>
-  /** Open a model picker; return the selected model ids or undefined to cancel. */
-  pickModels?: (
+  /** Open the full model catalog editor; undefined cancels without changing the draft. */
+  manageModels?: (
     draft: ProviderDraft,
     discovered: readonly DiscoveredModel[],
   ) => Promise<string[] | undefined>
-  /** Open a manual model-id editor; return the edited model ids or undefined to cancel. */
-  editModelsManually?: (draft: ProviderDraft) => Promise<string[] | undefined>
-  /** Open an API type picker; return the selected API type or undefined to cancel. */
+  /** Open the dsh WebUI-compatible API type picker. */
   pickApi?: (draft: ProviderDraft) => Promise<string | undefined>
 }
 
-type EditableField = 'name' | 'baseURL' | 'apiKey'
+
+type EditableField = 'id' | 'name' | 'baseURL' | 'apiKey'
 
 interface FormField {
-  kind: 'text' | 'action' | 'save' | 'cancel'
+  kind: 'text' | 'readonly' | 'action' | 'save' | 'cancel'
   id: string
   label: string
 }
@@ -76,6 +92,7 @@ export class ProviderForm implements Component, Focusable {
     draft: ProviderDraft,
     onDone: (draft: ProviderDraft | undefined) => void,
     callbacks: ProviderFormCallbacks = {},
+    options: { idEditable?: boolean; requireModels?: boolean; requireApi?: boolean; requireBaseURL?: boolean } = {},
   ) {
     this.title = title
     this.palette = palette
@@ -84,23 +101,33 @@ export class ProviderForm implements Component, Focusable {
     this.onDone = onDone
     this.callbacks = callbacks
     this.fields = [
+      ...(options.idEditable === false
+        ? [{ kind: 'readonly' as const, id: 'id', label: t('settingsProviderId') }]
+        : [{ kind: 'text' as const, id: 'id', label: t('settingsProviderId') }]),
       { kind: 'text', id: 'name', label: t('settingsProviderName') },
       { kind: 'action', id: 'api', label: t('settingsApi') },
       { kind: 'text', id: 'baseURL', label: t('settingsBaseURL') },
       { kind: 'text', id: 'apiKey', label: t('settingsApiKey') },
-      { kind: 'action', id: 'models', label: t('settingsModels') },
-      { kind: 'action', id: 'manual-models', label: t('settingsManualModels') },
+      { kind: 'action', id: 'models', label: t('settingsManageModels') },
       { kind: 'action', id: 'discover', label: t('settingsDiscoverModels') },
       { kind: 'save', id: 'save', label: t('settingsSave') },
       { kind: 'cancel', id: 'cancel', label: t('settingsCancel') },
     ]
+    this.requireModels = options.requireModels === true
+    this.requireBaseURL = options.requireBaseURL === true
+    this.requireApi = options.requireApi === true
   }
+
+  private readonly requireModels: boolean
+  private readonly requireBaseURL: boolean
+  private readonly requireApi: boolean
+
 
   handleInput(data: string): void {
     if (this.busy) return
     if (this.editingField !== undefined) {
       this.input.focused = this.focused
-      this.input.handleInput(data)
+      this.input.handleInput(data === '\r' ? '\n' : data)
       return
     }
 
@@ -136,6 +163,15 @@ export class ProviderForm implements Component, Focusable {
     this.fields.forEach((field, index) => {
       rows.push(this.renderField(field, index === this.activeIndex, innerWidth))
     })
+    const activeField = this.fields[this.activeIndex]
+    if (activeField?.kind === 'text' && activeField.id !== 'apiKey') {
+      const fullValue = this.editingField === activeField.id ? this.input.getValue() : this.valueFor(activeField.id)
+      if (fullValue !== '') {
+        rows.push('')
+        rows.push(this.palette.dim(`  ${activeField.label}:`))
+        rows.push(...wrapTextWithAnsi(fullValue, Math.max(1, innerWidth - 2)).map(line => `  ${line}`))
+      }
+    }
 
     if (this.busy) {
       rows.push('')
@@ -167,25 +203,47 @@ export class ProviderForm implements Component, Focusable {
       if (field.id === 'api') {
         await this.pickApi()
       } else if (field.id === 'models') {
-        await this.pickModels()
-      } else if (field.id === 'manual-models') {
-        await this.editModelsManually()
+        await this.manageModels()
       } else if (field.id === 'discover') {
         await this.discoverModels()
       }
       return
     }
     if (field.kind === 'save') {
-      if (this.draft.name.trim() === '') {
-        this.error = this.t('providerConfigRequired')
+      const id = this.draft.id.trim()
+      if (id === '') {
+        this.error = this.t('providerIdRequired')
+        return
+      }
+      if (!/^[a-z][a-z0-9-]*$/.test(id)) {
+        this.error = this.t('providerIdInvalid')
+        return
+      }
+      if (this.requireBaseURL && this.draft.baseURL.trim() === '') {
+        this.error = this.t('providerBaseURLRequired')
+        return
+      }
+      if (this.requireApi && !SUPPORTED_PROVIDER_APIS.includes(this.draft.api as SupportedProviderApi)) {
+        this.error = this.t('providerApiRequired')
+        return
+      }
+      if (this.draft.api !== '' && !SUPPORTED_PROVIDER_APIS.includes(this.draft.api as SupportedProviderApi)) {
+        this.error = this.t('providerApiRequired')
+        return
+      }
+      if (this.requireModels && this.draft.models.length === 0) {
+        this.error = this.t('providerModelsRequired')
         return
       }
       this.onDone({
-        name: this.draft.name.trim(),
+        id,
+        name: this.draft.name.trim() || id,
         api: this.draft.api.trim(),
         baseURL: this.draft.baseURL.trim(),
         apiKey: this.draft.apiKey.trim(),
-        models: [...this.draft.models],
+        ...this.draft.apiKeyEnv === undefined ? {} : { apiKeyEnv: this.draft.apiKeyEnv },
+        ...this.draft.apiKeyConfigured === undefined ? {} : { apiKeyConfigured: this.draft.apiKeyConfigured },
+        models: [...new Set(this.draft.models.map(model => model.trim()).filter(Boolean))],
       })
       return
     }
@@ -205,22 +263,14 @@ export class ProviderForm implements Component, Focusable {
         return
       }
       this.discovered = found.map(model => ({ id: model.id, name: model.name }))
-      // Keep previously selected models that are no longer advertised; they may
-      // still be valid for providers that do not advertise a full catalog.
-      const advertised = new Set(this.discovered.map(model => model.id))
-      this.draft.models = [
-        ...this.discovered.map(model => model.id),
-        ...this.draft.models.filter(model => !advertised.has(model)),
-      ]
-      // Let the user immediately pick a subset of the discovered models.
-      await this.pickModels()
+      const discoveredIds = this.discovered.map(model => model.id)
+      await this.manageModels([...new Set([...discoveredIds, ...this.draft.models])])
     } catch (error: unknown) {
       this.error = error instanceof Error ? error.message : String(error)
     } finally {
       this.busy = false
     }
   }
-
   private async pickApi(): Promise<void> {
     if (this.callbacks.pickApi === undefined) {
       this.error = this.t('settingsDiscoveryUnavailable')
@@ -237,30 +287,17 @@ export class ProviderForm implements Component, Focusable {
     }
   }
 
-  private async pickModels(): Promise<void> {
-    if (this.callbacks.pickModels === undefined) {
-      this.error = this.t('settingsDiscoveryUnavailable')
-      return
-    }
-    this.busy = true
-    try {
-      const picked = await this.callbacks.pickModels(this.draft, this.discovered)
-      if (picked !== undefined) this.draft.models = picked
-    } catch (error: unknown) {
-      this.error = error instanceof Error ? error.message : String(error)
-    } finally {
-      this.busy = false
-    }
-  }
 
-  private async editModelsManually(): Promise<void> {
-    if (this.callbacks.editModelsManually === undefined) {
+
+  private async manageModels(initialModels = this.draft.models): Promise<void> {
+    if (this.callbacks.manageModels === undefined) {
       this.error = this.t('settingsDiscoveryUnavailable')
       return
     }
     this.busy = true
     try {
-      const edited = await this.callbacks.editModelsManually(this.draft)
+      const draft = { ...this.draft, models: [...initialModels] }
+      const edited = await this.callbacks.manageModels(draft, this.discovered)
       if (edited !== undefined) this.draft.models = edited
     } catch (error: unknown) {
       this.error = error instanceof Error ? error.message : String(error)
@@ -272,8 +309,8 @@ export class ProviderForm implements Component, Focusable {
   private startEditing(field: EditableField): void {
     this.editingField = field
     this.input = new Input()
-    this.input.setValue(this.draft[field])
-    ;(this.input as unknown as { cursor: number }).cursor = this.draft[field].length
+    const initial = this.draft[field]
+    if (initial !== '') this.input.handleInput(initial)
     this.input.onSubmit = (value) => {
       this.draft[field] = value
       this.editingField = undefined
@@ -282,7 +319,6 @@ export class ProviderForm implements Component, Focusable {
       this.editingField = undefined
     }
   }
-
   private renderField(field: FormField, active: boolean, width: number): string {
     const prefix = active ? '→ ' : '  '
     const label = active ? this.palette.bold(this.palette.accent(field.label)) : this.palette.text(field.label)
@@ -292,6 +328,9 @@ export class ProviderForm implements Component, Focusable {
         : `[ ${this.valueFor(field.id)} ]`
       return truncateToWidth(`${prefix}${label}  ${value}`, width, '')
     }
+    if (field.kind === 'readonly') {
+      return truncateToWidth(`${prefix}${label}: ${this.palette.muted(this.valueFor(field.id))}`, width, '')
+    }
     if (field.kind === 'action') {
       const value = field.id === 'api'
         ? this.draft.api === ''
@@ -300,14 +339,10 @@ export class ProviderForm implements Component, Focusable {
         : field.id === 'models'
           ? this.draft.models.length === 0
             ? this.t('settingsEmpty')
-            : this.draft.models.map(model => model).join(', ')
-          : field.id === 'manual-models'
-            ? this.draft.models.length === 0
-              ? this.t('settingsEmpty')
-              : this.t('settingsProviderModelCount', { count: this.draft.models.length })
-            : this.discovered.length === 0
-              ? this.t('settingsDiscoverModels')
-              : this.t('settingsDiscoveredCount', { count: this.discovered.length })
+            : this.t('settingsProviderModelCount', { count: this.draft.models.length })
+          : this.discovered.length === 0
+            ? this.t('settingsDiscoverModels')
+            : this.t('settingsDiscoveredCount', { count: this.discovered.length })
       const text = active
         ? this.palette.bold(this.palette.accent(`${field.label}: ${value}`))
         : `${field.label}: ${this.palette.muted(value)}`
@@ -320,8 +355,17 @@ export class ProviderForm implements Component, Focusable {
   }
 
   private valueFor(id: string): string {
+    if (id === 'id') return this.draft.id
     if (id === 'name') return this.draft.name
+    if (id === 'api') return this.draft.api
     if (id === 'baseURL') return this.draft.baseURL
-    return this.draft.apiKey
+    if (id === 'apiKey') {
+      return this.draft.apiKey === '' && this.draft.apiKeyConfigured !== true
+        ? ''
+        : this.draft.apiKey === ''
+          ? this.t('settingsCredentialConfigured')
+          : this.draft.apiKey
+    }
+    return ''
   }
 }
