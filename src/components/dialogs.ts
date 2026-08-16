@@ -1,11 +1,12 @@
 /**
  * Framed dialog helpers and overlay flows: select dialogs (single/toggle),
  * a custom-answer input dialog, the user-questions flow (`ctx.userQuestions`
- * provider), and the model-selection flow. All overlays render as rounded
- * omp-style frames and release focus back to the editor on completion.
+ * provider), an embedded ask card for the composer area, and the
+ * model-selection flow. Overlays render as rounded omp-style frames and
+ * release focus back to the editor on completion.
  */
 
-import { Input, SelectList, type Component, type OverlayHandle, type OverlayOptions, type TUI } from '@earendil-works/pi-tui'
+import { Input, SelectList, type Component, type Container, type Focusable, type OverlayHandle, type OverlayOptions, type TUI } from '@earendil-works/pi-tui'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { AskUserQuestionAnswerItem, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
@@ -100,8 +101,10 @@ export class InputDialog implements Component {
     palette: Palette,
     private readonly onDone: (value: string | undefined) => void,
     private readonly t: Translator,
+    initialValue = '',
   ) {
     this.input = new Input()
+    if (initialValue !== '') this.input.setValue(initialValue)
     this.input.onSubmit = (value: string) => onDone(value)
     this.input.onEscape = () => onDone(undefined)
     this.title = title
@@ -126,6 +129,66 @@ export class InputDialog implements Component {
   }
 }
 
+/**
+ * Embedded ask card rendered in the composer area instead of a modal overlay.
+ * It owns a single-line input and is focusable, so the user can answer while
+ * keeping the main editor draft untouched.
+ */
+export class AskCardComponent implements Component, Focusable {
+  focused = false
+  private readonly input: Input
+
+  constructor(
+    private readonly question: AskUserQuestionItem,
+    private readonly index: number,
+    private readonly total: number,
+    private readonly palette: Palette,
+    private readonly t: Translator,
+    private readonly onDone: (value: string | undefined) => void,
+  ) {
+    this.input = new Input()
+    this.input.onSubmit = (value) => onDone(value)
+    this.input.onEscape = () => onDone(undefined)
+  }
+
+  handleInput(data: string): void {
+    this.input.focused = this.focused
+    this.input.handleInput(data)
+  }
+
+  invalidate(): void {
+    this.input.invalidate()
+  }
+
+  render(width: number): string[] {
+    this.input.focused = this.focused
+    const innerWidth = Math.max(20, width - 4)
+    const options = this.question.options ?? []
+    const rows: string[] = [
+      this.palette.bold(this.palette.accent(`❓ ${this.question.question}`)),
+      '',
+    ]
+    options.forEach((option, i) => {
+      rows.push(` ${i + 1}. ${option.label}${option.description ? ` — ${option.description}` : ''}`)
+    })
+    if (options.length > 0) {
+      rows.push('')
+      rows.push(this.palette.dim(this.question.multiSelect === true
+        ? this.t('askInlineMultiHint')
+        : this.t('askInlineOptionHint')))
+    } else {
+      rows.push('')
+      rows.push(this.palette.dim(this.t('askInlineTextHint')))
+    }
+    rows.push('')
+    rows.push(...this.input.render(innerWidth - 4))
+    const title = this.total > 1
+      ? `${this.t('askTitle')} ${this.index + 1}/${this.total}`
+      : this.t('askTitle')
+    return ['', ...frameBlock(rows, width, this.palette.accent, this.palette.toolPendingBg, title)]
+  }
+}
+
 /** Show an overlay component and resolve once it reports through `onDone`. */
 export function showOverlay<T>(
   ui: TUI,
@@ -144,6 +207,117 @@ export function showOverlay<T>(
     })
     ui.requestRender()
   })
+}
+
+/**
+ * Parse one inline ask submission into the user-questions answer item.
+ * Mirrors the WeChat ask mapping: a single numeric answer picks an option,
+ * multi-select accepts comma/space separated numbers, and anything else is
+ * treated as a custom answer.
+ */
+function parseInlineAnswer(raw: string, question: AskUserQuestionItem): AskUserQuestionAnswerItem {
+  const text = raw.trim()
+  const options = question.options ?? []
+  const selected: string[] = []
+  let custom: string | undefined
+  if (question.multiSelect === true) {
+    const parts = text.split(/[\s,，、]+/).filter(Boolean)
+    const indices = parts.map(part => /^\d+$/.test(part) ? Number(part) : Number.NaN)
+    const valid = indices.filter(index =>
+      Number.isInteger(index) && index >= 1 && index <= options.length)
+    if (valid.length > 0 && valid.length === parts.length) {
+      for (const index of valid) {
+        const option = options[index - 1]
+        if (option) selected.push(option.label)
+      }
+    } else if (text !== '') {
+      custom = text
+    }
+  } else if (options.length > 0 && /^\d+$/.test(text)) {
+    const option = options[Number(text) - 1]
+    if (option) selected.push(option.label)
+    else if (text !== '') custom = text
+  } else if (text !== '') {
+    custom = text
+  }
+  return {
+    id: question.id,
+    selected,
+    ...(custom !== undefined ? { custom } : {}),
+  }
+}
+
+/**
+ * Run the user-questions flow as an embedded card in the composer area.
+ * Each question is rendered one at a time in `slot`; the card owns its input,
+ * so the main editor draft is left untouched. Esc cancels the remaining flow
+ * and an abort signal immediately removes the card.
+ */
+export async function runInlineQuestionFlow(
+  ui: TUI,
+  slot: Container,
+  palette: Palette,
+  t: Translator,
+  questions: readonly AskUserQuestionItem[],
+  signal: AbortSignal | undefined,
+  restoreFocus: () => void,
+): Promise<AskUserQuestionAnswerItem[]> {
+  const answers: AskUserQuestionAnswerItem[] = []
+  const { promise, resolve } = Promise.withResolvers<AskUserQuestionAnswerItem[]>()
+  let settled = false
+
+  const finish = (): void => {
+    if (settled) return
+    settled = true
+    signal?.removeEventListener('abort', onAbort)
+    slot.clear()
+    ui.requestRender()
+    restoreFocus()
+  }
+
+  const onAbort = (): void => {
+    finish()
+    resolve(answers)
+  }
+
+  const showQuestion = (index: number): void => {
+    const question = questions[index]
+    if (question === undefined) {
+      finish()
+      resolve(answers)
+      return
+    }
+    const card = new AskCardComponent(question, index, questions.length, palette, t, (value) => {
+      if (value === undefined) {
+        finish()
+        resolve(answers)
+        return
+      }
+      if (value.trim() === '') {
+        ui.requestRender()
+        return
+      }
+      answers.push(parseInlineAnswer(value, question))
+      if (index + 1 < questions.length) {
+        showQuestion(index + 1)
+      } else {
+        finish()
+        resolve(answers)
+      }
+    })
+    slot.clear()
+    slot.addChild(card)
+    ui.setFocus(card)
+    ui.requestRender()
+  }
+
+  if (signal?.aborted) {
+    resolve(answers)
+    return promise
+  }
+  signal?.addEventListener('abort', onAbort, { once: true })
+  showQuestion(0)
+  return promise
 }
 
 const CUSTOM_ANSWER = '\u0000custom'

@@ -106,23 +106,80 @@ export type Messages = {
   noticeFullAccessWarning: string
   // --- dialogs and flows --------------------------------------------------
   dialogTypeAnswer: string
+  askTitle: string
+  askInlineOptionHint: string
+  askInlineMultiHint: string
+  askInlineTextHint: string
   modelProvider: string
   modelTitle: string
   modelEffort: string
   resumeTitle: string
   settingsTitle: string
+  settingsHint: string
+  settingsSubmenuHint: string
+  settingsEmpty: string
+  settingsTabGeneral: string
+  settingsTabModelsProviders: string
+  settingsTabAppearance: string
+  settingsTabModel: string
+  settingsTabDefaults: string
+  settingsAddProvider: string
+  settingsEditProvider: string
+  settingsProviderName: string
+  settingsApi: string
+  settingsApiChat: string
+  settingsApiCompletion: string
+  settingsApiResponses: string
+  settingsBaseURL: string
+  settingsApiKey: string
+  settingsModels: string
+  settingsManualModels: string
+  settingsProviderTemplate: string
+  settingsBlankProvider: string
+  settingsDiscoverModels: string
+  settingsDiscovering: string
+  settingsDiscoveredCount: string
+  settingsDiscoveryUnavailable: string
+  settingsConfiguredProviders: string
+  settingsConfiguredModels: string
+  settingsProviderModelCount: string
+  settingsSetDefaultModel: string
+  settingsSetTitleModel: string
+  providerFormHint: string
+  providerConfigRequired: string
+  noticeProviderSaved: string
+  noticeProviderFailed: string
+  noticeDiscoveryUnavailable: string
   settingsTheme: string
   settingsTitleModel: string
-  settingsThemeCurrent: string
-  settingsTitleModelCurrent: string
-  settingsDefaults: string
-  settingsDefaultsCurrent: string
+  settingsProvider: string
+  settingsModel: string
+  settingsCustomProvider: string
+  settingsCustomModel: string
+  settingsEditCustomProvider: string
+  settingsEditCustomModel: string
+  settingsCustomConfig: string
+  settingsSaveDefault: string
+  settingsSaveTitle: string
+  settingsSave: string
+  settingsCancel: string
+  customConfigHint: string
+  customConfigRequired: string
+  customConfigTarget: string
   settingsDefaultPermission: string
   settingsDefaultModel: string
   settingsDefaultEffort: string
+  settingsOn: string
+  settingsOff: string
+  settingsShowReasoning: string
+  settingsToolOutputLines: string
+  settingsDefaultMode: string
+  settingsMaxParallelToolCalls: string
+  settingsTabAdvanced: string
   noticeDefaultPermissionSet: string
   noticeDefaultModelSet: string
   noticeDefaultEffortSet: string
+  noticeDefaultModeSet: string
   untitled: string
   // --- mode / theme labels ------------------------------------------------
   modeStandard: string
@@ -233,23 +290,80 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeExitHint: '再次按 Ctrl+C 退出',
     noticeFullAccessWarning: '当前为完全访问模式：文件沙箱已禁用，且不会请求审批。请谨慎操作。',
     dialogTypeAnswer: '输入你的回答并回车',
+    askTitle: '提问',
+    askInlineOptionHint: '输入数字选择，或直接输入自定义回答后回车',
+    askInlineMultiHint: '多个选项用逗号分隔序号，回车提交；也可直接输入自定义回答',
+    askInlineTextHint: '输入回答后回车',
     modelProvider: '服务商',
     modelTitle: '模型 · {provider}',
     modelEffort: '推理强度',
     resumeTitle: '恢复会话',
     settingsTitle: '设置',
+    settingsHint: '↑/↓ 选择 · ←/→/Tab 切换标签 · Enter/Space 修改 · Esc 关闭',
+    settingsSubmenuHint: '↑/↓ 选择 · Enter 确认 · Esc 返回',
+    settingsEmpty: '没有可用选项',
+    settingsTabGeneral: '常规',
+    settingsTabModelsProviders: '模型与供应商',
+    settingsTabAppearance: '外观',
+    settingsTabModel: '模型',
+    settingsTabDefaults: '默认配置',
+    settingsAddProvider: '＋ 新增供应商',
+    settingsEditProvider: '编辑供应商',
+    settingsProviderName: '供应商名称',
+    settingsApi: '接口类型',
+    settingsApiChat: 'Chat Completions',
+    settingsApiCompletion: 'Completions',
+    settingsApiResponses: 'Responses',
+    settingsBaseURL: 'Base URL',
+    settingsApiKey: 'API Key',
+    settingsModels: '模型列表',
+    settingsManualModels: '手动编辑模型',
+    settingsProviderTemplate: '选择供应商模板',
+    settingsBlankProvider: '空白自定义',
+    settingsDiscoverModels: '探测上游模型',
+    settingsDiscovering: '正在探测模型…',
+    settingsDiscoveredCount: '已发现 {count} 个模型',
+    settingsDiscoveryUnavailable: '当前部署未提供模型探测服务。',
+    settingsConfiguredProviders: '已配置供应商',
+    settingsConfiguredModels: '已配置模型',
+    settingsProviderModelCount: '{count} 个模型',
+    settingsSetDefaultModel: '设为默认模型',
+    settingsSetTitleModel: '设为标题模型',
+    providerFormHint: '↑/↓/←/→ 移动 · Enter 编辑/执行 · Esc 返回',
+    providerConfigRequired: '供应商名称不能为空',
+    noticeProviderSaved: '供应商已保存。',
+    noticeProviderFailed: '供应商保存失败：{error}',
+    noticeDiscoveryUnavailable: '当前部署未提供模型探测服务。',
     settingsTheme: '主题',
     settingsTitleModel: '标题模型',
-    settingsThemeCurrent: '当前主题：{name}',
-    settingsTitleModelCurrent: '当前标题模型：{provider}/{model}',
-    settingsDefaults: '默认配置',
-    settingsDefaultsCurrent: '模型 {model} · 强度 {effort} · 权限 {permission}',
+    settingsProvider: '供应商',
+    settingsModel: '模型',
+    settingsCustomProvider: '✎ 自定义供应商…',
+    settingsCustomModel: '✎ 自定义模型…',
+    settingsEditCustomProvider: '✎ 编辑当前自定义供应商…',
+    settingsEditCustomModel: '✎ 编辑当前自定义模型…',
+    settingsCustomConfig: '✎ 自定义模型配置…',
+    settingsSaveDefault: '保存为默认模型',
+    settingsSaveTitle: '保存为标题模型',
+    settingsSave: '保存',
+    settingsCancel: '取消',
+    customConfigHint: '↑/↓/←/→ 移动 · Enter 编辑/选中/取消选中 · Esc 返回',
+    customConfigRequired: '供应商和模型不能为空',
+    customConfigTarget: '至少选择一个保存目标',
     settingsDefaultPermission: '默认权限模式',
     settingsDefaultModel: '默认模型',
     settingsDefaultEffort: '默认思考强度',
+    settingsOn: '开',
+    settingsOff: '关',
+    settingsShowReasoning: '显示思考过程',
+    settingsToolOutputLines: '工具输出行数',
+    settingsDefaultMode: '默认模式',
+    settingsMaxParallelToolCalls: '最大并行工具调用数',
+    settingsTabAdvanced: '高级',
     noticeDefaultPermissionSet: '默认权限模式已设为 {permission}。',
     noticeDefaultModelSet: '默认模型已设为 {provider}/{model}。',
     noticeDefaultEffortSet: '默认思考强度已设为 {effort}。',
+    noticeDefaultModeSet: '默认模式已设为 {mode}。',
     untitled: '（未命名）',
     modeStandard: '标准',
     modeMinimal: '极简',
@@ -357,23 +471,80 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeExitHint: 'Press Ctrl+C again to exit',
     noticeFullAccessWarning: 'Full access mode is active: file confinement is disabled and approval prompts are off. Proceed with care.',
     dialogTypeAnswer: 'type your answer and press enter',
+    askTitle: 'Question',
+    askInlineOptionHint: 'Type a number to select, or type a custom answer and press Enter',
+    askInlineMultiHint: 'Enter comma-separated option numbers and press Enter, or type a custom answer',
+    askInlineTextHint: 'Type your answer and press Enter',
     modelProvider: 'Provider',
     modelTitle: 'Model · {provider}',
     modelEffort: 'Reasoning effort',
     resumeTitle: 'Resume session',
     settingsTitle: 'Settings',
+    settingsHint: '↑/↓ select · ←/→/Tab switch tabs · Enter/Space change · Esc close',
+    settingsSubmenuHint: '↑/↓ select · Enter confirm · Esc go back',
+    settingsEmpty: 'No options available',
+    settingsTabGeneral: 'General',
+    settingsTabModelsProviders: 'Models & Providers',
+    settingsTabAppearance: 'Appearance',
+    settingsTabModel: 'Model',
+    settingsTabDefaults: 'Defaults',
+    settingsAddProvider: '＋ Add provider',
+    settingsEditProvider: 'Edit provider',
+    settingsProviderName: 'Provider name',
+    settingsApi: 'API type',
+    settingsApiChat: 'Chat Completions',
+    settingsApiCompletion: 'Completions',
+    settingsApiResponses: 'Responses',
+    settingsBaseURL: 'Base URL',
+    settingsApiKey: 'API Key',
+    settingsModels: 'Models',
+    settingsManualModels: 'Edit models manually',
+    settingsProviderTemplate: 'Choose provider template',
+    settingsBlankProvider: 'Blank custom',
+    settingsDiscoverModels: 'Discover upstream models',
+    settingsDiscovering: 'Discovering models…',
+    settingsDiscoveredCount: '{count} models discovered',
+    settingsDiscoveryUnavailable: 'Model discovery is not available in this deployment.',
+    settingsConfiguredProviders: 'Configured providers',
+    settingsConfiguredModels: 'Configured models',
+    settingsProviderModelCount: '{count} models',
+    settingsSetDefaultModel: 'Set as default model',
+    settingsSetTitleModel: 'Set as title model',
+    providerFormHint: '↑/↓/←/→ move · Enter edit/run · Esc back',
+    providerConfigRequired: 'Provider name is required',
+    noticeProviderSaved: 'Provider saved.',
+    noticeProviderFailed: 'Provider save failed: {error}',
+    noticeDiscoveryUnavailable: 'Model discovery is not available in this deployment.',
     settingsTheme: 'Theme',
     settingsTitleModel: 'Title model',
-    settingsThemeCurrent: 'Current theme: {name}',
-    settingsTitleModelCurrent: 'Current title model: {provider}/{model}',
-    settingsDefaults: 'Default config',
-    settingsDefaultsCurrent: 'model {model} · effort {effort} · permission {permission}',
+    settingsProvider: 'Provider',
+    settingsModel: 'Model',
+    settingsCustomProvider: '✎ Custom provider…',
+    settingsCustomModel: '✎ Custom model…',
+    settingsEditCustomProvider: '✎ Edit current custom provider…',
+    settingsEditCustomModel: '✎ Edit current custom model…',
+    settingsCustomConfig: '✎ Custom model config…',
+    settingsSaveDefault: 'Save as default model',
+    settingsSaveTitle: 'Save as title model',
+    settingsSave: 'Save',
+    settingsCancel: 'Cancel',
+    customConfigHint: '↑/↓/←/→ move · Enter edit/toggle · Esc back',
+    customConfigRequired: 'Provider and model are required',
+    customConfigTarget: 'Choose at least one save target',
     settingsDefaultPermission: 'Default permission mode',
     settingsDefaultModel: 'Default model',
     settingsDefaultEffort: 'Default reasoning effort',
+    settingsOn: 'On',
+    settingsOff: 'Off',
+    settingsShowReasoning: 'Show reasoning',
+    settingsToolOutputLines: 'Tool output lines',
+    settingsDefaultMode: 'Default mode',
+    settingsMaxParallelToolCalls: 'Max parallel tool calls',
+    settingsTabAdvanced: 'Advanced',
     noticeDefaultPermissionSet: 'Default permission mode set to {permission}.',
     noticeDefaultModelSet: 'Default model set to {provider}/{model}.',
     noticeDefaultEffortSet: 'Default reasoning effort set to {effort}.',
+    noticeDefaultModeSet: 'Default mode set to {mode}.',
     untitled: '(untitled)',
     modeStandard: 'standard',
     modeMinimal: 'minimal',

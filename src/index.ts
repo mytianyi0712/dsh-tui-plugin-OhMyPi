@@ -19,12 +19,13 @@ import {
   visibleWidth,
   type Component,
   type EditorTheme,
+  type SelectItem,
   type TerminalColorScheme,
 } from '@earendil-works/pi-tui'
 import type { Agent, AgentHandle, AgentStatus, ModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import { CombinedAutocompleteProvider, type AutocompleteItem, type SlashCommand } from '@earendil-works/pi-tui'
-import { createUserMessage, errorChain, type CallId, type LlmReasoningEffortInfo } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, errorChain, type CallId, type LlmConfigurableProvider, type LlmDiscoveredModel, type LlmReasoningEffortInfo } from '@deepseek-ai/dsh-llm'
 import { SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { foldSessionTitle } from '@deepseek-ai/dsh-session-title'
 import { parseSessionReferenceText } from '@deepseek-ai/dsh-session-reference'
@@ -41,6 +42,7 @@ import type {} from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-session-reference'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-settings'
 import { PERMISSION_SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-permission-presets'
 import type {} from '@deepseek-ai/dsh-permission-presets'
@@ -80,9 +82,13 @@ import {
   type ThemeOverride,
 } from './theme.ts'
 import {
+  LLM_PROVIDERS_SETTINGS_NAMESPACE,
+  LlmProvidersSettingsSchema,
   SESSION_TITLE_SETTINGS_NAMESPACE,
   TUI_SETTINGS_NAMESPACE,
   TuiSettingsSchema,
+  type LlmProviderProfile,
+  type LlmProvidersSettings,
 } from './settings.ts'
 import {
   ContextCardComponent,
@@ -104,11 +110,16 @@ import {
   resolveSessionModelSelection,
 } from './components/status.ts'
 import {
+  InputDialog,
   SelectDialog,
+  ToggleDialog,
+  runInlineQuestionFlow,
   runModelFlow,
-  runQuestionFlow,
   showOverlay,
 } from './components/dialogs.ts'
+import { SettingsScreen, type SettingsItem, type SettingsTab } from './components/settings-screen.ts'
+import { CustomModelForm, type CustomModelDraft } from './components/custom-model-form.ts'
+import { ProviderForm, type DiscoveredModel, type ProviderDraft } from './components/provider-form.ts'
 import { contentText } from './components/content.ts'
 import { displayInlineText, displayText } from './components/text.ts'
 import { filterProjectSessions, sameProject } from './session-filter.ts'
@@ -144,6 +155,8 @@ const MODE_LABEL_KEYS: Record<UiModeKey, MessageKey> = {
   code: 'modeCode',
   cordis: 'modeCordis',
 }
+
+
 
 /** Restore a session's recorded backend preset, falling back for blank sessions. */
 function modeForSession(session: Session, fallback: string): string {
@@ -231,10 +244,21 @@ export class Tui extends Service {
     const tuiSettings = settings?.register(TUI_SETTINGS_NAMESPACE, TuiSettingsSchema, {
       base: { themeName: resolved.theme.name },
     })
+    // Provider profiles are owned by the dsh settings service. The TUI only
+    // reads/writes through this scope and never keeps the source of truth in
+    // component state.
+    const llmProvidersSettings = settings?.register(LLM_PROVIDERS_SETTINGS_NAMESPACE, LlmProvidersSettingsSchema, {
+      base: { providers: {} },
+    })
     // Runtime theme state; `/theme` and `/settings` repaint in place.
     let themeName = tuiSettings?.get().themeName ?? resolved.theme.name
+    // Runtime presentation state; `/settings` can persist these through the
+    // same TUI settings namespace.
+    let showReasoning = tuiSettings?.get().showReasoning ?? resolved.showReasoning
+    let maxToolOutputLines = tuiSettings?.get().maxToolOutputLines ?? resolved.maxToolOutputLines
     const themeCustom: ThemeCustom | undefined = resolved.theme.custom
-    let uiMode: string = resolved.mode
+    const resolveDefaultMode = (): string => ctx.agentPresets?.defaultId ?? resolved.mode
+    let uiMode: string = resolveDefaultMode()
     // Roster display names (id → name); refreshed from ctx.agentPresets.list().
     const presetNames = new Map<string, string>()
     const permissionCommand = permissionCommandMetadata(ctx.permissionPresets, t)
@@ -294,6 +318,7 @@ export class Tui extends Service {
     const todoPanel = new TodoPanelComponent(palette)
     const noticeSlot = new Container()
     const notice = new Text('', 1, 0)
+    const askSlot = new Container()
     let commandHintText: string | undefined
     const commandHint = new CommandHintComponent(() => commandHintText, palette)
     const inputBorder = new InputBorderComponent(palette)
@@ -305,6 +330,7 @@ export class Tui extends Service {
     ui.addChild(todoPanel)
     ui.addChild(noticeSlot)
     ui.addChild(statusLine)
+    ui.addChild(askSlot)
     ui.addChild(editor)
     ui.addChild(commandHint)
     ui.addChild(inputBorder)
@@ -523,7 +549,6 @@ export class Tui extends Service {
     const toolCards = new Map<CallId, ToolCardComponent>()
     const allToolCards = new Set<ToolCardComponent>()
     let toolsVisibility: ToolCardVisibility = 'collapsed'
-    let showReasoning = resolved.showReasoning
     let live = false
     let header: HeaderComponent | undefined
 
@@ -536,7 +561,7 @@ export class Tui extends Service {
           chat.addChild(new Spacer(1))
           if (source.kind !== 'user') {
             const label = source.kind === 'plugin' ? source.plugin : source.kind
-            chat.addChild(new ContextCardComponent(label, text, resolved.maxToolOutputLines, palette))
+            chat.addChild(new ContextCardComponent(label, text, maxToolOutputLines, palette))
           } else {
             chat.addChild(new UserMessageComponent(text, palette, mdTheme))
           }
@@ -562,7 +587,7 @@ export class Tui extends Service {
           const card = new ToolCardComponent(
             event.data.name,
             event.data.arguments,
-            resolved.maxToolOutputLines,
+            maxToolOutputLines,
             palette,
           )
           card.setVisibility(toolsVisibility)
@@ -887,121 +912,954 @@ export class Tui extends Service {
           return
         }
         try {
-          const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
-            provider?: string
-            model?: string
-          } | undefined
-          const titleRoute = titleSettings?.provider === undefined || titleSettings.model === undefined
-            ? `${current.options.provider ?? 'auto'}/${current.options.model ?? 'auto'}`
-            : `${titleSettings.provider}/${titleSettings.model}`
-          const defaultSelection = ctx.agentDefaultModel.currentSelection()
-          const defaultPermission = displayPermissionName(ctx.permissionPresets.defaultPreset)
-          const defaultSummary = t('settingsDefaultsCurrent', {
-            model: `${defaultSelection.provider}/${defaultSelection.model}`,
-            effort: defaultSelection.reasoningEffort ?? '—',
-            permission: defaultPermission,
-          })
-          const choice = await showOverlay<string>(ui, (done) => new SelectDialog(
-            t('settingsTitle'),
-            [
-              { value: 'theme', label: `${t('settingsTheme')} ·`, description: t('settingsThemeCurrent', { name: themeName }) },
-              { value: 'title-model', label: `${t('settingsTitleModel')} ·`, description: t('settingsTitleModelCurrent', { provider: titleRoute.split('/')[0]!, model: titleRoute.split('/').slice(1).join('/') }) },
-              { value: 'defaults', label: `${t('settingsDefaults')} ·`, description: defaultSummary },
-            ],
-            palette,
-            done,
-          ))
-          if (choice === 'theme') {
-            const picked = await showOverlay<string>(ui, (done) => new SelectDialog(
-              t('settingsTheme'),
-              BUILTIN_THEMES.map(theme => ({
-                value: theme.id,
-                label: `${theme.id} — ${theme.label}`,
-                description: theme.description,
-              })),
-              palette,
-              done,
-            ))
-            if (picked !== undefined) {
-              await tuiSettings.update({ themeName: picked })
-              themeName = picked
-              Object.assign(palette, createPalette(resolved.theme.color, currentScheme, truecolor, themeOverride()))
-              Object.assign(mdTheme, markdownTheme(palette))
-              rebuildTranscript()
-              setStatus(current.status)
-              ui.requestRender()
-              appendNotice(t('noticeSettingsSaved'), 'info')
+          type SettingsView =
+            | 'main'
+            | 'theme'
+            | 'show-reasoning'
+            | 'tool-output-lines'
+            | 'title-provider'
+            | 'title-model'
+            | 'default-permission'
+            | 'default-provider'
+            | 'default-model'
+            | 'default-model-effort'
+            | 'default-effort'
+            | 'default-mode'
+            | 'max-parallel-tool-calls'
+            | 'model-actions'
+
+          interface ProviderCatalogEntry {
+            id: string
+            name: string
+            source: 'registered' | 'configurable' | 'custom'
+            configurable?: LlmConfigurableProvider
+            custom?: LlmProviderProfile
+          }
+
+          const booleanItems: SelectItem[] = [
+            { value: 'true', label: t('settingsOn') },
+            { value: 'false', label: t('settingsOff') },
+          ]
+          const toolOutputLineOptions = [3, 6, 10, 20, 50]
+          const parallelToolCallOptions = [1, 2, 4, 8, 10, 16, 32]
+          const CUSTOM_PROVIDER = '\u0000custom-provider'
+          const CUSTOM_MODEL = '\u0000custom-model'
+          const EDIT_CUSTOM_PROVIDER = '\u0000edit-custom-provider'
+          const EDIT_CUSTOM_MODEL = '\u0000edit-custom-model'
+
+          let providerCatalog: ProviderCatalogEntry[] = []
+          let modelCatalog: Array<{ provider: string; model: string }> = []
+
+          const refreshProviderModelCatalog = async (): Promise<void> => {
+            const providers = new Map<string, ProviderCatalogEntry>()
+            const registeredProviders = typeof ctx.llm.listProviders === 'function'
+              ? ctx.llm.listProviders()
+              : []
+            for (const entry of registeredProviders) {
+              providers.set(entry.id, { id: entry.id, name: entry.name, source: 'registered' })
             }
-          } else if (choice === 'title-model') {
-            const provider = await showOverlay<string>(ui, (done) => new SelectDialog(
-              t('modelProvider'),
-              ctx.llm.listProviders().map(entry => ({ value: entry.id, label: entry.name })),
-              palette,
-              done,
-            ))
-            if (provider === undefined) return
-            const models = await ctx.llm.listModels(provider)
-            const model = await showOverlay<string>(ui, (done) => new SelectDialog(
-              t('modelTitle', { provider }),
-              models.map(entry => ({ value: entry.id, label: entry.id, description: entry.name === undefined ? undefined : displayText(entry.name) })),
-              palette,
-              done,
-            ))
-            if (model === undefined) return
-            await settings.update(SESSION_TITLE_SETTINGS_NAMESPACE, { provider, model })
-            const sessionTitle = ctx.get('sessionTitle')
-            if (sessionTitle !== undefined) void sessionTitle.refresh(current.session).catch(() => undefined)
-            appendNotice(t('noticeTitleModelSet', { provider, model }), 'info')
-          } else if (choice === 'defaults') {
-            const defaultChoice = await showOverlay<string>(ui, (done) => new SelectDialog(
-              t('settingsDefaults'),
-              [
-                { value: 'permission', label: t('settingsDefaultPermission'), description: t('settingsDefaultsCurrent', { model: `${defaultSelection.provider}/${defaultSelection.model}`, effort: defaultSelection.reasoningEffort ?? '—', permission: defaultPermission }) },
-                { value: 'model', label: t('settingsDefaultModel'), description: `${defaultSelection.provider}/${defaultSelection.model}` },
-                { value: 'effort', label: t('settingsDefaultEffort'), description: defaultSelection.reasoningEffort ?? '—' },
-              ],
-              palette,
-              done,
-            ))
-            if (defaultChoice === 'permission') {
-              const picked = await showOverlay<string>(ui, (done) => new SelectDialog(
-                t('settingsDefaultPermission'),
-                permissionCommand.options,
-                palette,
-                done,
-              ))
-              if (picked !== undefined) {
-                const registryName = registryPermissionName(picked)
-                await settings.update(PERMISSION_SETTINGS_NAMESPACE, { defaultPreset: registryName })
-                appendNotice(t('noticeDefaultPermissionSet', { permission: displayPermissionName(registryName) }), 'info')
+            const configurableProviders = typeof ctx.llm.listConfigurableProviders === 'function'
+              ? ctx.llm.listConfigurableProviders()
+              : []
+            for (const entry of configurableProviders) {
+              const existing = providers.get(entry.provider)
+              if (existing !== undefined) {
+                existing.configurable = entry
+                if (existing.name === existing.id) existing.name = entry.displayName
               }
-            } else if (defaultChoice === 'model') {
-              await runModelFlow(ui, palette, t, ctx.llm, async (selection) => {
-                await ctx.agentDefaultModel.saveSelection(selection)
-                appendNotice(t('noticeDefaultModelSet', { provider: selection.provider, model: selection.model }), 'info')
-              })
-            } else if (defaultChoice === 'effort') {
-              const currentDefault = ctx.agentDefaultModel.currentSelection()
-              const efforts = await reasoningEffortsFor(currentDefault)
-              if (efforts.length === 0) {
-                appendNotice(t('noticeThinkUnsupported'), 'warning')
+              // Dormant preset providers are not shown here; they are offered as
+              // templates when adding a new provider instead.
+            }
+            const customSettings = llmProvidersSettings?.get() as LlmProvidersSettings | undefined
+            const customProviders = customSettings?.providers ?? {}
+            for (const [id, profile] of Object.entries(customProviders)) {
+              const existing = providers.get(id)
+              if (existing !== undefined) {
+                existing.custom = profile
+                if (existing.source === 'custom' || existing.source === 'registered') existing.source = 'custom'
+                if (profile.name !== '') existing.name = profile.name
               } else {
-                const picked = await showOverlay<string>(ui, (done) => new SelectDialog(
-                  t('settingsDefaultEffort'),
-                  efforts.map(effort => ({ value: effort.id, label: `${effort.id} — ${effort.name}`, description: effort.description })),
-                  palette,
-                  done,
-                ))
-                if (picked !== undefined) {
-                  const effort = efforts.find(candidate => candidate.id === picked)
-                  if (effort !== undefined) {
-                    await ctx.agentDefaultModel.saveSelection({ ...currentDefault, reasoningEffort: effort.id })
-                    appendNotice(t('noticeDefaultEffortSet', { effort: effort.name }), 'info')
+                providers.set(id, { id, name: profile.name || id, source: 'custom', custom: profile })
+              }
+            }
+            providerCatalog = [...providers.values()]
+
+            const models = new Map<string, { provider: string; model: string }>()
+            const addModel = (provider: string, model: string): void => {
+              const key = `${provider}\u0000${model}`
+              if (!models.has(key)) models.set(key, { provider, model })
+            }
+            const modelLoaders: Promise<void>[] = []
+            for (const entry of providerCatalog) {
+              if (entry.custom?.models !== undefined) {
+                for (const model of entry.custom.models) addModel(entry.id, model)
+                continue
+              }
+              modelLoaders.push((async () => {
+                try {
+                  const found = await ctx.llm.listModels(entry.id)
+                  for (const model of found) addModel(entry.id, model.id)
+                } catch {
+                  // A dormant or user-entered provider may not expose a catalog yet.
+                }
+              })())
+            }
+            await Promise.all(modelLoaders)
+            const defaultSelection = ctx.agentDefaultModel.currentSelection()
+            addModel(defaultSelection.provider, defaultSelection.model)
+            const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
+              provider?: string
+              model?: string
+            } | undefined
+            if (titleSettings?.provider !== undefined && titleSettings.model !== undefined) {
+              addModel(titleSettings.provider, titleSettings.model)
+            }
+            modelCatalog = [...models.values()]
+          }
+
+          const providerModelCount = (provider: string): number => {
+            const entry = providerCatalog.find(candidate => candidate.id === provider)
+            if (entry?.custom?.models !== undefined) return entry.custom.models.length
+            return modelCatalog.filter(model => model.provider === provider).length
+          }
+
+          const providerCurrentValue = (provider: string): string => {
+            const count = providerModelCount(provider)
+            return count > 0 ? t('settingsProviderModelCount', { count }) : '—'
+          }
+
+          const modelCurrentValue = (provider: string, model: string): string => {
+            const defaultSelection = ctx.agentDefaultModel.currentSelection()
+            const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
+              provider?: string
+              model?: string
+            } | undefined
+            const marks: string[] = []
+            if (defaultSelection.provider === provider && defaultSelection.model === model) marks.push('★')
+            if (titleSettings?.provider === provider && titleSettings.model === model) marks.push('T')
+            if (marks.length > 0) return marks.join(' ')
+            return '—'
+          }
+
+          const buildModelItems = (): SettingsItem[] => {
+            const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
+              provider?: string
+              model?: string
+            } | undefined
+            const titleProvider = titleSettings?.provider ?? current.options.provider ?? 'auto'
+            const titleModel = titleSettings?.model ?? current.options.model ?? 'auto'
+            const defaultSelection = ctx.agentDefaultModel.currentSelection()
+            return [
+              { value: 'title-model', label: t('settingsTitleModel'), currentValue: `${titleProvider}/${titleModel}` },
+              { value: 'provider', label: t('settingsProvider'), currentValue: defaultSelection.provider },
+              { value: 'model', label: t('settingsModel'), currentValue: defaultSelection.model },
+              { value: 'custom-config', label: t('settingsCustomConfig'), currentValue: `${defaultSelection.provider}/${defaultSelection.model}` },
+              { value: 'effort', label: t('settingsDefaultEffort'), currentValue: defaultSelection.reasoningEffort ?? '—' },
+            ]
+          }
+          const buildSettingsTabs = (): SettingsTab[] => {
+            const agentLoopSettings = settings.get(settingsNamespace('agent-loop')) as {
+              maxParallelToolCalls?: number
+            } | undefined
+            const maxParallelToolCalls = agentLoopSettings?.maxParallelToolCalls ?? 10
+            const defaultSelection = ctx.agentDefaultModel.currentSelection()
+            const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
+              provider?: string
+              model?: string
+            } | undefined
+            const titleProvider = titleSettings?.provider ?? current.options.provider ?? 'auto'
+            const titleModel = titleSettings?.model ?? current.options.model ?? 'auto'
+            const defaultPermission = displayPermissionName(ctx.permissionPresets.defaultPreset)
+            const defaultPreset = (settings.get(settingsNamespace('agent-presets')) as {
+              default?: string
+            } | undefined)?.default
+            const defaultMode = defaultPreset ?? ctx.agentPresets?.defaultId ?? resolved.mode
+            return [
+              {
+                id: 'general',
+                label: t('settingsTabGeneral'),
+                items: [
+                  { value: 'theme', label: t('settingsTheme'), currentValue: themeName },
+                  { value: 'show-reasoning', label: t('settingsShowReasoning'), currentValue: showReasoning ? t('settingsOn') : t('settingsOff') },
+                  { value: 'tool-output-lines', label: t('settingsToolOutputLines'), currentValue: String(maxToolOutputLines) },
+                  { value: 'provider', label: t('settingsDefaultModel'), currentValue: `${defaultSelection.provider}/${defaultSelection.model}` },
+                  { value: 'effort', label: t('settingsDefaultEffort'), currentValue: defaultSelection.reasoningEffort ?? '—' },
+                  { value: 'title-model', label: t('settingsTitleModel'), currentValue: `${titleProvider}/${titleModel}` },
+                  { value: 'permission', label: t('settingsDefaultPermission'), currentValue: defaultPermission },
+                  { value: 'default-mode', label: t('settingsDefaultMode'), currentValue: modeLabel(t, defaultMode, presetNames) },
+                ],
+              },
+              {
+                id: 'models-providers',
+                label: t('settingsTabModelsProviders'),
+                items: [
+                  { value: '__providers-header', label: t('settingsConfiguredProviders'), currentValue: '' },
+                  ...providerCatalog.map(entry => ({
+                    value: `provider:${entry.id}`,
+                    label: entry.name,
+                    currentValue: providerCurrentValue(entry.id),
+                  })),
+                  { value: 'add-provider', label: t('settingsAddProvider'), currentValue: '' },
+                  { value: '__models-header', label: t('settingsConfiguredModels'), currentValue: '' },
+                  ...modelCatalog.map(model => ({
+                    value: `model:${model.provider}\u0000${model.model}`,
+                    label: `${model.provider}/${model.model}`,
+                    currentValue: modelCurrentValue(model.provider, model.model),
+                  })),
+                ],
+              },
+              {
+                id: 'advanced',
+                label: t('settingsTabAdvanced'),
+                items: [
+                  { value: 'max-parallel-tool-calls', label: t('settingsMaxParallelToolCalls'), currentValue: String(maxParallelToolCalls) },
+                ],
+              },
+            ]
+          }
+          const themeItems: SelectItem[] = BUILTIN_THEMES.map(theme => ({
+            value: theme.id,
+            label: `${theme.id} — ${theme.label}`,
+            description: theme.description,
+          }))
+          const registeredProviderIds = new Set(
+            (typeof ctx.llm.listProviders === 'function' ? ctx.llm.listProviders() : []).map(entry => entry.id),
+          )
+          const customProviders = (llmProvidersSettings?.get() as LlmProvidersSettings | undefined)?.providers ?? {}
+          const providerItems: SelectItem[] = [
+            ...(typeof ctx.llm.listProviders === 'function' ? ctx.llm.listProviders() : []).map(entry => ({
+              value: entry.id,
+              label: entry.name,
+            })),
+            ...Object.entries(customProviders)
+              .filter(([id]) => !registeredProviderIds.has(id))
+              .map(([id, profile]) => ({
+                value: id,
+                label: profile.name || id,
+              })),
+            { value: CUSTOM_PROVIDER, label: t('settingsCustomProvider') },
+          ]
+
+          const screen = new SettingsScreen(
+            buildSettingsTabs()[0]?.items ?? [],
+            t('settingsTitle'),
+            palette,
+            t,
+            Math.max(5, terminal.rows - 4),
+            terminal.rows,
+          )
+          await refreshProviderModelCatalog()
+          screen.setTabs(buildSettingsTabs(), t('settingsTitle'))
+          let view: SettingsView = 'main'
+          let viewVersion = 0
+          let pendingProvider: string | undefined
+          let pendingModel: ModelSelection | undefined
+          let pendingModelItems: SelectItem[] = []
+          let pendingEfforts: readonly LlmReasoningEffortInfo[] = []
+          let busy = false
+          let modelActionsBack = false
+
+          const showItems = (
+            nextView: Exclude<SettingsView, 'main'>,
+            items: SelectItem[],
+            title: string,
+            selectedValue?: string,
+          ): void => {
+            view = nextView
+            viewVersion++
+            screen.setItems(items, title, selectedValue)
+            ui.requestRender()
+          }
+          const showMain = (): void => {
+            view = 'main'
+            viewVersion++
+            pendingProvider = undefined
+            pendingModel = undefined
+            pendingModelItems = []
+            pendingEfforts = []
+            modelActionsBack = false
+            screen.setTabs(buildSettingsTabs(), t('settingsTitle'))
+            ui.requestRender()
+          }
+
+          const promptCustom = async (title: string, initialValue?: string): Promise<string | undefined> => {
+            const value = await showOverlay<string>(
+              ui,
+              done => new InputDialog(title, palette, done, t, initialValue),
+              { width: '80%', maxHeight: '50%' },
+            )
+            const trimmed = value?.trim()
+            return trimmed === '' ? undefined : trimmed
+          }
+          const providerPickerItems = (selected: string | undefined): SelectItem[] => {
+            const known = new Set([
+              ...(typeof ctx.llm.listProviders === 'function' ? ctx.llm.listProviders() : []).map(entry => entry.id),
+              ...Object.keys((llmProvidersSettings?.get() as LlmProvidersSettings | undefined)?.providers ?? {}),
+            ])
+            const items = [...providerItems]
+            if (selected !== undefined && selected !== CUSTOM_PROVIDER && !known.has(selected)) {
+              items.unshift({ value: selected, label: `${selected} — ${t('settingsCustomProvider')}` })
+              items.splice(1, 0, { value: EDIT_CUSTOM_PROVIDER, label: t('settingsEditCustomProvider') })
+            }
+            return items
+          }
+          const modelPickerItems = (
+            models: readonly { id: string; name?: string }[],
+            selected: string | undefined,
+          ): SelectItem[] => {
+            const items: SelectItem[] = [
+              ...models.map(entry => ({
+                value: entry.id,
+                label: entry.id,
+                description: entry.name === undefined ? undefined : displayText(entry.name),
+              })),
+              { value: CUSTOM_MODEL, label: t('settingsCustomModel') },
+            ]
+            if (selected !== undefined && selected !== CUSTOM_MODEL && !models.some(entry => entry.id === selected)) {
+              items.unshift({ value: selected, label: `${selected} — ${t('settingsCustomModel')}` })
+              items.splice(1, 0, { value: EDIT_CUSTOM_MODEL, label: t('settingsEditCustomModel') })
+            }
+            return items
+          }
+
+          const providerDiscoveryNamespace = (providerId: string | undefined): string | undefined => {
+            if (providerId !== undefined) {
+              const entry = providerCatalog.find(candidate => candidate.id === providerId)
+              if (entry?.configurable !== undefined) return entry.configurable.settingsNs
+            }
+            const configurable = typeof ctx.llm.listConfigurableProviders === 'function'
+              ? ctx.llm.listConfigurableProviders()
+              : []
+            return configurable[0]?.settingsNs
+          }
+
+          const saveProvider = async (providerId: string | undefined, draft: ProviderDraft): Promise<void> => {
+            if (llmProvidersSettings === undefined) throw new Error('settings unavailable')
+            const current = (llmProvidersSettings.get() as LlmProvidersSettings | undefined)?.providers ?? {}
+            const id = providerId ?? draft.name
+            if (id.trim() === '') throw new Error('provider name required')
+            const providers = {
+              ...current,
+              [id]: {
+                name: draft.name,
+                api: draft.api,
+                baseURL: draft.baseURL,
+                apiKey: draft.apiKey,
+                models: draft.models,
+              },
+            }
+            await llmProvidersSettings.update({ providers })
+            const entry = providerCatalog.find(candidate => candidate.id === id)?.configurable
+            if (entry !== undefined) {
+              try {
+                const ns = settingsNamespace(entry.settingsNs)
+                const path = entry.settingsPath
+                const ops: Array<{ op: 'set'; path: readonly string[]; value: unknown }> = []
+                if (draft.baseURL !== '') ops.push({ op: 'set', path: [...path, 'baseURL'], value: draft.baseURL })
+                if (draft.apiKey !== '') ops.push({ op: 'set', path: [...path, 'apiKey'], value: draft.apiKey })
+                if (ops.length > 0) await settings!.mutate(ns, ops)
+              } catch {
+                // The TUI-owned namespace is already persisted; the adapter may
+                // not expose these fields or its namespace may not be writable.
+              }
+            }
+            appendNotice(t('noticeProviderSaved'), 'info')
+          }
+
+          const configurableProviderList = (): LlmConfigurableProvider[] => {
+            return typeof ctx.llm.listConfigurableProviders === 'function'
+              ? ctx.llm.listConfigurableProviders()
+              : []
+          }
+
+          const openProviderForm = async (providerId?: string): Promise<void> => {
+            if (llmProvidersSettings === undefined) {
+              appendNotice(t('noticeSettingsUnavailable'), 'warning')
+              return
+            }
+            const existing = providerId === undefined ? undefined : providerCatalog.find(candidate => candidate.id === providerId)
+            const custom = existing?.custom ?? (providerId === undefined
+              ? undefined
+              : (llmProvidersSettings.get() as LlmProvidersSettings | undefined)?.providers?.[providerId])
+
+            let templateName = ''
+            let templateApi = ''
+            if (providerId === undefined) {
+              const configurableProviders = configurableProviderList()
+              const templateItems: SelectItem[] = [
+                { value: '', label: t('settingsBlankProvider') },
+                ...configurableProviders.map(entry => ({
+                  value: `preset:${entry.provider}`,
+                  label: entry.displayName,
+                })),
+              ]
+              const template = await showOverlay<string>(
+                ui,
+                done => new SelectDialog(t('settingsProviderTemplate'), templateItems, palette, done),
+                { width: '70%', maxHeight: '70%' },
+              )
+              if (template === undefined) return
+              if (template.startsWith('preset:')) {
+                const presetId = template.slice('preset:'.length)
+                const preset = configurableProviders.find(entry => entry.provider === presetId)
+                templateName = preset?.displayName ?? ''
+              }
+            }
+
+            const draft: ProviderDraft = {
+              name: custom?.name ?? existing?.name ?? templateName,
+              api: custom?.api ?? templateApi,
+              baseURL: custom?.baseURL ?? '',
+              apiKey: custom?.apiKey ?? '',
+              models: custom?.models ?? modelCatalog.filter(model => model.provider === providerId).map(model => model.model),
+            }
+            const submitted = await showOverlay<ProviderDraft>(
+              ui,
+              done => new ProviderForm(
+                providerId === undefined ? t('settingsAddProvider') : t('settingsEditProvider'),
+                palette,
+                t,
+                draft,
+                done,
+                {
+                  discover: async (current) => {
+                    if (typeof ctx.llm.discoverModels !== 'function') {
+                      appendNotice(t('noticeDiscoveryUnavailable'), 'warning')
+                      return undefined
+                    }
+                    const ns = providerDiscoveryNamespace(providerId)
+                    if (ns === undefined) {
+                      appendNotice(t('noticeDiscoveryUnavailable'), 'warning')
+                      return undefined
+                    }
+                    try {
+                      const found = await ctx.llm.discoverModels(ns, {
+                        ...(providerId !== undefined ? { provider: providerId } : {}),
+                        baseURL: current.baseURL || undefined,
+                        apiKey: current.apiKey || undefined,
+                        api: current.api || undefined,
+                      })
+                      return found as DiscoveredModel[]
+                    } catch (error: unknown) {
+                      appendNotice(t('noticeProviderFailed', { error: errorChain(error) }), 'error')
+                      return undefined
+                    }
+                  },
+                  pickApi: async () => {
+                    return await showOverlay<string>(
+                      ui,
+                      done => new SelectDialog(
+                        t('settingsApi'),
+                        [
+                          { value: 'chat', label: t('settingsApiChat') },
+                          { value: 'completion', label: t('settingsApiCompletion') },
+                          { value: 'responses', label: t('settingsApiResponses') },
+                        ],
+                        palette,
+                        done,
+                      ),
+                      { width: '60%', maxHeight: '50%' },
+                    )
+                  },
+                  pickModels: async (current, discovered) => {
+                    const all: readonly DiscoveredModel[] = discovered.length > 0
+                      ? discovered
+                      : current.models.map(id => ({ id }))
+                    return await showOverlay<string[]>(
+                      ui,
+                      done => new ToggleDialog(
+                        t('settingsModels'),
+                        all.map(model => ({
+                          value: model.id,
+                          label: model.name === undefined ? model.id : `${model.id} — ${model.name}`,
+                        })),
+                        palette,
+                        done,
+                      ),
+                      { width: '70%', maxHeight: '70%' },
+                    )
+                  },
+                  editModelsManually: async (current) => {
+                    const value = await showOverlay<string>(
+                      ui,
+                      done => new InputDialog(t('settingsManualModels'), palette, done, t, current.models.join(', ')),
+                      { width: '70%', maxHeight: '50%' },
+                    )
+                    if (value === undefined) return undefined
+                    const models = value.split(/[\s,，、]+/).map(model => model.trim()).filter(Boolean)
+                    return [...new Set(models)]
+                  },
+                },
+              ),
+              { width: '90%', maxHeight: '85%' },
+            )
+            if (submitted === undefined) return
+            await saveProvider(providerId, submitted)
+            await refreshProviderModelCatalog()
+            if (view === 'main') showMain()
+          }
+
+          const handleBack = (): void => {
+            if (view === 'title-model') {
+              showItems('title-provider', providerItems, t('modelProvider'), pendingProvider)
+              return
+            }
+            if (view === 'default-model') {
+              showItems('default-provider', providerItems, t('modelProvider'), pendingProvider)
+              return
+            }
+            if (view === 'default-model-effort' && modelActionsBack) {
+              modelActionsBack = false
+              showMain()
+              return
+            }
+            if (view === 'default-model-effort' && pendingProvider !== undefined) {
+              showItems(
+                'default-model',
+                pendingModelItems,
+                t('modelTitle', { provider: pendingProvider }),
+                pendingModel?.model,
+              )
+              return
+            }
+            showMain()
+          }
+
+          const handleSelect = async (item: SelectItem): Promise<void> => {
+            if (busy) return
+            busy = true
+            const selectedView = view
+            const selectedVersion = viewVersion
+            try {
+              if (selectedView === 'main') {
+                if (item.value === 'theme') {
+                  showItems('theme', themeItems, t('settingsTheme'), themeName)
+                } else if (item.value === 'show-reasoning') {
+                  showItems('show-reasoning', booleanItems, t('settingsShowReasoning'), String(showReasoning))
+                } else if (item.value === 'tool-output-lines') {
+                  showItems(
+                    'tool-output-lines',
+                    toolOutputLineOptions.map(value => ({ value: String(value), label: String(value) })),
+                    t('settingsToolOutputLines'),
+                    String(maxToolOutputLines),
+                  )
+                } else if (item.value === 'title-model') {
+                  const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
+                    provider?: string
+                  } | undefined
+                  showItems(
+                    'title-provider',
+                    providerPickerItems(titleSettings?.provider ?? current.options.provider),
+                    t('modelProvider'),
+                    titleSettings?.provider ?? current.options.provider,
+                  )
+                } else if (item.value === 'default-mode') {
+                  const presets = ctx.agentPresets
+                  if (presets === undefined) {
+                    appendNotice(t('noticeModeUnavailable'), 'warning')
+                    return
+                  }
+                  const presetsList = (await presets.list()).filter(preset => preset.broken === undefined)
+                  const defaultMode = (settings.get(settingsNamespace('agent-presets')) as {
+                    default?: string
+                  } | undefined)?.default ?? presets.defaultId
+                  showItems(
+                    'default-mode',
+                    presetsList.map(preset => ({
+                      value: preset.id,
+                      label: preset.name === undefined ? preset.id : `${preset.id} — ${preset.name}`,
+                      description: preset.description,
+                    })),
+                    t('settingsDefaultMode'),
+                    defaultMode,
+                  )
+                } else if (item.value === 'max-parallel-tool-calls') {
+                  const current = (settings.get(settingsNamespace('agent-loop')) as {
+                    maxParallelToolCalls?: number
+                  } | undefined)?.maxParallelToolCalls ?? 10
+                  showItems(
+                    'max-parallel-tool-calls',
+                    parallelToolCallOptions.map(value => ({ value: String(value), label: String(value) })),
+                    t('settingsMaxParallelToolCalls'),
+                    String(current),
+                  )
+                } else if (item.value === 'permission') {
+                  showItems(
+                    'default-permission',
+                    permissionCommand.options,
+                    t('settingsDefaultPermission'),
+                    displayPermissionName(ctx.permissionPresets.defaultPreset),
+                  )
+                } else if (item.value === 'provider') {
+                  showItems(
+                    'default-provider',
+                    providerPickerItems(ctx.agentDefaultModel.currentSelection().provider),
+                    t('modelProvider'),
+                    ctx.agentDefaultModel.currentSelection().provider,
+                  )
+                } else if (item.value === 'model') {
+                  const defaultSelection = ctx.agentDefaultModel.currentSelection()
+                  const provider = defaultSelection.provider
+                  let models: Awaited<ReturnType<typeof ctx.llm.listModels>> = []
+                  try {
+                    models = await ctx.llm.listModels(provider)
+                  } catch {
+                    // Keep the list empty and still allow a custom model id.
+                  }
+                  if (selectedVersion !== viewVersion || view !== selectedView) return
+                  pendingProvider = provider
+                  pendingModelItems = modelPickerItems(models, defaultSelection.model)
+                  showItems(
+                    'default-model',
+                    pendingModelItems,
+                    t('modelTitle', { provider: pendingProvider }),
+                    defaultSelection.model,
+                  )
+                } else if (item.value === 'custom-config') {
+                  const defaultSelection = ctx.agentDefaultModel.currentSelection()
+                  const draft: CustomModelDraft = {
+                    provider: defaultSelection.provider,
+                    model: defaultSelection.model,
+                    reasoningEffort: defaultSelection.reasoningEffort ?? '',
+                    saveDefault: true,
+                    saveTitle: false,
+                  }
+                  const submitted = await showOverlay<CustomModelDraft>(
+                    ui,
+                    done => new CustomModelForm(t('settingsCustomConfig'), palette, t, draft, done),
+                    { width: '90%', maxHeight: '85%' },
+                  )
+                  if (selectedVersion !== viewVersion || view !== selectedView) return
+                  if (submitted === undefined) {
+                    ui.requestRender()
+                    return
+                  }
+                  if (submitted.saveDefault) {
+                    await ctx.agentDefaultModel.saveSelection({
+                      provider: submitted.provider,
+                      model: submitted.model,
+                      ...submitted.reasoningEffort === ''
+                        ? {}
+                        : { reasoningEffort: submitted.reasoningEffort as ModelSelection['reasoningEffort'] },
+                    })
+                  }
+                  if (submitted.saveTitle) {
+                    await settings.update(SESSION_TITLE_SETTINGS_NAMESPACE, {
+                      provider: submitted.provider,
+                      model: submitted.model,
+                    })
+                  }
+                  appendNotice(t('noticeSettingsSaved'), 'info')
+                  if (selectedVersion === viewVersion && view === selectedView) showMain()
+                } else if (item.value === 'effort') {
+                  const defaultSelection = ctx.agentDefaultModel.currentSelection()
+                  pendingEfforts = await reasoningEffortsFor(defaultSelection)
+                  if (selectedVersion !== viewVersion || view !== selectedView) return
+                  if (pendingEfforts.length === 0) {
+                    appendNotice(t('noticeThinkUnsupported'), 'warning')
+                    return
+                  }
+                  showItems(
+                    'default-effort',
+                    pendingEfforts.map(effort => ({ value: effort.id, label: `${effort.id} — ${effort.name}`, description: effort.description })),
+                    t('settingsDefaultEffort'),
+                    defaultSelection.reasoningEffort,
+                  )
+                } else if (item.value === 'add-provider') {
+                  await openProviderForm()
+                } else if (item.value.startsWith('provider:')) {
+                  await openProviderForm(item.value.slice('provider:'.length))
+                } else if (item.value.startsWith('model:')) {
+                  const route = item.value.slice('model:'.length)
+                  const separator = route.indexOf('\u0000')
+                  if (separator >= 0) {
+                    const provider = route.slice(0, separator)
+                    const model = route.slice(separator + 1)
+                    pendingProvider = provider
+                    pendingModel = { provider, model }
+                    showItems(
+                      'model-actions',
+                      [
+                        { value: 'set-default', label: t('settingsSetDefaultModel') },
+                        { value: 'set-title', label: t('settingsSetTitleModel') },
+                        { value: 'set-effort', label: t('settingsDefaultEffort') },
+                      ],
+                      `${provider}/${model}`,
+                    )
                   }
                 }
+                return
               }
+
+              if (selectedView === 'theme') {
+                await tuiSettings.update({ themeName: item.value })
+                themeName = item.value
+                Object.assign(palette, createPalette(resolved.theme.color, currentScheme, truecolor, themeOverride()))
+                Object.assign(mdTheme, markdownTheme(palette))
+                rebuildTranscript()
+                setStatus(current.status)
+                appendNotice(t('noticeSettingsSaved'), 'info')
+                if (selectedVersion === viewVersion && view === selectedView) showMain()
+                else ui.requestRender()
+                return
+              }
+
+              if (selectedView === 'show-reasoning') {
+                const next = item.value === 'true'
+                await tuiSettings.update({ showReasoning: next })
+                showReasoning = next
+                appendNotice(t('noticeSettingsSaved'), 'info')
+                if (selectedVersion === viewVersion && view === selectedView) showMain()
+                return
+              }
+
+              if (selectedView === 'tool-output-lines') {
+                const next = Number(item.value)
+                await tuiSettings.update({ maxToolOutputLines: next })
+                maxToolOutputLines = next
+                rebuildTranscript()
+                appendNotice(t('noticeSettingsSaved'), 'info')
+                if (selectedVersion === viewVersion && view === selectedView) showMain()
+                return
+              }
+
+              if (selectedView === 'default-mode') {
+                await settings.update(settingsNamespace('agent-presets'), { default: item.value })
+                appendNotice(t('noticeDefaultModeSet', { mode: modeLabel(t, item.value, presetNames) }), 'info')
+                if (selectedVersion === viewVersion && view === selectedView) showMain()
+                return
+              }
+
+              if (selectedView === 'max-parallel-tool-calls') {
+                const next = Number(item.value)
+                await settings.update(settingsNamespace('agent-loop'), { maxParallelToolCalls: next })
+                appendNotice(t('noticeSettingsSaved'), 'info')
+                if (selectedVersion === viewVersion && view === selectedView) showMain()
+                return
+              }
+
+              if (selectedView === 'title-provider') {
+                const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
+                  provider?: string
+                  model?: string
+                } | undefined
+                const savedProvider = titleSettings?.provider ?? current.options.provider
+                const provider = item.value === CUSTOM_PROVIDER
+                  ? await promptCustom(t('modelProvider'))
+                  : item.value === EDIT_CUSTOM_PROVIDER
+                    ? await promptCustom(t('settingsEditCustomProvider'), savedProvider)
+                    : item.value
+                if (provider === undefined) return
+                let models: Awaited<ReturnType<typeof ctx.llm.listModels>> = []
+                try {
+                  models = await ctx.llm.listModels(provider)
+                } catch {
+                  // A user-entered provider may not be in the live catalog yet;
+                  // keep the list empty and still allow a custom model id.
+                }
+                if (selectedVersion !== viewVersion || view !== selectedView) return
+                pendingProvider = provider
+                const savedModel = titleSettings?.provider === provider ? titleSettings.model : undefined
+                pendingModelItems = modelPickerItems(models, savedModel)
+                showItems(
+                  'title-model',
+                  pendingModelItems,
+                  t('modelTitle', { provider: pendingProvider }),
+                  savedModel,
+                )
+                return
+              }
+
+              if (selectedView === 'title-model') {
+                if (pendingProvider === undefined) return
+                const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
+                  provider?: string
+                  model?: string
+                } | undefined
+                const savedModel = titleSettings?.provider === pendingProvider ? titleSettings.model : undefined
+                const model = item.value === CUSTOM_MODEL
+                  ? await promptCustom(t('modelTitle', { provider: pendingProvider }))
+                  : item.value === EDIT_CUSTOM_MODEL
+                    ? await promptCustom(t('settingsEditCustomModel'), savedModel)
+                    : item.value
+                if (model === undefined) return
+                await settings.update(SESSION_TITLE_SETTINGS_NAMESPACE, { provider: pendingProvider, model })
+                const sessionTitle = ctx.get('sessionTitle')
+                if (sessionTitle !== undefined) void sessionTitle.refresh(current.session).catch(() => undefined)
+                appendNotice(t('noticeTitleModelSet', { provider: pendingProvider, model }), 'info')
+                if (selectedVersion === viewVersion && view === selectedView) showMain()
+                return
+              }
+
+              if (selectedView === 'default-permission') {
+                const registryName = registryPermissionName(item.value)
+                await settings.update(PERMISSION_SETTINGS_NAMESPACE, { defaultPreset: registryName })
+                appendNotice(t('noticeDefaultPermissionSet', { permission: displayPermissionName(registryName) }), 'info')
+                if (selectedVersion === viewVersion && view === selectedView) showMain()
+                return
+              }
+
+              if (selectedView === 'default-provider') {
+                const defaultSelection = ctx.agentDefaultModel.currentSelection()
+                const savedProvider = defaultSelection.provider
+                const provider = item.value === CUSTOM_PROVIDER
+                  ? await promptCustom(t('modelProvider'))
+                  : item.value === EDIT_CUSTOM_PROVIDER
+                    ? await promptCustom(t('settingsEditCustomProvider'), savedProvider)
+                    : item.value
+                if (provider === undefined) return
+                let models: Awaited<ReturnType<typeof ctx.llm.listModels>> = []
+                try {
+                  models = await ctx.llm.listModels(provider)
+                } catch {
+                  // A user-entered provider may not be in the live catalog yet;
+                  // keep the list empty and still allow a custom model id.
+                }
+                if (selectedVersion !== viewVersion || view !== selectedView) return
+                pendingProvider = provider
+                const savedModel = defaultSelection.provider === provider ? defaultSelection.model : undefined
+                pendingModelItems = modelPickerItems(models, savedModel)
+                showItems(
+                  'default-model',
+                  pendingModelItems,
+                  t('modelTitle', { provider: pendingProvider }),
+                  savedModel,
+                )
+                return
+              }
+
+              if (selectedView === 'default-model') {
+                if (pendingProvider === undefined) return
+                const defaultSelection = ctx.agentDefaultModel.currentSelection()
+                const savedModel = defaultSelection.provider === pendingProvider ? defaultSelection.model : undefined
+                const model = item.value === CUSTOM_MODEL
+                  ? await promptCustom(t('modelTitle', { provider: pendingProvider }))
+                  : item.value === EDIT_CUSTOM_MODEL
+                    ? await promptCustom(t('settingsEditCustomModel'), savedModel)
+                    : item.value
+                if (model === undefined) return
+                const selectedModel: ModelSelection = { provider: pendingProvider, model }
+                try {
+                  const info = await ctx.llm.resolveModelInfo(pendingProvider, model)
+                  pendingEfforts = info.reasoning?.efforts ?? []
+                } catch {
+                  pendingEfforts = []
+                }
+                if (selectedVersion !== viewVersion || view !== selectedView) return
+                pendingModel = selectedModel
+                if (pendingEfforts.length > 1) {
+                  modelActionsBack = false
+                  showItems(
+                    'default-model-effort',
+                    pendingEfforts.map(effort => ({ value: effort.id, label: `${effort.id} — ${effort.name}`, description: effort.description })),
+                    t('modelEffort'),
+                    defaultSelection.provider === pendingProvider && defaultSelection.model === model
+                      ? defaultSelection.reasoningEffort
+                      : undefined,
+                  )
+                } else {
+                  await ctx.agentDefaultModel.saveSelection(selectedModel)
+                  appendNotice(t('noticeDefaultModelSet', { provider: selectedModel.provider, model: selectedModel.model }), 'info')
+                  if (selectedVersion === viewVersion && view === selectedView) showMain()
+                }
+                return
+              }
+
+              if (selectedView === 'default-model-effort') {
+                if (pendingModel === undefined) return
+                await ctx.agentDefaultModel.saveSelection({
+                  ...pendingModel,
+                  reasoningEffort: item.value as ModelSelection['reasoningEffort'],
+                })
+                appendNotice(t('noticeDefaultModelSet', { provider: pendingModel.provider, model: pendingModel.model }), 'info')
+                if (selectedVersion === viewVersion && view === selectedView) showMain()
+                return
+              }
+
+              if (selectedView === 'default-effort') {
+                const currentDefault = ctx.agentDefaultModel.currentSelection()
+                await ctx.agentDefaultModel.saveSelection({
+                  ...currentDefault,
+                  reasoningEffort: item.value as ModelSelection['reasoningEffort'],
+                })
+                appendNotice(t('noticeDefaultEffortSet', { effort: item.label }), 'info')
+                if (selectedVersion === viewVersion && view === selectedView) showMain()
+                return
+              }
+
+              if (selectedView === 'model-actions') {
+                if (pendingModel === undefined) return
+                if (item.value === 'set-default') {
+                  const selectedModel = pendingModel
+                  try {
+                    const info = await ctx.llm.resolveModelInfo(selectedModel.provider, selectedModel.model)
+                    pendingEfforts = info.reasoning?.efforts ?? []
+                  } catch {
+                    pendingEfforts = []
+                  }
+                  if (pendingEfforts.length > 1) {
+                    modelActionsBack = true
+                    showItems(
+                      'default-model-effort',
+                      pendingEfforts.map(effort => ({ value: effort.id, label: `${effort.id} — ${effort.name}`, description: effort.description })),
+                      t('modelEffort'),
+                      ctx.agentDefaultModel.currentSelection().provider === selectedModel.provider &&
+                        ctx.agentDefaultModel.currentSelection().model === selectedModel.model
+                        ? ctx.agentDefaultModel.currentSelection().reasoningEffort
+                        : undefined,
+                    )
+                  } else {
+                    await ctx.agentDefaultModel.saveSelection(selectedModel)
+                    appendNotice(t('noticeDefaultModelSet', { provider: selectedModel.provider, model: selectedModel.model }), 'info')
+                    if (selectedVersion === viewVersion && view === selectedView) showMain()
+                  }
+                } else if (item.value === 'set-title') {
+                  await settings.update(SESSION_TITLE_SETTINGS_NAMESPACE, {
+                    provider: pendingModel.provider,
+                    model: pendingModel.model,
+                  })
+                  const sessionTitle = ctx.get('sessionTitle')
+                  if (sessionTitle !== undefined) void sessionTitle.refresh(current.session).catch(() => undefined)
+                  appendNotice(t('noticeTitleModelSet', { provider: pendingModel.provider, model: pendingModel.model }), 'info')
+                  if (selectedVersion === viewVersion && view === selectedView) showMain()
+                } else if (item.value === 'set-effort') {
+                  pendingEfforts = await reasoningEffortsFor(pendingModel)
+                  if (pendingEfforts.length === 0) {
+                    appendNotice(t('noticeThinkUnsupported'), 'warning')
+                    return
+                  }
+                  modelActionsBack = true
+                  showItems(
+                    'default-model-effort',
+                    pendingEfforts.map(effort => ({ value: effort.id, label: `${effort.id} — ${effort.name}`, description: effort.description })),
+                    t('modelEffort'),
+                    ctx.agentDefaultModel.currentSelection().provider === pendingModel.provider &&
+                      ctx.agentDefaultModel.currentSelection().model === pendingModel.model
+                      ? ctx.agentDefaultModel.currentSelection().reasoningEffort
+                      : undefined,
+                  )
+                }
+              }
+            } catch (error: unknown) {
+              appendNotice(t('noticeSettingsFailed', { error: errorChain(error) }), 'error')
+            } finally {
+              busy = false
             }
           }
+
+          screen.onSelect = (item) => {
+            void handleSelect(item)
+          }
+          screen.onBack = handleBack
+
+          const handle = ui.showOverlay(screen, { anchor: 'top-left', width: '100%', maxHeight: '100%', margin: 0 })
+          await new Promise<void>((resolve) => {
+            screen.onClose = () => {
+              handle.hide()
+              resolve()
+            }
+          })
+          ui.requestRender()
         } catch (error: unknown) {
           appendNotice(t('noticeSettingsFailed', { error: errorChain(error) }), 'error')
         }
@@ -1205,7 +2063,7 @@ export class Tui extends Service {
 
     const mount = (liveAgent: Agent): void => {
       if (mounted) return
-      uiMode = modeForSession(liveAgent.session, resolved.mode)
+      uiMode = modeForSession(liveAgent.session, resolveDefaultMode())
       mounted = true
       agent = liveAgent
 
@@ -1403,11 +2261,27 @@ export class Tui extends Service {
           const bridge = ctx.get('wechat') as WechatBridge | undefined
           if (bridge?.askWithFallback !== undefined) {
             return bridge.askWithFallback(request, async (r) => ({
-              answers: await runQuestionFlow(ui, palette, t, r.questions, r.signal),
+              answers: await runInlineQuestionFlow(
+                ui,
+                askSlot,
+                palette,
+                t,
+                r.questions,
+                r.signal,
+                () => ui.setFocus(editor),
+              ),
             }))
           }
           return {
-            answers: await runQuestionFlow(ui, palette, t, request.questions, request.signal),
+            answers: await runInlineQuestionFlow(
+              ui,
+              askSlot,
+              palette,
+              t,
+              request.questions,
+              request.signal,
+              () => ui.setFocus(editor),
+            ),
           }
         },
       })
@@ -1458,7 +2332,7 @@ export class Tui extends Service {
         const nextSelection = selectionFor(next)
         selectionRef.current = nextSelection
         selectionRef.assembled = undefined
-        uiMode = modeForSession(next.session, resolved.mode)
+        uiMode = modeForSession(next.session, resolveDefaultMode())
         offModelSelection = installModelSelection(next.ctx, selectionRef)
         agent = next
         activeHandle = handle
