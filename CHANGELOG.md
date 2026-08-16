@@ -13,6 +13,7 @@ All notable changes to this project are documented here.
 - Reorganize `/settings` into General / Models & Providers / Advanced tabs; add provider editing/creation with Base URL, API key, API type (fixed Chat Completions / Completions / Responses, matching WebUI), model list, upstream model discovery, manual model entry, and preset templates, all persisted through dsh settings.
 - Fix default mode persistence: `/settings` 中保存的 `agent-presets.default` 现在会在新会话启动时生效，不再固定回退到 `standard`。
 - Expose each skill as a `skill:<name>` quick command in the composer, so typing `/` lists them and fuzzy search can find them by partial names (e.g. `commit` → `skill:git-commit`); completion keeps the no-space syntax.
+- Sanitize ANSI/C1 escape sequences and tabs from session, tool, and todo text before differential rendering to prevent colored blocks, cursor movement, and frame corruption.
 
 ## [0.1.1] - 2026-08-15
 

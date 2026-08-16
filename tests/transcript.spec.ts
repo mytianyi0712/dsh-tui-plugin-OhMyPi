@@ -99,6 +99,31 @@ describe('transcript components respect the render width', () => {
     assert.ok(rows.some(row => row.includes('third')))
   })
 
+  it('neutralizes terminal controls and tabs from tool output', () => {
+    const unsafe = new ToolCardComponent('grep', '{"path":"lib"}', 10, palette)
+    unsafe.updateResult({
+      message: {
+        content: [{
+          content: [{
+            type: 'text',
+            text: 'Line 1839:\tbefore\x1b[48;5;240m highlighted \x1b[0mafter\nmove\x1b[2J\x1b[Hhome\nmarker\x1b_pi:c\x07cursor\ncharset\x1b(0A\nutf8-csi\u009b31mred\u009b0m',
+          }],
+          isError: false,
+        }],
+      },
+    } as never)
+
+    const output = render(unsafe, 64).join('\n')
+    assert.equal(output.includes('\x1b'), false)
+    assert.equal(output.includes('\t'), false)
+    assert.equal(output.includes('\u009b'), false)
+    assert.ok(output.includes('highlighted'))
+    assert.ok(output.includes('home'))
+    assert.ok(output.includes('cursor'))
+    assert.ok(output.includes('charsetA'))
+    assert.ok(output.includes('utf8-csired'))
+  })
+
   it('frames injected context separately from unframed model reasoning', () => {
     const context = render(new ContextCardComponent(
       '@deepseek-ai/dsh-system-prompt',

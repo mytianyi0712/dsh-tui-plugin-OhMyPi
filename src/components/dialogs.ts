@@ -6,7 +6,7 @@
  * release focus back to the editor on completion.
  */
 
-import { Input, SelectList, type Component, type Container, type Focusable, type OverlayHandle, type OverlayOptions, type TUI } from '@earendil-works/pi-tui'
+import { Input, SelectList, wrapTextWithAnsi, type Component, type Container, type Focusable, type OverlayHandle, type OverlayOptions, type TUI } from '@earendil-works/pi-tui'
 import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { AskUserQuestionAnswerItem, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
@@ -162,26 +162,33 @@ export class AskCardComponent implements Component, Focusable {
 
   render(width: number): string[] {
     this.input.focused = this.focused
+    const bodyWidth = Math.max(1, width - 4)
     const innerWidth = Math.max(20, width - 4)
+    const inputWidth = Math.max(1, Math.min(innerWidth - 4, bodyWidth))
     const options = this.question.options ?? []
-    const rows: string[] = [
+    const rows: string[] = []
+    rows.push(...wrapTextWithAnsi(
       this.palette.bold(this.palette.accent(`❓ ${this.question.question}`)),
-      '',
-    ]
+      bodyWidth,
+    ))
+    rows.push('')
     options.forEach((option, i) => {
-      rows.push(` ${i + 1}. ${option.label}${option.description ? ` — ${option.description}` : ''}`)
+      rows.push(...wrapTextWithAnsi(
+        ` ${i + 1}. ${option.label}${option.description ? ` — ${option.description}` : ''}`,
+        bodyWidth,
+      ))
     })
     if (options.length > 0) {
       rows.push('')
-      rows.push(this.palette.dim(this.question.multiSelect === true
+      rows.push(...wrapTextWithAnsi(this.palette.dim(this.question.multiSelect === true
         ? this.t('askInlineMultiHint')
-        : this.t('askInlineOptionHint')))
+        : this.t('askInlineOptionHint')), bodyWidth))
     } else {
       rows.push('')
-      rows.push(this.palette.dim(this.t('askInlineTextHint')))
+      rows.push(...wrapTextWithAnsi(this.palette.dim(this.t('askInlineTextHint')), bodyWidth))
     }
     rows.push('')
-    rows.push(...this.input.render(innerWidth - 4))
+    rows.push(...this.input.render(inputWidth))
     const title = this.total > 1
       ? `${this.t('askTitle')} ${this.index + 1}/${this.total}`
       : this.t('askTitle')
