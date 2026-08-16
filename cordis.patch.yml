@@ -100,6 +100,12 @@
     - id: tui-startup
       name: 'dsh-omp-tui/startup'
 
+    # WeChat (iLink) bridge: remote control via the official Tencent WeChat
+    # channel. Loads before the TUI so the TUI's user-questions provider can
+    # delegate ask questions to WeChat through ctx.wechat.askWithFallback.
+    - id: wechat-ilink
+      name: 'dsh-omp-tui/wechat'
+
     - id: tui
       name: 'dsh-omp-tui'
       inject: [tuiStartup]

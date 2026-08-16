@@ -145,6 +145,20 @@ npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add link:.
 npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add file:.
 ```
 
+## 微信桥（WeChat iLink）
+
+本 bundle 同时安装微信桥服务。启动后使用：
+
+```sh
+/wechat-login      # 扫码登录
+/wechat-pair <码>  # 批准微信配对码
+/wechat-status     # 查看桥状态
+/wechat-notify on  # 终端任务也推送微信
+```
+
+微信里以 `@dsh` 开头的消息为远程命令；普通消息会注入当前 dsh 会话。状态目录为
+`~/.dsh/wechat-ilink/`（可用 `DSH_WECHAT_ILINK_STATE` 覆盖）。
+
 ## 常见问题
 
 ### `pnpm: command not found`

@@ -113,6 +113,7 @@ import { contentText } from './components/content.ts'
 import { displayInlineText, displayText } from './components/text.ts'
 import { filterProjectSessions, sameProject } from './session-filter.ts'
 import { hasConversationData, recordConversationPreset } from './session-lifecycle.ts'
+import type { WechatBridge } from './wechat/index.ts'
 
 export const name = 'tui'
 
@@ -361,6 +362,32 @@ export class Tui extends Service {
       if (ctx.permissionPresets.current(target.session.events) === FULL_ACCESS_REGISTRY_NAME) {
         appendNotice(t('noticeFullAccessWarning'), 'warning')
       }
+    }
+
+    // 微信桥输出不直接写 stderr：日志/二维码作为持久化文本进入 transcript，
+    // 与 `/help` 的静态卡片一样保留在终端中，且不会越过差分渲染器覆盖输入框。
+    const subscribeWechatOutput = (): void => {
+      if (offWechatOutput !== undefined) return
+      let bridge: WechatBridge | undefined
+      try {
+        bridge = ctx.get('wechat') as WechatBridge | undefined
+      } catch {
+        bridge = undefined
+      }
+      if (bridge?.subscribeOutput === undefined) return
+      offWechatOutput = bridge.subscribeOutput((message) => {
+        if (message.kind === 'qr') {
+          // 二维码保持无边框等宽文本，避免卡片边框影响扫码。
+          chat.addChild(new Spacer(1))
+          chat.addChild(new Text(displayText(message.text), 1, 0))
+        } else {
+          const rows = displayText(message.text)
+            .split('\n')
+            .map(line => palette.muted(`[dsh-wechat-ilink] ${line}`))
+          chat.addChild(new StaticCardComponent(rows, palette))
+        }
+        ui.requestRender()
+      })
     }
 
     // --- status -----------------------------------------------------------
@@ -1060,6 +1087,17 @@ export class Tui extends Service {
       }
       const result = execution.result
       const resultText = result.text?.replaceAll(FULL_ACCESS_REGISTRY_NAME, FULL_ACCESS_UI_NAME)
+      const isWechatCommand = line.startsWith('/wechat-')
+      if (isWechatCommand && resultText !== undefined && resultText !== '') {
+        // 微信桥命令结果与二维码/日志一样持久化到 transcript，避免自动消失。
+        const color = result.kind === 'error' ? palette.error : palette.text
+        chat.addChild(new StaticCardComponent(
+          displayText(resultText).split('\n').map(row => color(row)),
+          palette,
+        ))
+        ui.requestRender()
+        return
+      }
       if (result.kind === 'error') {
         appendNotice(resultText ?? '', 'error')
       } else if (resultText !== undefined && resultText !== '') {
@@ -1161,6 +1199,7 @@ export class Tui extends Service {
     let offStatus: (() => void) | undefined
     let offScheme: (() => void) | undefined
     let offModelSelection: (() => void) | undefined
+    let offWechatOutput: (() => void) | undefined
     let activeHandle: AgentHandle | undefined
     let mounted = false
 
@@ -1360,9 +1399,17 @@ export class Tui extends Service {
       }
 
       const offQuestions = ctx.userQuestions.registerProvider({
-        ask: async (request) => ({
-          answers: await runQuestionFlow(ui, palette, t, request.questions, request.signal),
-        }),
+        ask: async (request) => {
+          const bridge = ctx.get('wechat') as WechatBridge | undefined
+          if (bridge?.askWithFallback !== undefined) {
+            return bridge.askWithFallback(request, async (r) => ({
+              answers: await runQuestionFlow(ui, palette, t, r.questions, r.signal),
+            }))
+          }
+          return {
+            answers: await runQuestionFlow(ui, palette, t, request.questions, request.signal),
+          }
+        },
       })
 
       offEvent = ctx.on('session/event', (session, event) => {
@@ -1559,6 +1606,9 @@ export class Tui extends Service {
       // Replay the durable log first (constructor seeds never publish), then
       // go live so turn-end notices only surface for fresh work.
       rebuildTranscript()
+      // Attach after the transcript rebuild so buffered startup output is not
+      // cleared by the replay and stays visible as persistent cards.
+      subscribeWechatOutput()
       live = true
       updateTitle()
       setStatus(liveAgent.status)
@@ -1608,6 +1658,7 @@ export class Tui extends Service {
       offStatus?.()
       offScheme?.()
       offModelSelection?.()
+      offWechatOutput?.()
       stopSpinner()
       clearTimeout(noticeTimer)
       clearTimeout(exitArmTimer)

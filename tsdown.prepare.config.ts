@@ -6,7 +6,7 @@ import { defineConfig } from 'tsdown'
  * approach so git/file installs never need the harness monorepo.
  */
 export default defineConfig({
-  entry: ['src/index.ts', 'src/startup.ts', 'src/prompt.ts', 'src/session-title.ts', 'src/session-persistence.ts'],
+  entry: ['src/index.ts', 'src/startup.ts', 'src/prompt.ts', 'src/session-title.ts', 'src/session-persistence.ts', 'src/wechat/index.ts'],
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',

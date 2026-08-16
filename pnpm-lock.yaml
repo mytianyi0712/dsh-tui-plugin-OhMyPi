@@ -26,6 +26,9 @@ importers:
       commander:
         specifier: ^15.0.0
         version: 15.0.0
+      qrcode-terminal:
+        specifier: 0.12.0
+        version: 0.12.0
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: 4.0.1
@@ -798,6 +801,10 @@ packages:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
 
+  qrcode-terminal@0.12.0:
+    resolution: {integrity: sha512-EXtzRZmC+YGmGlDFbXKxQiMZNwCLEO6BANKXG4iCtSIM0yqc/pappSx3RIKr4r0uh5JsBckOXeKrB3Iz7mdQpQ==}
+    hasBin: true
+
   quansync@1.0.0:
     resolution: {integrity: sha512-5xZacEEufv3HSTPQuchrvV6soaiACMFnq1H8wkVioctoH3TRha9Sz66lOxRwPK/qZj7HPiSveih9yAyh98gvqA==}
 
@@ -1427,6 +1434,8 @@ snapshots:
   obug@2.1.4: {}
 
   picomatch@4.0.5: {}
+
+  qrcode-terminal@0.12.0: {}
 
   quansync@1.0.0: {}
 

@@ -133,6 +133,30 @@ dsh --profile tui --resume <session-id>
 
 `@[label](dsh-session:<id>)` 会将目标会话的模型可见快照注入当前会话。更多命令以运行中的 `/help` 为准。
 
+### 微信远程桥接（WeChat iLink）
+
+本 bundle 内置了从 OMP 迁移来的微信桥插件：通过腾讯官方 ClawBot / iLink 通道，
+把 dsh 会话连接到微信，支持扫码登录、白名单/配对码、远程 `@dsh` 命令、自动进度
+汇报与结果推送、`wechat_send` / `wechat_status` 工具，以及 ask 提问同步推送到微信。
+
+```sh
+# 在 dsh TUI 中扫码登录
+/wechat-login
+
+# 陌生微信用户会收到 6 位配对码，在 dsh 中批准
+/wechat-pair 123456
+
+# 查看桥状态
+/wechat-status
+```
+
+微信里以 `@dsh` 开头的消息会被当作远程命令，不会进入会话（例如 `@dsh status`、
+`@dsh models`、`@dsh think max`、`@dsh notify on`）。普通微信消息会直接注入当前
+dsh 会话；模型可用 `wechat_send` 工具回复。
+
+状态目录：`~/.dsh/wechat-ilink/`（可用环境变量 `DSH_WECHAT_ILINK_STATE` 覆盖）。
+登录二维码同时写入 `~/.dsh/wechat-ilink/login-qr.txt`，方便无界面场景查看。
+
 ### 让裸 `dsh` 默认进入 TUI
 
 项目提供 `scripts/dsh` 与 `scripts/dsh.cmd` 包装器。将 `scripts` 目录放到 `PATH` 前面后，裸 `dsh` 会自动注入 `--profile tui`；`web`、`plugin`、显式 `--profile`、帮助、版本和配置导出参数保持原样透传。

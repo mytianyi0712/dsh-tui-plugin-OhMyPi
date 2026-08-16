@@ -41,6 +41,7 @@
     "./prompt": "./lib/prompt.js",
     "./session-title": "./lib/session-title.js",
     "./session-persistence": "./lib/session-persistence.js",
+    "./wechat": "./lib/wechat/index.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./src/*": "./src/*",
     "./package.json": "./package.json"
@@ -49,6 +50,7 @@
     "CHANGELOG.md",
     "docs/INSTALL.md",
     "lib/*.js",
+    "lib/wechat",
     "patches",
     "scripts/dsh",
     "scripts/dsh.cmd",
@@ -86,7 +88,8 @@
     "@deepseek-ai/dsh-session-title-llm": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-settings": "^0.1.0-rc.6",
     "@deepseek-ai/schemastery": "3.18.1",
-    "commander": "^15.0.0"
+    "commander": "^15.0.0",
+    "qrcode-terminal": "0.12.0"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "4.0.1",

@@ -7,7 +7,7 @@ import { defineConfig } from 'tsdown'
  * external and resolve through the profile's managed fallback.
  */
 export default defineConfig({
-  entry: ['src/index.ts', 'src/startup.ts', 'src/prompt.ts'],
+  entry: ['src/index.ts', 'src/startup.ts', 'src/prompt.ts', 'src/wechat/index.ts'],
   outDir: 'lib',
   format: ['esm'],
   platform: 'node',
