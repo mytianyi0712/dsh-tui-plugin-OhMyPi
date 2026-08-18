@@ -125,6 +125,16 @@ npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
 
 固定 tag 比直接使用 `#main` 更容易复现。完整的升级、卸载和安装排障说明见 [`docs/INSTALL.md`](docs/INSTALL.md)。
 
+如果希望直接使用 `omdsh` 启动器，也可以全局安装本地 tarball；包内的 dsh 宿主 peer 依赖为 optional，npm 11 不会因 peer 图触发 Arborist 的 `null.children` 崩溃：
+
+```sh
+npm install --global ./dsh-omp-tui-0.2.0.tgz
+npm install --global @deepseek-ai/dsh@0.1.0-rc.6
+omdsh
+```
+
+`omdsh` 只负责调用 PATH 中的官方 `dsh`；若未安装官方 dsh，会显示 `dsh is not recognized`。
+
 ## 启动与日常使用
 
 ### 启动会话

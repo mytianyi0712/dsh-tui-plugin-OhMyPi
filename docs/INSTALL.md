@@ -1,6 +1,24 @@
 # dsh-omp-tui 安装与升级
 
-本页面向从 GitHub 安装已发布的 `dsh-omp-tui`。项目是一个 dsh profile bundle，不是独立的 dsh launcher。
+本项目是 dsh profile bundle，不是独立的 dsh 实现；同时提供 `omdsh` 启动器。bundle 由 dsh profile 加载，启动器则调用系统 PATH 中的官方 `dsh`。
+
+全局安装 tarball 只用于安装 `omdsh` 启动器；它不会单独提供 dsh runtime。
+
+## 全局安装启动器
+全局安装本地 tarball 时，包内的 dsh 宿主 peer 依赖已标记为 optional，npm 11 可以继续完成依赖解析，不会因该 peer 图在 Arborist 中触发 `null.children` 崩溃。
+
+```sh
+npm install --global ./dsh-omp-tui-0.2.0.tgz
+```
+
+随后安装官方 dsh（若尚未安装），再运行启动器：
+
+```sh
+npm install --global @deepseek-ai/dsh@0.1.0-rc.6
+omdsh
+```
+
+如果只安装了 `dsh-omp-tui` 而没有官方 `dsh`，运行 `omdsh` 时出现 `dsh is not recognized` 是预期错误；请先安装上面的官方 dsh。插件实际运行仍推荐使用下方的 `dsh plugin ... add`，由 tui profile 提供宿主依赖。
 
 ## 兼容性
 
