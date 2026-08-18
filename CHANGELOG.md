@@ -9,7 +9,8 @@ All notable changes to this project are documented here.
 - Truecolor light schemes now use the light-slot OMP theme instead of falling back to ANSI colors.
 - `omdsh` now automatically updates the tui profile when the installed plugin version is older than the launcher version.
 - Cache rendered transcript rows per component and throttle token-meter/permission reads to once per second, fixing the progressive slowdown as session history grows.
-- Tool cards now keep the title as the bare tool name and show the actual command or query in an `Input` section above `Output` for `pwsh`, `bash`, `read`, `write`, `edit`, `grep`, `glob`, `web_search`, `web_fetch`, and `run_code`.
+- Tool cards now keep the title as the bare tool name and show the actual command or query in an `Input` section above `Output` for `pwsh`, `bash`, `read`, `write`, `edit`, `grep`, `glob`, `web_search`, `web_fetch`, and `run_code`; long commands wrap instead of truncating.
+- `str_replace_editor` renders `old_str`/`new_str` as a diff section (red removals, green additions) instead of hiding the edit content.
 
 ## [0.2.0] - 2026-08-18
 
