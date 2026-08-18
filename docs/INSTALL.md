@@ -64,6 +64,19 @@ npm install --global @deepseek-ai/dsh@0.1.0-rc.6
 dsh --profile tui
 ```
 
+或者使用本项目自带的 `omdsh` 启动器（它只从系统 PATH 中查找官方 `dsh`，不通过 npx 下载或缓存 dsh）。用 `dsh plugin add` 安装 tgz 后，`omdsh` 会出现在 profile 的 `.bin` 目录。`omdsh` 首次运行时会自动把 `dsh-omp-tui` 安装到 tui profile（可用 `OMDSH_NO_BOOTSTRAP=1` 跳过）：
+
+```sh
+# 把 profile 的 .bin 目录加入 PATH（一次性）后：
+export PATH="$HOME/.dsh/profiles/tui/node_modules/.bin:$PATH"   # Git Bash / zsh
+omdsh
+omdsh --resume <session-id>
+
+# Windows PowerShell（一次性）：
+$env:PATH = "$HOME\.dsh\profiles\tui\node_modules\.bin;$env:PATH"
+omdsh
+```
+
 验证 profile 已组合成功：
 
 ```sh

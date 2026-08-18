@@ -173,22 +173,23 @@ dsh 会话；模型可用 `wechat_send` 工具回复。
 
 配置保存在 `~/.dsh/wechat-ilink/config.json`，可通过环境变量 `DSH_WECHAT_ILINK_STATE` 改变状态目录。
 
-### 让裸 `dsh` 默认进入 TUI
+### 使用 `omdsh` 启动 TUI
 
-项目提供 `scripts/dsh` 与 `scripts/dsh.cmd` 包装器。将 `scripts` 目录放到 `PATH` 前面后，裸 `dsh` 会自动注入 `--profile tui`；`web`、`plugin`、显式 `--profile`、帮助、版本和配置导出参数保持原样透传。
+项目提供 `omdsh` 启动器（`scripts/omdsh.js` 为跨平台 bin，另有 `scripts/omdsh` 与 `scripts/omdsh.cmd`）。`omdsh` 会调用系统 PATH 中的官方 `dsh` 并启动 `--profile tui`；本项目不下载、不缓存 dsh。首次运行时，`omdsh` 会自动把 `dsh-omp-tui` 安装到 tui profile（可用 `OMDSH_NO_BOOTSTRAP=1` 跳过）。官方 dsh 命令（`web`、`plugin`、显式 `--profile` 等）请直接使用 `dsh`。
 
 ```sh
-# Git Bash / zsh
-export PATH="$HOME/dsh-omp-tui/scripts:$PATH"
-dsh                         # 等价于 dsh --profile tui
-dsh --resume <session-id>   # 自动补 profile
-dsh web --port 8080         # 透传给官方 web 子命令
+# 开发环境：把仓库 scripts 目录加入 PATH
+export PATH="$HOME/dsh-omp-tui/scripts:$PATH"   # Git Bash / zsh
+omdsh                         # 等价于 dsh --profile tui
+omdsh --resume <session-id>   # 透传给 tui profile
 
 # Windows cmd / PowerShell
-# 将 <仓库>\scripts 加入 PATH，或直接运行 <仓库>\scripts\dsh.cmd
+# 将 <仓库>\scripts 加入 PATH，或直接运行 <仓库>\scripts\omdsh.cmd
 ```
 
-需要指定真实 dsh 可执行文件时设置 `DSH_REAL`；设置 `DSH_DEBUG=1` 可以只打印包装器解析出的命令，不启动后端。
+安装发布包后，`omdsh` 会由 `bin` 入口安装到 profile 的 `.bin` 目录（例如 `~/.dsh/profiles/tui/node_modules/.bin/omdsh`），把该目录加入 PATH 即可直接使用。
+
+需要指定真实 dsh 可执行文件时设置 `DSH_REAL`；设置 `DSH_DEBUG=1` 可以只打印启动器解析出的命令，不启动 dsh。
 
 ## 配置
 
@@ -271,7 +272,7 @@ src/                    TUI、主题、提示、会话和设置实现
 src/components/         状态栏、消息、工具卡和转录组件
 tests/                  node:test 行为测试
 cordis.patch.yml        将本 bundle 组合进 dsh profile 的配置
-scripts/dsh*             裸 dsh 包装器
+scripts/omdsh*           omdsh TUI 启动器（调用系统 PATH 中的 dsh）
 patches/                pi-tui 的 vendored pnpm patch 与声明
 docs/                   安装、发布和 harness 合约文档
 docs/assets/            README 使用的实机截图

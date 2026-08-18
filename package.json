@@ -35,6 +35,9 @@
     "prepare": "tsdown --config tsdown.prepare.config.ts"
   },
   "main": "lib/index.js",
+  "bin": {
+    "omdsh": "scripts/omdsh.js"
+  },
   "exports": {
     ".": "./lib/index.js",
     "./startup": "./lib/startup.js",
@@ -52,8 +55,9 @@
     "lib/*.js",
     "lib/wechat",
     "patches",
-    "scripts/dsh",
-    "scripts/dsh.cmd",
+    "scripts/omdsh",
+    "scripts/omdsh.cmd",
+    "scripts/omdsh.js",
     "src",
     "cordis.patch.yml"
   ],

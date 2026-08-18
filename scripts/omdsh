@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# omdsh: dsh-omp-tui 启动器（bash 薄包装）。
+# 实际逻辑在 scripts/omdsh.js 中，以便与 bin 入口保持一致。
+set -u
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec node "$DIR/omdsh.js" "$@"
