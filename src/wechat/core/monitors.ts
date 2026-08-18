@@ -19,8 +19,8 @@ export interface MonitorHooks {
   policy: () => 'pairing' | 'allowlist' | 'open'
   /** 日志。 */
   log: (msg: string) => void
-  /** 把文本注入 dsh 会话（index 负责标记 run 归属）。 */
-  sendUserMessage: (text: string) => Promise<void>
+  /** 把文本注入 dsh 会话（index 负责标记 run 归属）；返回 true 表示已成功排队。 */
+  sendUserMessage: (text: string) => Promise<boolean>
   /** 尝试把消息消费为挂起 ask 的回答；返回 true 表示已消费。 */
   consumeAskAnswer?: (acc: Account, msg: WeixinMessage) => Promise<boolean>
   /** 尝试把消息消费为 @dsh 命令；返回 true 表示已消费。 */

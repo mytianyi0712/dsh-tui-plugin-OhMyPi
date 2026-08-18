@@ -27,7 +27,7 @@ const PAIRING_CODE_LEN = 6
 
 export interface BridgeDeps {
   policy: 'pairing' | 'allowlist' | 'open'
-  sendUserMessage: (text: string) => Promise<void>
+  sendUserMessage: (text: string) => Promise<boolean>
   log: (msg: string) => void
 }
 
@@ -185,14 +185,26 @@ export async function handleInbound(
   void signalTyping(account, userId, TYPING_START).catch(() => {})
 
   // Inject the message into the session as-is (no prefix), then confirm
-  // receipt to the WeChat user with a fixed notice. This notice is not a
-  // progress report: it tells the user the task has started, so it is sent
-  // even when progress reporting is disabled.
+  // receipt to the WeChat user. On success this notice tells the user the
+  // task has started (independent of the progress-reporting switch); on
+  // failure we say the message was not injected instead of claiming a start.
   const body = text || '(媒体消息，暂不支持解析)'
   deps.log(`wechat: steering inbound from ${userId}`)
-  await deps.sendUserMessage(body)
+  let queued = false
   try {
-    await sendTextToPeer(account, userId, '任务进行中...', getContextToken(account.id, userId))
+    queued = await deps.sendUserMessage(body)
+  } catch (err) {
+    deps.log(`wechat: sendUserMessage failed: ${String(err)}`)
+  }
+  try {
+    await sendTextToPeer(
+      account,
+      userId,
+      queued
+        ? '任务进行中...'
+        : '⚠️ 当前没有可用的 dsh 会话，消息未注入。请先在终端打开 dsh 会话。',
+      getContextToken(account.id, userId),
+    )
   } catch (err) {
     deps.log(`wechat: in-progress notice failed: ${String(err)}`)
   }

@@ -26,6 +26,21 @@ let pendingModelPicker: { at: number; ids: string[] } | null = null
 
 const MODEL_PICKER_TTL_MS = 10 * 60 * 1000
 
+/** TUI 暴露给微信命令的前台建会话能力。 */
+interface TuiForegroundControl {
+  createForegroundSession: () => Promise<SessionId | undefined>
+}
+
+/** 读取 TUI 前台控制；无 TUI 或未挂载时返回 undefined。 */
+function getTuiForeground(ctx: Context): TuiForegroundControl | undefined {
+  try {
+    const tui = ctx.get('tui') as Partial<TuiForegroundControl> | undefined
+    return typeof tui?.createForegroundSession === 'function' ? (tui as TuiForegroundControl) : undefined
+  } catch {
+    return undefined
+  }
+}
+
 interface CommandSpec {
   usage: string
   desc: string
@@ -309,8 +324,18 @@ async function cmdModels(_args: string, inv: CommandInvocation, ctx: Context): P
 
 async function cmdNew(_args: string, inv: CommandInvocation, ctx: Context): Promise<CommandResult> {
   const current = inv.agent
-  const id = SessionId(`wechat-${randomUUID()}`)
   try {
+    const tui = getTuiForeground(ctx)
+    if (tui !== undefined) {
+      const id = await tui.createForegroundSession()
+      if (id === undefined) {
+        return { kind: 'error', text: '⚠️ TUI 尚未就绪，新建会话失败' }
+      }
+      return { kind: 'success', text: `✅ 已新建会话 ${String(id)}` }
+    }
+
+    // 无 TUI 进程：微信桥自己就是前台，直接创建并切换活动会话指针。
+    const id = SessionId(`wechat-${randomUUID()}`)
     const handle = await ctx.agents.create({
       sessionId: id,
       meta: { cwd: current.session.header.cwd },

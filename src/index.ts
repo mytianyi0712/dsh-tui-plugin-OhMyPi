@@ -229,6 +229,23 @@ export class Tui extends Service {
   static inject = ['tuiStartup', 'agents', 'tuiPrompt', 'commands', 'tokenMeter', 'llm', 'userQuestions', 'sessionQuery', 'agentDefaultModel', 'skills', 'sessionReferenceResolver', 'agentPresets', 'permissionPresets', 'settings', 'sessionTitle']
   static Config = TuiConfigSchema
 
+  /** Mount 后由 TUI 赋值：读取当前前台 agent。 */
+  private foregroundAgentImpl: (() => Agent | undefined) | undefined
+
+  /** Mount 后由 TUI 赋值：按 TUI `/new` 逻辑创建会话并切到前台。 */
+  private createForegroundSessionImpl: (() => Promise<SessionId | undefined>) | undefined
+
+  /** 当前前台会话；未挂载时返回 undefined。 */
+  foregroundAgent(): Agent | undefined {
+    return this.foregroundAgentImpl?.()
+  }
+
+  /** WeChat `@dsh new` 使用：按 TUI 的 `/new` 逻辑创建会话并切到前台。 */
+  async createForegroundSession(): Promise<SessionId | undefined> {
+    if (this.createForegroundSessionImpl === undefined) return undefined
+    return this.createForegroundSessionImpl()
+  }
+
   constructor(ctx: Context, config: Config) {
     super(ctx, 'tui')
 
@@ -344,7 +361,7 @@ export class Tui extends Service {
     let tokenTotals = { inputTokens: 0, outputTokens: 0 }
     // Agent-scoped helpers handed to the command surface by mount().
     const handles: {
-      newAgent: (() => Promise<void>) | undefined
+      newAgent: (() => Promise<SessionId | undefined>) | undefined
       switchAgent: ((id: SessionId) => Promise<void>) | undefined
       saveSelection: ((selection: ModelSelection) => Promise<void>) | undefined
       setReasoningEffort: ((effort: NonNullable<ModelSelection['reasoningEffort']>) => Promise<void>) | undefined
@@ -2252,6 +2269,7 @@ export class Tui extends Service {
       agent = liveAgent
       // 让微信桥跟随 TUI 当前会话；/resume、/new 等切换也走 activateAgent。
       setActiveAgent(liveAgent)
+      this.foregroundAgentImpl = () => agent
 
       const selectionFor = (target: Agent): ModelSelection => {
         const configured = ctx.agentDefaultModel.currentSelection()
@@ -2552,11 +2570,17 @@ export class Tui extends Service {
         warnIfFullAccess(next)
         void composeAgentPreset(next)
         if (previousHandle !== undefined && previousHandle !== handle) {
-          void previousHandle.dispose().catch(() => undefined)
+          // 延迟到当前命令/事件生命周期写完再释放旧句柄；微信侧
+          // `@dsh new` 会从旧 agent 的命令执行中直接切换前台会话。
+          // 用 setImmediate 而不是 queueMicrotask：命令执行器在 handler
+          // 返回后还需要往旧 session 追加 command/done，不能在微任务里先 dispose。
+          setImmediate(() => {
+            void previousHandle.dispose().catch(() => undefined)
+          })
         }
       }
 
-      const createAgent = async (): Promise<void> => {
+      const createAgent = async (): Promise<SessionId | undefined> => {
         const current = agent ?? liveAgent
         const selection = selectionRef.current ?? selectionFor(current)
         const preset = uiMode
@@ -2586,7 +2610,9 @@ export class Tui extends Service {
         }
         activateAgent(handle.agent, handle)
         appendNotice(t('noticeSessionCreated', { id: String(id) }), 'info')
+        return id
       }
+      this.createForegroundSessionImpl = createAgent
 
       const switchAgent = async (targetId: SessionId): Promise<void> => {
         const current = agent ?? liveAgent

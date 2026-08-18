@@ -18,6 +18,7 @@ import {
   getConfig,
   setConfig,
   markWechatPending,
+  clearWechatPending,
   setReceiverHeld,
   isReceiverHeld,
   log,
@@ -77,7 +78,7 @@ export class WechatBridge extends Service {
     registerWechatTools(ctx)
     registerProgressHooks(ctx)
 
-    // 跟踪活动 agent：优先第一个 root；也可由 @dsh new 切换。
+    // 跟踪活动 agent：TUI 前台优先；无 TUI 时回退到第一个 root。
     const pickRoot = (): Agent | undefined => {
       const roots = ctx.agents.roots()
       return roots[0] ?? ctx.agents.list()[0]
@@ -88,7 +89,9 @@ export class WechatBridge extends Service {
       if (getActiveAgent() === undefined) setActiveAgent(agent)
     })
     ctx.on('agent/disposed', ({ agent }) => {
-      if (getActiveAgent()?.id === agent.id) setActiveAgent(pickRoot())
+      if (getActiveAgent()?.id !== agent.id) return
+      // 指针始终跟随前台会话：优先问 TUI，无 TUI 时再回退到存活的首个 agent。
+      setActiveAgent(this.foregroundAgentFromTui() ?? pickRoot())
     })
 
     // 启动已保存账号的接收 Monitor。
@@ -174,21 +177,58 @@ export class WechatBridge extends Service {
     setConfig(next)
   }
 
+  /**
+   * Resolve the agent that should receive ordinary WeChat messages.
+   * 会话指针始终跟随 TUI 前台会话：先问 TUI，其次才回退到活动指针 /
+   * 存活的首个 root（无 TUI 或 TUI 尚未挂载时）。
+   */
+  private resolveLiveAgent(ctx: Context): Agent | undefined {
+    const foreground = this.foregroundAgentFromTui()
+    if (foreground !== undefined && ctx.agents.get(foreground.id) === foreground) {
+      if (getActiveAgent() !== foreground) setActiveAgent(foreground)
+      return foreground
+    }
+    const active = getActiveAgent()
+    if (active !== undefined && ctx.agents.get(active.id) === active) return active
+    const fallback = ctx.agents.roots()[0] ?? ctx.agents.list()[0]
+    if (fallback !== undefined) setActiveAgent(fallback)
+    return fallback
+  }
+
+  /** 从 TUI 服务读取前台会话；TUI 不存在或未挂载时返回 undefined。 */
+  private foregroundAgentFromTui(): Agent | undefined {
+    try {
+      const tui = this.ctx.get('tui') as { foregroundAgent?: () => Agent | undefined } | undefined
+      if (typeof tui?.foregroundAgent === 'function') return tui.foregroundAgent()
+    } catch {
+      // TUI 未注册/不可用：走无 TUI 回退。
+    }
+    return undefined
+  }
+
   private buildMonitorHooks(ctx: Context): MonitorHooks {
     return {
       policy: () => getConfig().policy,
       log,
       sendUserMessage: async (text: string) => {
-        markWechatPending()
-        const agent = getActiveAgent()
+        const agent = this.resolveLiveAgent(ctx)
         if (!agent) {
+          clearWechatPending()
           log('wechat: no active agent, inbound message dropped')
-          return
+          return false
         }
-        agent.steer(createUserMessage({
-          content: [{ type: 'text', text }],
-          source: { kind: 'user' },
-        }))
+        try {
+          markWechatPending()
+          agent.steer(createUserMessage({
+            content: [{ type: 'text', text }],
+            source: { kind: 'user' },
+          }))
+          return true
+        } catch (err) {
+          clearWechatPending()
+          log(`wechat: steer inbound message failed: ${String(err)}`)
+          return false
+        }
       },
       consumeAskAnswer: async (acc: Account, msg: WeixinMessage) => consumeAskAnswer(acc, msg),
       handleOmpCommand: async (acc: Account, msg: WeixinMessage, text: string) => {
