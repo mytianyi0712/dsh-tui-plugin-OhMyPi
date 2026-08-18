@@ -2,10 +2,15 @@
 
 ## 更新日志
 
+### v0.2.1 (2026-08-18)
+- 移植本机 OMP 的全部 98 个主题
+- 新增深色/浅色自适应主题模式
+- 浅色 truecolor 终端使用 OMP 浅色主题而非 ANSI 回退
+
 ### v0.2.0 (2026-08-18)
 - 修复微信入站消息路由：始终跟随 TUI 前台会话，只有成功排队才回复“任务进行中”
 - `@dsh new` 通过 TUI 创建新会话并切换到前台
-- 新增 `omdsh` 启动器：使用系统 PATH 中的 dsh，首次运行自动安装 tui profile
+- 新增 `omdsh` 启动器：使用系统 PATH 中的 dsh，首次运行自动安装、版本落后时自动更新 tui profile
 - 会话指针始终指向前台会话，进度与结果可见
 
 ### v0.1.3 (2026-08-17)
@@ -74,13 +79,13 @@ OMP 风格的 DeepSeek Harness（dsh）终端界面。它是一个独立的 prof
 
 ## 功能概览
 
-- **OMP 风格 TUI**：`dark-catppuccin` 默认主题、truecolor、Nerd Font 图标和 Powerline 状态栏。
+- **OMP 风格 TUI**：默认 Catppuccin 动态深浅主题、truecolor、Nerd Font 图标和 Powerline 状态栏。
 - **响应式布局**：窄终端优先保留模式、工作目录、Git 与 `ctx`，空间不足时逐级压缩或隐藏低优先级字段。
 - **会话管理**：支持新建、命名、恢复和进程内切换持久化会话。
 - **模型与思考等级**：通过 `/model`、`/think` 选择 provider、model 和 reasoning effort。
 - **工作模式**：支持 dsh 官方 `standard`、`minimal`、`code`、`cordis` 预设，也能发现本地安装的 agent preset。
 - **权限模式**：通过 `/permission` 在 `read-only`、`workspace-write`、`full-access` 等部署可用预设间切换。
-- **主题与本地化**：内置 `catppuccin`、`tokyo-night`，支持逐角色 RGB 覆盖；内置 `zh-CN` 与 `en`。
+- **主题与本地化**：移植本机 OMP 的全部 98 个具体主题（`dark-*` / `light-*` / 中性主题），支持“动态”（深色/浅色槽位独立选择）与“选定”（单一主题）两种模式；支持逐角色 RGB 覆盖；内置 `zh-CN` 与 `en`。
 - **命令与补全**：支持斜杠命令、`@` 会话/文件引用、路径补全和参数补全。
 
 ## 安装
@@ -128,7 +133,7 @@ npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
 如果希望直接使用 `omdsh` 启动器，也可以全局安装本地 tarball；包内的 dsh 宿主 peer 依赖为 optional，npm 11 不会因 peer 图触发 Arborist 的 `null.children` 崩溃：
 
 ```sh
-npm install --global ./dsh-omp-tui-0.2.0.tgz
+npm install --global ./dsh-omp-tui-0.2.1.tgz
 npm install --global @deepseek-ai/dsh@0.1.0-rc.6
 omdsh
 ```
@@ -175,7 +180,7 @@ dsh --profile tui --resume <session-id>
 | `/details` | 查看会话标题、目录、模型、agent、tokens 和 context |
 | `/mode [preset]` | 切换 dsh agent 组合；无参时循环切换 |
 | `/permission [preset]` | 切换沙箱和审批策略 |
-| `/theme [name]` | 查看或切换主题 |
+| `/theme [mode|dark|light|theme id]` | 查看或切换主题模式与主题 |
 | `/palette` | 查看当前主题实际使用的颜色角色 |
 | `/settings` | 打开可视化设置 |
 | `/skills` | 列出可用技能 |
@@ -221,7 +226,7 @@ dsh 会话；模型可用 `wechat_send` 工具回复。
 
 ### 使用 `omdsh` 启动 TUI
 
-项目提供 `omdsh` 启动器（`scripts/omdsh.js` 为跨平台 bin，另有 `scripts/omdsh` 与 `scripts/omdsh.cmd`）。`omdsh` 会调用系统 PATH 中的官方 `dsh` 并启动 `--profile tui`；本项目不下载、不缓存 dsh。首次运行时，`omdsh` 会自动把 `dsh-omp-tui` 安装到 tui profile（可用 `OMDSH_NO_BOOTSTRAP=1` 跳过）。官方 dsh 命令（`web`、`plugin`、显式 `--profile` 等）请直接使用 `dsh`。
+项目提供 `omdsh` 启动器（`scripts/omdsh.js` 为跨平台 bin，另有 `scripts/omdsh` 与 `scripts/omdsh.cmd`）。`omdsh` 会调用系统 PATH 中的官方 `dsh` 并启动 `--profile tui`；本项目不下载、不缓存 dsh。首次运行时，`omdsh` 会自动把 `dsh-omp-tui` 安装到 tui profile；之后若 profile 内版本低于启动器版本，也会自动更新（可用 `OMDSH_NO_BOOTSTRAP=1` 跳过）。官方 dsh 命令（`web`、`plugin`、显式 `--profile` 等）请直接使用 `dsh`。
 
 ```sh
 # 开发环境：把仓库 scripts 目录加入 PATH
@@ -274,7 +279,10 @@ $env:DEEPSEEK_BASE_URL = 'http://localhost:3000/v1'
     locale: zh-CN               # zh-CN | en
     defaultReasoningEffort: max
     theme:
-      name: catppuccin          # catppuccin | tokyo-night
+      mode: dynamic            # dynamic | selected
+      dark: dark-catppuccin    # 深色槽位主题
+      light: light-catppuccin  # 浅色槽位主题
+      selected: dark-catppuccin # selected 模式的单一主题
       custom:
         accent: [255, 100, 100]
         userMessageBg: [24, 24, 37]
@@ -285,6 +293,7 @@ $env:DEEPSEEK_BASE_URL = 'http://localhost:3000/v1'
 - `/settings` 分为“常规 / 模型与供应商 / 高级”三页；模型与供应商页支持新增/编辑供应商、模型探测与手动模型列表。接口类型使用 dsh-llm-pi-ai 官方值：OAI 兼容 `openai-completions`、Response `openai-responses`、Message `anthropic-messages`。
 - 默认模式会读取 dsh settings 中保存的 `agent-presets.default`：设置页修改后，新会话启动会使用该默认模式，而不是固定回退到 `standard`。
 - `theme.custom` 只接受 RGB 三元组；未知角色和非法值会被忽略。
+- `theme.mode` 可选 `dynamic`（动态，按终端明暗在 `theme.dark` / `theme.light` 之间切换）或 `selected`（选定，固定使用 `theme.selected`）。三个主题槽位均填写具体 OMP 主题 id，不校验主题自身明暗，可任意搭配。
 - `/permission` 的可用选项以当前部署的权限预设为准，自定义 preset 也会进入命令提示和补全。
 
 ## 开发

@@ -1,7 +1,7 @@
 {
   "name": "dsh-omp-tui",
   "description": "OMP-styled interactive terminal profile bundle for DeepSeek Harness",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publishConfig": {
     "access": "public"
   },
@@ -31,6 +31,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test --experimental-transform-types \"tests/*.spec.ts\"",
     "check": "pnpm run typecheck && pnpm run test",
+    "generate:themes": "node scripts/generate-omp-themes.mjs",
     "build": "tsc -b && tsdown",
     "prepare": "tsdown --config tsdown.prepare.config.ts"
   },

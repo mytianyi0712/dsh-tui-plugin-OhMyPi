@@ -29,6 +29,22 @@ const DSH_LOGO = [
   '██████╔╝███████║██║  ██║',
 ]
 
+/** Cache rendered rows for a component until its state or width changes. */
+interface RenderCache {
+  key: string
+  lines: string[]
+}
+
+function cachedRender(
+  cache: RenderCache | undefined,
+  key: string,
+  compute: () => string[],
+): { cache: RenderCache; lines: string[] } {
+  if (cache !== undefined && cache.key === key) return { cache, lines: cache.lines }
+  const lines = compute()
+  return { cache: { key, lines }, lines }
+}
+
 function fitWidth(text: string, width: number): string {
   const clipped = truncateToWidth(text, Math.max(0, width), '')
   return clipped + ' '.repeat(Math.max(0, width - visibleWidth(clipped)))
@@ -43,6 +59,8 @@ function center(text: string, width: number): string {
 
 /** Responsive two-column welcome panel following OMP's startup composition. */
 export class HeaderComponent implements Component {
+  private renderCache: RenderCache | undefined
+
   constructor(
     private readonly agent: Agent,
     private readonly subtitle: () => string | undefined,
@@ -52,9 +70,19 @@ export class HeaderComponent implements Component {
     private readonly selection?: () => ModelSelection | undefined,
   ) {}
 
-  invalidate(): void {}
+  invalidate(): void {
+    this.renderCache = undefined
+  }
 
   render(width: number): string[] {
+    const selection = this.selection?.()
+    const cacheKey = `${width}|${selection?.model ?? ''}|${selection?.provider ?? ''}|${this.subtitle() ?? ''}`
+    const cached = cachedRender(this.renderCache, cacheKey, () => this.renderUncached(width, selection))
+    this.renderCache = cached.cache
+    return cached.lines
+  }
+
+  private renderUncached(width: number, selection: ModelSelection | undefined): string[] {
     const boxWidth = Math.min(100, Math.max(0, width - 2))
     if (boxWidth < 4) return []
 
@@ -64,7 +92,6 @@ export class HeaderComponent implements Component {
     const logo = this.gradient
       ? gradientLogo(DSH_LOGO)
       : DSH_LOGO.map(line => this.palette.accent(line))
-    const selection = this.selection?.()
     const model = displayText(String(selection?.model ?? this.agent.options.model ?? 'No model'))
     const provider = displayText(String(selection?.provider ?? this.agent.options.provider ?? 'DeepSeek'))
     const leftLines = [
@@ -130,6 +157,8 @@ export class HeaderComponent implements Component {
 
 /** OMP user bubble: padded Markdown on a full-width mantle surface, no label or outline. */
 export class UserMessageComponent extends Container {
+  private renderCache: RenderCache | undefined
+
   constructor(text: string, private readonly palette: Palette, mdTheme: MarkdownTheme) {
     super()
     this.addChild(new Markdown(displayText(text), 1, 1, mdTheme, {
@@ -140,22 +169,43 @@ export class UserMessageComponent extends Container {
     }))
   }
 
+  override invalidate(): void {
+    this.renderCache = undefined
+    super.invalidate()
+  }
+
   override render(width: number): string[] {
-    return super.render(width).map((row) => {
-      const fill = ' '.repeat(Math.max(0, width - visibleWidth(row)))
-      return this.palette.userMessageBg(`${row}${fill}`)
-    })
+    const cached = cachedRender(this.renderCache, String(width), () =>
+      super.render(width).map((row) => {
+        const fill = ' '.repeat(Math.max(0, width - visibleWidth(row)))
+        return this.palette.userMessageBg(`${row}${fill}`)
+      }))
+    this.renderCache = cached.cache
+    return cached.lines
   }
 }
 
 /** OMP reasoning prose: inset, muted, italic, and deliberately unlabelled. */
 export class ThinkingBlock extends Container {
+  private renderCache: RenderCache | undefined
+
   constructor(reasoning: string, palette: Palette, mdTheme: MarkdownTheme) {
     super()
     this.addChild(new Markdown(displayText(reasoning), 1, 0, mdTheme, {
       color: (value: string) => palette.thinking(value),
       italic: true,
     }))
+  }
+
+  override invalidate(): void {
+    this.renderCache = undefined
+    super.invalidate()
+  }
+
+  override render(width: number): string[] {
+    const cached = cachedRender(this.renderCache, String(width), () => super.render(width))
+    this.renderCache = cached.cache
+    return cached.lines
   }
 }
 
@@ -196,6 +246,7 @@ interface StreamingBlock {
 export class StreamingAssistantComponent extends Container {
   private readonly blocks = new Map<number, StreamingBlock>()
   private settledContent: readonly ContentBlock[] | undefined
+  private renderCache: RenderCache | undefined
 
   constructor(
     private readonly palette: Palette,
@@ -204,6 +255,17 @@ export class StreamingAssistantComponent extends Container {
   ) {
     super()
     this.rebuild()
+  }
+
+  override invalidate(): void {
+    this.renderCache = undefined
+    super.invalidate()
+  }
+
+  override render(width: number): string[] {
+    const cached = cachedRender(this.renderCache, String(width), () => super.render(width))
+    this.renderCache = cached.cache
+    return cached.lines
   }
 
   /** Replace the streamed blocks with the step's settled content. */
@@ -235,6 +297,7 @@ export class StreamingAssistantComponent extends Container {
   }
 
   private rebuild(): void {
+    this.renderCache = undefined
     this.clear()
     const children = assistantMessageChildren(
       this.presentedContent(),
@@ -337,6 +400,7 @@ function toolSummary(name: string, argumentsJson: string): string {
 export class ToolCardComponent implements Component {
   private result: { content: ContentBlock[]; isError: boolean } | undefined
   private visibility: ToolCardVisibility = 'collapsed'
+  private renderCache: RenderCache | undefined
 
   constructor(
     private readonly name: string,
@@ -352,16 +416,28 @@ export class ToolCardComponent implements Component {
       content: [...result.content],
       isError: result.isError === true,
     }
+    this.renderCache = undefined
   }
 
   /** Set the card's visibility state. */
   setVisibility(visibility: ToolCardVisibility): void {
+    if (this.visibility === visibility) return
     this.visibility = visibility
+    this.renderCache = undefined
   }
 
-  invalidate(): void {}
+  invalidate(): void {
+    this.renderCache = undefined
+  }
 
   render(width: number): string[] {
+    const cacheKey = `${width}|${this.visibility}|${this.result?.isError ?? ''}`
+    const cached = cachedRender(this.renderCache, cacheKey, () => this.renderUncached(width))
+    this.renderCache = cached.cache
+    return cached.lines
+  }
+
+  private renderUncached(width: number): string[] {
     if (this.visibility === 'hidden') return []
     const summary = toolSummary(this.name, this.argumentsJson)
     if (this.result === undefined) {
@@ -409,6 +485,7 @@ export type ToolCardVisibility = 'hidden' | 'collapsed' | 'expanded'
 export class ContextCardComponent implements Component {
   private readonly body: Text
   private readonly title: string
+  private renderCache: RenderCache | undefined
 
   constructor(
     label: string,
@@ -426,26 +503,38 @@ export class ContextCardComponent implements Component {
   }
 
   invalidate(): void {
+    this.renderCache = undefined
     this.body.invalidate?.()
   }
 
   render(width: number): string[] {
-    const rows = this.body.render(Math.max(1, width - 4))
-    return frameBlock(rows, width, this.palette.borderMuted, this.palette.toolPendingBg, this.title)
+    const cached = cachedRender(this.renderCache, String(width), () => {
+      const rows = this.body.render(Math.max(1, width - 4))
+      return frameBlock(rows, width, this.palette.borderMuted, this.palette.toolPendingBg, this.title)
+    })
+    this.renderCache = cached.cache
+    return cached.lines
   }
 }
 
 /** A static framed block of pre-rendered rows (e.g. the `/palette` listing). */
 export class StaticCardComponent implements Component {
+  private renderCache: RenderCache | undefined
+
   constructor(
     private readonly rows: readonly string[],
     private readonly palette: Palette,
   ) {}
 
-  invalidate(): void {}
+  invalidate(): void {
+    this.renderCache = undefined
+  }
 
   render(width: number): string[] {
-    return ['', ...frameBlock(this.rows, width, this.palette.borderMuted, this.palette.toolSuccessBg)]
+    const cached = cachedRender(this.renderCache, String(width), () =>
+      ['', ...frameBlock(this.rows, width, this.palette.borderMuted, this.palette.toolSuccessBg)])
+    this.renderCache = cached.cache
+    return cached.lines
   }
 }
 
@@ -457,22 +546,34 @@ export class StaticCardComponent implements Component {
 export class TodoPanelComponent implements Component {
   private todos: readonly TodoItem[] = []
   private goal: { readonly objective: string; readonly phase: string } | undefined
+  private renderCache: RenderCache | undefined
 
   constructor(private readonly palette: Palette) {}
 
-  invalidate(): void {}
+  invalidate(): void {
+    this.renderCache = undefined
+  }
 
   /** Replace the whole todo list (last `todo/write` wins). */
   setTodos(todos: readonly TodoItem[]): void {
     this.todos = todos
+    this.renderCache = undefined
   }
 
   /** Replace the current goal snapshot, or clear it. */
   setGoal(goal: { readonly objective: string; readonly phase: string } | undefined): void {
     this.goal = goal
+    this.renderCache = undefined
   }
 
   render(width: number): string[] {
+    const cacheKey = `${width}|${this.todos.length}|${this.goal?.phase ?? ''}|${this.goal?.objective ?? ''}`
+    const cached = cachedRender(this.renderCache, cacheKey, () => this.renderUncached(width))
+    this.renderCache = cached.cache
+    return cached.lines
+  }
+
+  private renderUncached(width: number): string[] {
     if (this.todos.length === 0 && this.goal === undefined) return []
     const lines: string[] = [this.palette.bold(this.palette.accent(' Plan'))]
     if (this.goal !== undefined) {

@@ -8,7 +8,7 @@
 全局安装本地 tarball 时，包内的 dsh 宿主 peer 依赖已标记为 optional，npm 11 可以继续完成依赖解析，不会因该 peer 图在 Arborist 中触发 `null.children` 崩溃。
 
 ```sh
-npm install --global ./dsh-omp-tui-0.2.0.tgz
+npm install --global ./dsh-omp-tui-0.2.1.tgz
 ```
 
 随后安装官方 dsh（若尚未安装），再运行启动器：
@@ -41,7 +41,7 @@ npm install --global pnpm@11.7.0
 # 或：corepack enable
 
 npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
-  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.0/dsh-omp-tui-0.2.0.tgz
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.1/dsh-omp-tui-0.2.1.tgz
 ```
 
 tarball 已经包含构建后的 `lib/`，安装时不需要在用户机器上编译项目，也不会执行 Git 依赖的 `prepare` 构建流程。
@@ -53,7 +53,7 @@ Release 尚未创建或需要安装某个提交时，可以直接安装 Git 仓�
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
   --allow-build=dsh-omp-tui \
-  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.2.0
+  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.2.1
 ```
 
 不要省略 `--allow-build=dsh-omp-tui`。如果 pnpm 已打印了 `allowBuilds` 建议，也可以按提示将该精确包名写入 `~/.config/pnpm/rc` 或 profile 的 `pnpm-workspace.yaml` 后重试。
@@ -82,7 +82,7 @@ npm install --global @deepseek-ai/dsh@0.1.0-rc.6
 dsh --profile tui
 ```
 
-或者使用本项目自带的 `omdsh` 启动器（它只从系统 PATH 中查找官方 `dsh`，不通过 npx 下载或缓存 dsh）。用 `dsh plugin add` 安装 tgz 后，`omdsh` 会出现在 profile 的 `.bin` 目录。`omdsh` 首次运行时会自动把 `dsh-omp-tui` 安装到 tui profile（可用 `OMDSH_NO_BOOTSTRAP=1` 跳过）：
+或者使用本项目自带的 `omdsh` 启动器（它只从系统 PATH 中查找官方 `dsh`，不通过 npx 下载或缓存 dsh）。用 `dsh plugin add` 安装 tgz 后，`omdsh` 会出现在 profile 的 `.bin` 目录。`omdsh` 首次运行时会自动把 `dsh-omp-tui` 安装到 tui profile；之后检测到 profile 内版本低于启动器版本时也会自动更新（可用 `OMDSH_NO_BOOTSTRAP=1` 跳过）：
 
 ```sh
 # 把 profile 的 .bin 目录加入 PATH（一次性）后：
@@ -133,7 +133,7 @@ $env:DEEPSEEK_BASE_URL = 'http://localhost:3000/v1'
 
 ```sh
 dsh plugin --profile tui add \
-  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.0/dsh-omp-tui-0.2.0.tgz
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.1/dsh-omp-tui-0.2.1.tgz
 ```
 
 若当前依赖跟踪的是 `main`，可以更新 Git 依赖：

@@ -1,10 +1,11 @@
 /**
  * Palette and layout primitives matching the OMP installation on this machine.
  *
- * The default dark roles mirror OMP 17.2.15's active `dark-catppuccin` theme:
- * peach accents, blue/lavender chrome, mantle message surfaces, and a crust
- * status surface. Non-truecolor terminals keep a readable ANSI fallback and
- * omit background fills that cannot be represented reliably.
+ * The catalog is generated from every OMP theme bundled in the local `omp`
+ * executable (`src/theme-data.ts`). Users choose concrete OMP themes only
+ * (`dark-catppuccin`, `light-catppuccin`, `alabaster`, …); the runtime
+ * selection model is either a single fixed theme (`selected`) or a dark/light
+ * pair (`dynamic`) whose slot is chosen from the terminal color scheme.
  */
 
 import type {
@@ -13,8 +14,9 @@ import type {
   TerminalColorScheme,
 } from '@earendil-works/pi-tui'
 import { truncateToWidth, visibleWidth } from '@earendil-works/pi-tui'
+import { THEME_DATA, type Rgb, type ThemeScheme } from './theme-data.ts'
 
-export type { MarkdownTheme, SelectListTheme, TerminalColorScheme }
+export type { MarkdownTheme, SelectListTheme, TerminalColorScheme, Rgb, ThemeScheme }
 
 /** One color role: applies one foreground/background SGR span. */
 export type ColorRole = (text: string) => string
@@ -95,18 +97,45 @@ type SpecTable = {
   readonly attributes: Readonly<Record<typeof ATTRIBUTE_ROLES[number], RoleSpec>>
 }
 
-/** One RGB channel triple for a truecolor role. */
-export type Rgb = readonly [number, number, number]
-
 /** A named truecolor theme: every color role except `text` has an RGB value. */
 export interface ThemeDefinition {
   readonly id: string
   readonly label: string
   readonly description: string
+  readonly scheme: ThemeScheme
   readonly roles: Readonly<Record<ColorRoleName, Rgb>>
 }
 
 export type ColorRoleName = typeof COLOR_ROLES[number]
+
+/** How the runtime theme is chosen. */
+export type ThemeMode = 'dynamic' | 'selected'
+
+/**
+ * The user-facing theme selection.
+ *
+ * - `selected`: one fixed theme id, used for both terminal schemes.
+ * - `dynamic`: two independent slots; the terminal scheme picks one.
+ */
+export interface ThemeSelection {
+  readonly mode: ThemeMode
+  /** Fixed theme id when `mode` is `selected`. */
+  readonly selectedId?: string
+  /** Theme id used while the terminal reports a dark scheme. */
+  readonly darkId?: string
+  /** Theme id used while the terminal reports a light scheme. */
+  readonly lightId?: string
+}
+
+export const DEFAULT_THEME_DARK = 'dark-catppuccin'
+export const DEFAULT_THEME_LIGHT = 'light-catppuccin'
+export const DEFAULT_THEME_SELECTED = 'dark-catppuccin'
+
+export const DEFAULT_THEME_SELECTION: ThemeSelection = {
+  mode: 'dynamic',
+  darkId: DEFAULT_THEME_DARK,
+  lightId: DEFAULT_THEME_LIGHT,
+}
 
 /** Role purpose sentences shown by `/palette`, shared by every theme. */
 const ROLE_PURPOSES: Readonly<Record<ColorRoleName, string>> = {
@@ -141,85 +170,85 @@ const BACKGROUND_ROLES = new Set<ColorRoleName>([
   'userMessageBg', 'toolPendingBg', 'toolSuccessBg', 'toolErrorBg', 'statusLineBg',
 ])
 
-/** OMP 17.2.15 `dark-catppuccin`, the default local OMP dark theme. */
-const CATPPUCCIN_ROLES: Readonly<Record<ColorRoleName, Rgb>> = {
-  text: [0, 0, 0], // placeholder: text stays the terminal default
-  muted: [127, 132, 156],
-  dim: [108, 112, 134],
-  accent: [250, 179, 135],
-  code: [245, 224, 220],
-  success: [166, 227, 161],
-  warning: [249, 226, 175],
-  error: [243, 139, 168],
-  border: [137, 180, 250],
-  borderMuted: [49, 50, 68],
-  toolTitle: [180, 190, 254],
-  toolOutput: [127, 132, 156],
-  path: [148, 226, 213],
-  git: [249, 226, 175],
-  model: [245, 194, 231],
-  context: [203, 166, 247],
-  spend: [116, 199, 236],
-  statusSep: [69, 71, 90],
-  thinking: [127, 132, 156],
-  userMessageBg: [24, 24, 37],
-  toolPendingBg: [49, 50, 68],
-  toolSuccessBg: [24, 24, 37],
-  toolErrorBg: [17, 17, 27],
-  statusLineBg: [17, 17, 27],
+/** All concrete OMP themes as this TUI's role definitions. */
+const CONCRETE_THEMES: readonly ThemeDefinition[] = THEME_DATA.map(data => ({
+  id: data.id,
+  label: data.label,
+  description: data.description,
+  scheme: data.scheme,
+  roles: data.roles as Readonly<Record<ColorRoleName, Rgb>>,
+}))
+
+/**
+ * Built-in theme catalog: the 98 concrete OMP themes. There are no preset
+ * dark/light family groups; pairing is entirely user-defined.
+ */
+export const BUILTIN_THEMES: readonly ThemeDefinition[] = CONCRETE_THEMES
+
+/** Find a concrete theme by id, or `undefined` when unknown. */
+export function findTheme(id: string | undefined): ThemeDefinition | undefined {
+  if (id === undefined) return undefined
+  return BUILTIN_THEMES.find(theme => theme.id === id)
 }
 
-/** Tokyo Night variant, the alternative built-in theme. */
-const TOKYO_NIGHT_ROLES: Readonly<Record<ColorRoleName, Rgb>> = {
-  text: [0, 0, 0],
-  muted: [169, 177, 214],
-  dim: [86, 95, 137],
-  accent: [122, 162, 247],
-  code: [192, 202, 245],
-  success: [158, 206, 106],
-  warning: [224, 175, 104],
-  error: [247, 118, 142],
-  border: [76, 86, 106],
-  borderMuted: [41, 46, 66],
-  toolTitle: [192, 202, 245],
-  toolOutput: [169, 177, 214],
-  path: [125, 207, 255],
-  git: [224, 175, 104],
-  model: [187, 154, 247],
-  context: [42, 195, 222],
-  spend: [125, 207, 255],
-  statusSep: [59, 66, 97],
-  thinking: [122, 162, 247],
-  userMessageBg: [31, 35, 53],
-  toolPendingBg: [31, 35, 53],
-  toolSuccessBg: [31, 45, 42],
-  toolErrorBg: [45, 31, 42],
-  statusLineBg: [22, 22, 30],
+function validThemeId(id: string | undefined): string | undefined {
+  return findTheme(id)?.id
 }
 
-/** Built-in themes; the first entry is the default when `theme.name` is unset or unknown. */
-export const BUILTIN_THEMES: readonly ThemeDefinition[] = [
-  { id: 'catppuccin', label: 'Catppuccin', description: 'OMP 17.2.15 dark-catppuccin (default)', roles: CATPPUCCIN_ROLES },
-  { id: 'tokyo-night', label: 'Tokyo Night', description: 'Tokyo-Night family variant', roles: TOKYO_NIGHT_ROLES },
-]
+/** The first concrete theme, used as a last-resort fallback. */
+function firstThemeId(): string {
+  return BUILTIN_THEMES[0]?.id ?? DEFAULT_THEME_DARK
+}
 
-/** Find a built-in theme by id, falling back to the default theme. */
-export function findTheme(id: string | undefined): ThemeDefinition {
-  return BUILTIN_THEMES.find(theme => theme.id === id) ?? BUILTIN_THEMES[0]!
+/** Resolve the concrete theme id for a selection and terminal scheme. */
+export function resolveThemeId(
+  selection: ThemeSelection | undefined,
+  scheme: TerminalColorScheme = 'dark',
+): string {
+  const mode = selection?.mode ?? DEFAULT_THEME_SELECTION.mode
+  const wanted = mode === 'selected'
+    ? selection?.selectedId
+    : scheme === 'light'
+      ? selection?.lightId
+      : selection?.darkId
+  return validThemeId(wanted)
+    ?? validThemeId(scheme === 'light' ? DEFAULT_THEME_LIGHT : DEFAULT_THEME_DARK)
+    ?? validThemeId(scheme === 'light' ? DEFAULT_THEME_DARK : DEFAULT_THEME_LIGHT)
+    ?? firstThemeId()
+}
+
+/** Resolve the concrete theme for a selection and terminal scheme. */
+export function resolveTheme(
+  selection: ThemeSelection | undefined,
+  scheme: TerminalColorScheme = 'dark',
+): ThemeDefinition {
+  return findTheme(resolveThemeId(selection, scheme)) ?? CONCRETE_THEMES[0]!
+}
+
+/**
+ * Compatibility helper for callers that still think in terms of one theme id.
+ * It only resolves concrete ids; old family ids such as `catppuccin` no longer
+ * exist in the catalog and fall back to the default concrete theme.
+ */
+export function findThemeForScheme(
+  name: string | undefined,
+  scheme: TerminalColorScheme = 'dark',
+): ThemeDefinition {
+  return findTheme(name) ?? resolveTheme(undefined, scheme)
 }
 
 /** User-supplied per-role overrides; triples are validated at resolve time. */
 export type ThemeCustom = Readonly<Record<string, readonly number[]>>
 
 /**
- * Merge a built-in theme's roles with user overrides. Unknown role names and
+ * Merge a concrete theme's roles with user overrides. Unknown role names and
  * malformed RGB values are dropped silently; `text` cannot be overridden.
  */
 export function resolveThemeRoles(
-  name: string | undefined,
+  themeId: string | undefined,
   custom: ThemeCustom | undefined,
 ): Readonly<Record<ColorRoleName, Rgb>> {
-  const base = findTheme(name).roles
+  const base = (findTheme(themeId) ?? resolveTheme(undefined, 'dark')).roles
   if (custom === undefined) return base
   const merged = { ...base } as Record<ColorRoleName, Rgb>
   for (const key of Object.keys(custom)) {
@@ -241,12 +270,12 @@ const ATTRIBUTE_SPECS: Readonly<Record<typeof ATTRIBUTE_ROLES[number], RoleSpec>
   selected: { open: '7', close: '27', purpose: 'Reverse video for the active selection' },
 }
 
-/** The truecolor spec for one theme name plus optional per-role overrides. */
+/** The truecolor spec for one concrete theme id plus optional overrides. */
 export function themeSpec(
-  name: string | undefined,
+  themeId: string | undefined,
   custom: ThemeCustom | undefined,
 ): SpecTable {
-  const roles = resolveThemeRoles(name, custom)
+  const roles = resolveThemeRoles(themeId, custom)
   const colors = {} as Record<ColorRoleName, RoleSpec>
   for (const role of COLOR_ROLES) {
     if (role === 'text') {
@@ -271,10 +300,11 @@ export function themeSpec(
 export function paletteSpec(
   scheme: TerminalColorScheme,
   truecolor = false,
-  themeName?: string,
+  selection?: ThemeSelection,
   themeCustom?: ThemeCustom,
 ): SpecTable {
-  return truecolor && scheme === 'dark' ? themeSpec(themeName, themeCustom) : ansiSpec(scheme)
+  if (!truecolor) return ansiSpec(scheme)
+  return themeSpec(resolveThemeId(selection, scheme), themeCustom)
 }
 
 /** Scheme-adaptive ANSI fallback for terminals without truecolor. */
@@ -340,19 +370,36 @@ function ansi(spec: RoleSpec, enabled: boolean): (text: string) => string {
   }
 }
 
-/** Runtime theme selection: built-in name plus optional per-role RGB overrides. */
+/** Runtime theme selection: mode plus the concrete ids for each slot. */
 export interface ThemeOverride {
-  readonly name?: string
+  readonly mode?: ThemeMode
+  /** Fixed theme id for `selected` mode. */
+  readonly selectedId?: string
+  /** Theme id for the dark slot in `dynamic` mode. */
+  readonly darkId?: string
+  /** Theme id for the light slot in `dynamic` mode. */
+  readonly lightId?: string
   readonly custom?: ThemeCustom
 }
 
+/** Normalize a partial override into a complete selection. */
+export function selectionFromOverride(theme: ThemeOverride | undefined): ThemeSelection {
+  const mode = theme?.mode ?? DEFAULT_THEME_SELECTION.mode
+  return {
+    mode,
+    selectedId: theme?.selectedId ?? DEFAULT_THEME_SELECTION.selectedId,
+    darkId: theme?.darkId ?? DEFAULT_THEME_SELECTION.darkId,
+    lightId: theme?.lightId ?? DEFAULT_THEME_SELECTION.lightId,
+  }
+}
+
 /**
- * Derive a palette from the active theme spec.
+ * Derive a palette from the active theme selection.
  *
  * @param enabled - whether ANSI is emitted at all.
- * @param scheme - active terminal color scheme; truecolor themes apply to dark schemes only.
+ * @param scheme - active terminal color scheme; `dynamic` mode follows it.
  * @param truecolor - terminal 24-bit support; omitted to auto-detect like OMP.
- * @param theme - built-in theme name and per-role overrides; defaults to the first built-in theme.
+ * @param theme - runtime theme selection; defaults to dynamic dark/light Catppuccin.
  */
 export function createPalette(
   enabled: boolean,
@@ -360,7 +407,8 @@ export function createPalette(
   truecolor?: boolean,
   theme?: ThemeOverride,
 ): Palette {
-  const spec = paletteSpec(scheme, truecolor ?? detectTruecolor(), theme?.name, theme?.custom)
+  const selection = selectionFromOverride(theme)
+  const spec = paletteSpec(scheme, truecolor ?? detectTruecolor(), selection, theme?.custom)
   const roles = {} as Record<string, unknown>
   for (const name of COLOR_ROLES) roles[name] = ansi(spec.colors[name], enabled)
   for (const name of ATTRIBUTE_ROLES) roles[name] = ansi(spec.attributes[name], enabled)
@@ -456,8 +504,9 @@ export function renderPalette(
   scheme: TerminalColorScheme,
   colorEnabled: boolean,
   truecolor: boolean,
+  theme?: ThemeOverride,
 ): string[] {
-  const spec = paletteSpec(scheme, truecolor)
+  const spec = paletteSpec(scheme, truecolor, selectionFromOverride(theme), theme?.custom)
   const width = Math.max(...[...COLOR_ROLES, ...ATTRIBUTE_ROLES].map(name => name.length))
   const head = (name: string, role: RoleSpec, sample: string): string => {
     const pair = role.open === '' ? 'no escape' : `ESC[${role.open}m ESC[${role.close}m`

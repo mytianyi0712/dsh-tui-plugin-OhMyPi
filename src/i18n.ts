@@ -98,6 +98,10 @@ export type Messages = {
   noticeModeSwitchFailed: string
   noticeThemeSet: string
   noticeThemeUnknown: string
+  noticeThemeModeSet: string
+  noticeThemeModeUnknown: string
+  noticeThemeDarkSet: string
+  noticeThemeLightSet: string
   noticeSettingsUnavailable: string
   noticeSettingsSaved: string
   noticeSettingsFailed: string
@@ -164,6 +168,12 @@ export type Messages = {
   noticeProviderFailed: string
   noticeDiscoveryUnavailable: string
   settingsTheme: string
+  settingsThemeMode: string
+  settingsThemeModeDynamic: string
+  settingsThemeModeSelected: string
+  settingsThemeDark: string
+  settingsThemeLight: string
+  settingsThemeSelectedItem: string
   settingsTitleModel: string
   settingsProvider: string
   settingsModel: string
@@ -303,6 +313,10 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeModeSwitchFailed: '模式切换失败：{error}',
     noticeThemeSet: '已切换主题：{name}。',
     noticeThemeUnknown: '未知主题：{name}',
+    noticeThemeModeSet: '主题模式已切换：{mode}。',
+    noticeThemeModeUnknown: '未知主题模式：{name}',
+    noticeThemeDarkSet: '深色主题已设为 {name}。',
+    noticeThemeLightSet: '浅色主题已设为 {name}。',
     noticeSettingsUnavailable: '当前组合未提供持久化设置服务。',
     noticeSettingsSaved: '设置已保存。',
     noticeSettingsFailed: '设置保存失败：{error}',
@@ -368,6 +382,12 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeProviderFailed: '供应商保存失败：{error}',
     noticeDiscoveryUnavailable: '当前部署未提供模型探测服务。',
     settingsTheme: '主题',
+    settingsThemeMode: '主题模式',
+    settingsThemeModeDynamic: '动态',
+    settingsThemeModeSelected: '选定',
+    settingsThemeDark: '深色主题',
+    settingsThemeLight: '浅色主题',
+    settingsThemeSelectedItem: '单一主题',
     settingsTitleModel: '标题模型',
     settingsProvider: '供应商',
     settingsModel: '模型',
@@ -504,6 +524,10 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeModeSwitchFailed: 'Mode switch failed: {error}',
     noticeThemeSet: 'Theme switched to {name}.',
     noticeThemeUnknown: 'Unknown theme: {name}',
+    noticeThemeModeSet: 'Theme mode switched to {mode}.',
+    noticeThemeModeUnknown: 'Unknown theme mode: {name}',
+    noticeThemeDarkSet: 'Dark theme set to {name}.',
+    noticeThemeLightSet: 'Light theme set to {name}.',
     noticeSettingsUnavailable: 'Persistent settings are not available in this deployment.',
     noticeSettingsSaved: 'Settings saved.',
     noticeSettingsFailed: 'Settings save failed: {error}',
@@ -569,6 +593,12 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeProviderFailed: 'Provider save failed: {error}',
     noticeDiscoveryUnavailable: 'Model discovery is not available in this deployment.',
     settingsTheme: 'Theme',
+    settingsThemeMode: 'Theme mode',
+    settingsThemeModeDynamic: 'Dynamic',
+    settingsThemeModeSelected: 'Selected',
+    settingsThemeDark: 'Dark theme',
+    settingsThemeLight: 'Light theme',
+    settingsThemeSelectedItem: 'Theme',
     settingsTitleModel: 'Title model',
     settingsProvider: 'Provider',
     settingsModel: 'Model',

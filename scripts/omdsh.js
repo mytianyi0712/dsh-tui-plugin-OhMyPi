@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // omdsh: dsh-omp-tui 启动器（Node 实现，跨平台 bin 入口）。
 // 只负责调用系统 PATH 中官方 dsh 的独立进程，并启动 tui profile。
-// 本项目不下载、不缓存 dsh；首次运行时自动把本包安装进 tui profile。
+// 本项目不下载、不缓存 dsh；首次运行时自动把本包安装进 tui profile，
+// 之后检测到 profile 内版本低于启动器版本时自动更新。
 //
 // 环境变量：
 //   DSH_REAL             显式指定 dsh 可执行文件
 //   DSH_DEBUG=1          只打印将要执行的命令
-//   OMDSH_NO_BOOTSTRAP=1 跳过首次运行的 profile 引导安装
+//   OMDSH_NO_BOOTSTRAP=1 跳过首次运行/自动更新的 profile 引导
 
 import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -29,15 +30,16 @@ const launcherHelp = `omdsh — dsh-omp-tui 启动器
 
 说明:
   omdsh 会调用系统 PATH 中的官方 dsh，并启动 --profile tui。
-  首次运行时自动把 dsh-omp-tui 安装到 tui profile（可通过
-  OMDSH_NO_BOOTSTRAP=1 跳过）。所有参数原样透传给 dsh
-  （例如 --resume <session>、--session <session>）。
+  首次运行时自动把 dsh-omp-tui 安装到 tui profile；之后若 profile
+  内版本低于启动器版本，也会自动更新（可通过 OMDSH_NO_BOOTSTRAP=1
+  跳过）。所有参数原样透传给 dsh（例如 --resume <session>、
+  --session <session>）。
   官方 dsh 命令（web/plugin/--profile/--patch 等）请直接使用 dsh。
 
 环境变量:
   DSH_REAL             显式指定 dsh 可执行文件
   DSH_DEBUG=1          只打印将要执行的命令
-  OMDSH_NO_BOOTSTRAP=1 跳过 profile 引导安装
+  OMDSH_NO_BOOTSTRAP=1 跳过 profile 引导安装/自动更新
 `
 
 const args = process.argv.slice(2)
@@ -96,8 +98,31 @@ function installedProfileVersion() {
   }
 }
 
-function majorMinor(version) {
-  return version.split('-')[0].split('.').slice(0, 2).map(Number)
+function compareVersions(a, b) {
+  const aParts = a.split('-')[0].split('.').map(Number)
+  const bParts = b.split('-')[0].split('.').map(Number)
+  const length = Math.max(aParts.length, bParts.length)
+  for (let i = 0; i < length; i++) {
+    const av = aParts[i] ?? 0
+    const bv = bParts[i] ?? 0
+    if (av !== bv) return av - bv
+  }
+  return 0
+}
+
+/** 用 dsh plugin add 把当前启动器目录安装/更新到 tui profile。 */
+function addToProfile() {
+  const runAdd = extraArgs => runSync(
+    dsh,
+    ['plugin', '--profile', PROFILE, 'add', ...extraArgs, `file:${packageRoot()}`],
+    { stdio: ['inherit', 'inherit', 'pipe'] },
+  )
+  let result = runAdd([])
+  if (result.status !== 0 && String(result.stderr).includes('ERR_PNPM_ADDING_TO_ROOT')) {
+    process.stderr.write('omdsh: pnpm 拒绝写入 workspace 根（ERR_PNPM_ADDING_TO_ROOT），带 -w 重试…\n')
+    result = runAdd(['-w'])
+  }
+  return result
 }
 
 function ensureProfile() {
@@ -121,36 +146,33 @@ function ensureProfile() {
     }
 
     process.stderr.write(`omdsh: 首次运行，正在初始化 ${PROFILE} profile（${PACKAGE}@${ownVersion}）…\n`)
-    const runAdd = extraArgs => runSync(
-      dsh,
-      ['plugin', '--profile', PROFILE, 'add', ...extraArgs, `file:${packageRoot()}`],
-      { stdio: ['inherit', 'inherit', 'pipe'] },
-    )
-    let result = runAdd([])
-    if (result.status !== 0 && String(result.stderr).includes('ERR_PNPM_ADDING_TO_ROOT')) {
-      process.stderr.write('omdsh: pnpm 拒绝写入 workspace 根（ERR_PNPM_ADDING_TO_ROOT），带 -w 重试…\n')
-      result = runAdd(['-w'])
-    }
+    const result = addToProfile()
     if (result.status !== 0) {
       fail('插件安装失败。可稍后手工重试：dsh plugin --profile tui add <tgz 或 file:包路径>')
     }
     return
   }
 
-  if (installedVersion !== ownVersion) {
-    const [installedMajor, installedMinor] = majorMinor(installedVersion)
-    const [ownMajor, ownMinor] = majorMinor(ownVersion)
-    if (installedMajor < ownMajor || (installedMajor === ownMajor && installedMinor < ownMinor)) {
-      fail(
-        `无法启动：profile 内运行的是 v${installedVersion}，而启动器是 v${ownVersion}。` +
-        `请先对齐：dsh plugin --profile ${PROFILE} add file:${packageRoot()}`,
-      )
-    }
+  if (installedVersion === ownVersion) return
+
+  if (compareVersions(installedVersion, ownVersion) > 0) {
     process.stderr.write(
       `omdsh: 提示：profile 内运行的是 v${installedVersion}，而启动器是 v${ownVersion}。` +
-      `更新 profile：dsh plugin --profile ${PROFILE} add file:${packageRoot()}\n`,
+      `启动器较旧，跳过自动更新。\n`,
+    )
+    return
+  }
+
+  process.stderr.write(
+    `omdsh: 检测到 profile 内 dsh-omp-tui 为 v${installedVersion}，正在自动更新到 v${ownVersion}…\n`,
+  )
+  const result = addToProfile()
+  if (result.status !== 0) {
+    fail(
+      `自动更新失败。可稍后手工执行：dsh plugin --profile ${PROFILE} add file:${packageRoot()}`,
     )
   }
+  process.stderr.write(`omdsh: profile 已更新为 v${installedProfileVersion() ?? ownVersion}。\n`)
 }
 
 if (process.env.DSH_DEBUG === '1') {

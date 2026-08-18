@@ -79,6 +79,7 @@ import {
   selectTheme,
   type Palette,
   type ThemeCustom,
+  type ThemeMode,
   type ThemeOverride,
 } from './theme.ts'
 import {
@@ -259,10 +260,15 @@ export class Tui extends Service {
     const resolved: ResolvedTuiConfig = resolveTuiConfig(config)
     const t: Translator = createTranslator(resolved.locale)
     const truecolor = resolved.theme.truecolor || detectTruecolor()
-    // Runtime theme state; `/theme` swaps `themeName` and re-paints in place.
+    // Runtime theme state; `/theme` and `/settings` re-paint in place.
     const settings = ctx.settings
     const tuiSettings = settings?.register(TUI_SETTINGS_NAMESPACE, TuiSettingsSchema, {
-      base: { themeName: resolved.theme.name },
+      base: {
+        themeMode: resolved.theme.mode,
+        themeDark: resolved.theme.dark,
+        themeLight: resolved.theme.light,
+        themeSelected: resolved.theme.selected,
+      },
     })
     interface ProviderModelProfile {
       id: string
@@ -334,18 +340,36 @@ export class Tui extends Service {
     // dsh-llm's configurable-provider directory. The TUI only follows the
     // declared namespace/path and never invents a provider-owned namespace.
     // Runtime theme state; `/theme` and `/settings` repaint in place.
-    let themeName = tuiSettings?.get().themeName ?? resolved.theme.name
+    const themeCustom: ThemeCustom | undefined = resolved.theme.custom
+    const migrateLegacyThemeName = (name: string | undefined): Partial<{ themeMode: ThemeMode; themeDark: string; themeLight: string; themeSelected: string }> | undefined => {
+      if (name === undefined) return undefined
+      const concrete = findTheme(name)
+      if (concrete !== undefined) {
+        return { themeMode: 'selected', themeDark: resolved.theme.dark, themeLight: resolved.theme.light, themeSelected: name }
+      }
+      const dark = findTheme(`dark-${name}`)
+      const light = findTheme(`light-${name}`)
+      if (dark !== undefined && light !== undefined) {
+        return { themeMode: 'dynamic', themeDark: dark.id, themeLight: light.id, themeSelected: resolved.theme.selected }
+      }
+      return undefined
+    }
+    const persistedTheme = tuiSettings?.get()
+    const legacyThemeMigration = migrateLegacyThemeName(persistedTheme?.themeName)
+    let themeMode: ThemeMode = persistedTheme?.themeMode ?? legacyThemeMigration?.themeMode ?? resolved.theme.mode
+    let themeDark = persistedTheme?.themeDark ?? legacyThemeMigration?.themeDark ?? resolved.theme.dark
+    let themeLight = persistedTheme?.themeLight ?? legacyThemeMigration?.themeLight ?? resolved.theme.light
+    let themeSelected = persistedTheme?.themeSelected ?? legacyThemeMigration?.themeSelected ?? resolved.theme.selected
     // Runtime presentation state; `/settings` can persist these through the
     // same TUI settings namespace.
-    let showReasoning = tuiSettings?.get().showReasoning ?? resolved.showReasoning
-    let maxToolOutputLines = tuiSettings?.get().maxToolOutputLines ?? resolved.maxToolOutputLines
-    const themeCustom: ThemeCustom | undefined = resolved.theme.custom
+    let showReasoning = persistedTheme?.showReasoning ?? resolved.showReasoning
+    let maxToolOutputLines = persistedTheme?.maxToolOutputLines ?? resolved.maxToolOutputLines
     const resolveDefaultMode = (): string => ctx.agentPresets?.defaultId ?? resolved.mode
     let uiMode: string = resolveDefaultMode()
     // Roster display names (id → name); refreshed from ctx.agentPresets.list().
     const presetNames = new Map<string, string>()
     const permissionCommand = permissionCommandMetadata(ctx.permissionPresets, t)
-    const themeOverride = (): ThemeOverride => ({ name: themeName, custom: themeCustom })
+    const themeOverride = (): ThemeOverride => ({ mode: themeMode, darkId: themeDark, lightId: themeLight, selectedId: themeSelected, custom: themeCustom })
     const palette: Palette = createPalette(resolved.theme.color, 'dark', truecolor, themeOverride())
     const mdTheme = markdownTheme(palette)
     const terminal = new ProcessTerminal()
@@ -525,6 +549,14 @@ export class Tui extends Service {
       updateInputPrompt()
     }
 
+    /** Expensive status inputs (token meter + permission) are refreshed at most once per second. */
+    const CONTEXT_USAGE_REFRESH_MS = 1_000
+    let contextUsageCache: { measuredAt: number; totalTokens: number; permission: string } = {
+      measuredAt: 0,
+      totalTokens: 0,
+      permission: '',
+    }
+
     const updateStatusValues = (): void => {
       const current = agent
       if (current === undefined) return
@@ -559,17 +591,25 @@ export class Tui extends Service {
         ? recordedContext.contextWindow
         : undefined
       const contextWindow = recordedWindow ?? estimatedContextWindow
-      let totalTokens = 0
-      try {
-        totalTokens = ctx.tokenMeter.measure(current.session).totalTokens
-      } catch {
-        // Before assembly, some providers cannot estimate the input. Show the
-        // required zero fallback rather than hiding the context segment.
+      const now = Date.now()
+      if (now - contextUsageCache.measuredAt >= CONTEXT_USAGE_REFRESH_MS) {
+        let totalTokens = 0
+        try {
+          totalTokens = ctx.tokenMeter.measure(current.session).totalTokens
+        } catch {
+          // Before assembly, some providers cannot estimate the input. Show the
+          // required zero fallback rather than hiding the context segment.
+        }
+        contextUsageCache = {
+          measuredAt: now,
+          totalTokens,
+          permission: ctx.permissionPresets.current(current.session.events),
+        }
       }
-      const contextText = `ctx ${formatContextTokens(totalTokens)}/${formatContextTokens(contextWindow)}`
+      const contextText = `ctx ${formatContextTokens(contextUsageCache.totalTokens)}/${formatContextTokens(contextWindow)}`
       contextValue.set(` ${palette.muted('·')} ${palette.context(contextText)}`)
       contextCompactValue.set(palette.context(contextText))
-      const permission = ctx.permissionPresets.current(current.session.events)
+      const permission = contextUsageCache.permission
       const permissionRole = permission === FULL_ACCESS_REGISTRY_NAME
         ? (text: string) => palette.bold(palette.accent(text))
         : permission === 'read-only' ? palette.muted : palette.accent
@@ -727,6 +767,7 @@ export class Tui extends Service {
       allToolCards.clear()
       chat.clear()
       tokenTotals = { inputTokens: 0, outputTokens: 0 }
+      contextUsageCache.measuredAt = 0
       if (header !== undefined) chat.addChild(header)
       for (const event of agent!.session.events) renderEvent(event, false, false)
       updateStatusValues()
@@ -756,7 +797,7 @@ export class Tui extends Service {
       const current = agent
       if (current === undefined) return
       if (line === '/palette' || line.startsWith('/palette ')) {
-        const rows = renderPalette(palette, currentScheme, resolved.theme.color, truecolor)
+        const rows = renderPalette(palette, currentScheme, resolved.theme.color, truecolor, themeOverride())
         chat.addChild(new StaticCardComponent(rows, palette))
         ui.requestRender()
         return
@@ -998,6 +1039,10 @@ export class Tui extends Service {
           type SettingsView =
             | 'main'
             | 'theme'
+            | 'theme-mode'
+            | 'theme-dark'
+            | 'theme-light'
+            | 'theme-selected'
             | 'show-reasoning'
             | 'tool-output-lines'
             | 'title-provider'
@@ -1161,6 +1206,9 @@ export class Tui extends Service {
               { value: 'effort', label: t('settingsDefaultEffort'), currentValue: defaultSelection.reasoningEffort ?? '—' },
             ]
           }
+          const themeSummary = (): string => themeMode === 'dynamic'
+            ? `${t('settingsThemeModeDynamic')} · ${themeDark} / ${themeLight}`
+            : `${t('settingsThemeModeSelected')} · ${themeSelected}`
           const buildSettingsTabs = (): SettingsTab[] => {
             const agentLoopSettings = settings.get(settingsNamespace('agent-loop')) as {
               maxParallelToolCalls?: number
@@ -1184,7 +1232,7 @@ export class Tui extends Service {
                 id: 'general',
                 label: t('settingsTabGeneral'),
                 items: [
-                  { value: 'theme', label: t('settingsTheme'), currentValue: themeName },
+                  { value: 'theme', label: t('settingsTheme'), currentValue: themeSummary() },
                   { value: 'show-reasoning', label: t('settingsShowReasoning'), currentValue: showReasoning ? t('settingsOn') : t('settingsOff') },
                   { value: 'tool-output-lines', label: t('settingsToolOutputLines'), currentValue: String(maxToolOutputLines) },
                   { value: 'provider', label: t('settingsDefaultModel'), currentValue: `${defaultSelection.provider}/${defaultSelection.model}` },
@@ -1236,8 +1284,30 @@ export class Tui extends Service {
           const themeItems: SelectItem[] = BUILTIN_THEMES.map(theme => ({
             value: theme.id,
             label: `${theme.id} — ${theme.label}`,
-            description: theme.description,
+            description: `${theme.scheme} · ${theme.description}`,
           }))
+          const themeMenuItems = (): SelectItem[] => {
+            const modeText = themeMode === 'dynamic' ? t('settingsThemeModeDynamic') : t('settingsThemeModeSelected')
+            const rows: SelectItem[] = [
+              {
+                value: 'mode',
+                label: `${t('settingsThemeMode')} — ${modeText}`,
+              },
+            ]
+            if (themeMode === 'dynamic') {
+              rows.push(
+                { value: 'dark', label: `${t('settingsThemeDark')} — ${themeDark}` },
+                { value: 'light', label: `${t('settingsThemeLight')} — ${themeLight}` },
+              )
+            } else {
+              rows.push({ value: 'selected', label: `${t('settingsThemeSelectedItem')} — ${themeSelected}` })
+            }
+            return rows
+          }
+          const booleanThemeModeItems: SelectItem[] = [
+            { value: 'dynamic', label: t('settingsThemeModeDynamic') },
+            { value: 'selected', label: t('settingsThemeModeSelected') },
+          ]
           const providerItems = (): SelectItem[] => {
             const registeredProviders = typeof ctx.llm.listProviders === 'function' ? ctx.llm.listProviders() : []
             const registeredProviderIds = new Set(registeredProviders.map(entry => entry.id))
@@ -1578,7 +1648,7 @@ export class Tui extends Service {
             try {
               if (selectedView === 'main') {
                 if (item.value === 'theme') {
-                  showItems('theme', themeItems, t('settingsTheme'), themeName)
+                  showItems('theme', themeMenuItems(), t('settingsTheme'), 'mode')
                 } else if (item.value === 'show-reasoning') {
                   showItems('show-reasoning', booleanItems, t('settingsShowReasoning'), String(showReasoning))
                 } else if (item.value === 'tool-output-lines') {
@@ -1779,8 +1849,36 @@ export class Tui extends Service {
               }
 
               if (selectedView === 'theme') {
-                await tuiSettings.update({ themeName: item.value })
-                themeName = item.value
+                if (item.value === 'mode') {
+                  showItems('theme-mode', booleanThemeModeItems, t('settingsThemeMode'), themeMode)
+                } else if (item.value === 'dark') {
+                  showItems('theme-dark', themeItems, t('settingsThemeDark'), themeDark)
+                } else if (item.value === 'light') {
+                  showItems('theme-light', themeItems, t('settingsThemeLight'), themeLight)
+                } else if (item.value === 'selected') {
+                  showItems('theme-selected', themeItems, t('settingsThemeSelectedItem'), themeSelected)
+                }
+                return
+              }
+
+              if (selectedView === 'theme-mode') {
+                themeMode = item.value === 'dynamic' ? 'dynamic' : 'selected'
+                await tuiSettings.update({ themeMode, themeDark, themeLight, themeSelected })
+                Object.assign(palette, createPalette(resolved.theme.color, currentScheme, truecolor, themeOverride()))
+                Object.assign(mdTheme, markdownTheme(palette))
+                rebuildTranscript()
+                setStatus(current.status)
+                appendNotice(t('noticeSettingsSaved'), 'info')
+                if (selectedVersion === viewVersion && view === selectedView) showMain()
+                else ui.requestRender()
+                return
+              }
+
+              if (selectedView === 'theme-dark' || selectedView === 'theme-light' || selectedView === 'theme-selected') {
+                if (selectedView === 'theme-dark') themeDark = item.value
+                if (selectedView === 'theme-light') themeLight = item.value
+                if (selectedView === 'theme-selected') themeSelected = item.value
+                await tuiSettings.update({ themeMode, themeDark, themeLight, themeSelected })
                 Object.assign(palette, createPalette(resolved.theme.color, currentScheme, truecolor, themeOverride()))
                 Object.assign(mdTheme, markdownTheme(palette))
                 rebuildTranscript()
@@ -2070,18 +2168,14 @@ export class Tui extends Service {
 
       if (line === '/theme' || line.startsWith('/theme ')) {
         const arg = line.slice('/theme'.length).trim()
-        if (arg !== '') {
-          const known = findTheme(arg)
-          if (known === undefined) {
-            appendNotice(t('noticeThemeUnknown', { name: arg }), 'warning')
-            return
-          }
-          themeName = known.id
+        const parts = arg.split(/\s+/).filter(Boolean)
+        const applyTheme = async (): Promise<void> => {
           if (tuiSettings !== undefined) {
             try {
-              await tuiSettings.update({ themeName })
+              await tuiSettings.update({ themeMode, themeDark, themeLight, themeSelected })
             } catch (error: unknown) {
               appendNotice(t('noticeSettingsFailed', { error: errorChain(error) }), 'error')
+              return
             }
           }
           Object.assign(palette, createPalette(resolved.theme.color, currentScheme, truecolor, themeOverride()))
@@ -2089,20 +2183,63 @@ export class Tui extends Service {
           rebuildTranscript()
           setStatus(current.status)
           ui.requestRender()
-          appendNotice(t('noticeThemeSet', { name: themeName }), 'info')
+        }
+        if (parts.length === 0) {
+          const modeText = themeMode === 'dynamic' ? t('settingsThemeModeDynamic') : t('settingsThemeModeSelected')
+          const rows = [
+            palette.bold(palette.accent(`${t('themeCurrent')}: ${modeText}`)),
+            '',
+            ...(themeMode === 'dynamic'
+              ? [
+                  `${palette.dim(t('settingsThemeDark'))}  ${themeDark}`,
+                  `${palette.dim(t('settingsThemeLight'))}  ${themeLight}`,
+                ]
+              : [`${palette.dim(t('settingsThemeSelectedItem'))}  ${themeSelected}`]),
+            '',
+            ...BUILTIN_THEMES.map(theme =>
+              ` ${theme.id} — ${theme.label}: ${theme.scheme}`),
+            ...themeCustom === undefined
+              ? [palette.dim(` ${t('themeCustomNote')}`)]
+              : [palette.dim(` ${t('themeCurrent')}: + custom overrides`), ''],
+          ]
+          chat.addChild(new StaticCardComponent(rows, palette))
+          ui.requestRender()
           return
         }
-        const rows = [
-          palette.bold(palette.accent(`${t('themeCurrent')}: ${themeName}`)),
-          '',
-          ...BUILTIN_THEMES.map(theme =>
-            ` ${theme.id} — ${theme.label}: ${theme.description}`),
-          ...themeCustom === undefined
-            ? [palette.dim(` ${t('themeCustomNote')}`)]
-            : [palette.dim(` ${t('themeCurrent')}: ${themeName} + custom overrides`), ''],
-        ]
-        chat.addChild(new StaticCardComponent(rows, palette))
-        ui.requestRender()
+        const command = parts[0]!
+        if (command === 'mode') {
+          const next = parts[1]
+          if (next !== 'dynamic' && next !== 'selected') {
+            appendNotice(t('noticeThemeModeUnknown', { name: next ?? '' }), 'warning')
+            return
+          }
+          themeMode = next
+          await applyTheme()
+          appendNotice(t('noticeThemeModeSet', { mode: t(next === 'dynamic' ? 'settingsThemeModeDynamic' : 'settingsThemeModeSelected') }), 'info')
+          return
+        }
+        if (command === 'dark' || command === 'light') {
+          const id = parts[1]
+          if (id === undefined || findTheme(id) === undefined) {
+            appendNotice(t('noticeThemeUnknown', { name: id ?? '' }), 'warning')
+            return
+          }
+          themeMode = 'dynamic'
+          if (command === 'dark') themeDark = id
+          if (command === 'light') themeLight = id
+          await applyTheme()
+          appendNotice(command === 'dark' ? t('noticeThemeDarkSet', { name: id }) : t('noticeThemeLightSet', { name: id }), 'info')
+          return
+        }
+        const known = findTheme(arg)
+        if (known === undefined) {
+          appendNotice(t('noticeThemeUnknown', { name: arg }), 'warning')
+          return
+        }
+        themeMode = 'selected'
+        themeSelected = known.id
+        await applyTheme()
+        appendNotice(t('noticeThemeSet', { name: themeSelected }), 'info')
         return
       }
       if (line === '/help' || line.startsWith('/help ')) {
@@ -2334,7 +2471,7 @@ export class Tui extends Service {
       const themeOptions: AutocompleteItem[] = BUILTIN_THEMES.map(theme => ({
         value: theme.id,
         label: `${theme.id} — ${theme.label}`,
-        description: theme.description,
+        description: `${theme.scheme} · ${theme.description}`,
       }))
       const commandEntries: SlashCommand[] = [
         { name: 'palette', description: t('cmdPalette') },
@@ -2408,8 +2545,28 @@ export class Tui extends Service {
         {
           name: 'theme',
           description: t('cmdTheme'),
-          argumentHint: '<catppuccin|tokyo-night>',
-          getArgumentCompletions: prefix => filterCommandOptions(themeOptions, prefix),
+          argumentHint: '<mode|dark|light|theme id>',
+          getArgumentCompletions: (prefix) => {
+            const tokens = prefix.trim().split(/\s+/).filter(Boolean)
+            const themeModeOptions: AutocompleteItem[] = [
+              { value: 'mode dynamic', label: `mode dynamic — ${t('settingsThemeModeDynamic')}` },
+              { value: 'mode selected', label: `mode selected — ${t('settingsThemeModeSelected')}` },
+              { value: 'dark', label: `dark — ${t('settingsThemeDark')}` },
+              { value: 'light', label: `light — ${t('settingsThemeLight')}` },
+            ]
+            if (tokens.length === 0) return themeModeOptions
+            if (tokens.length === 1) return filterCommandOptions([...themeModeOptions, ...themeOptions], prefix)
+            if (tokens[0] === 'mode' && tokens.length === 2) {
+              return filterCommandOptions([
+                { value: 'dynamic', label: t('settingsThemeModeDynamic') },
+                { value: 'selected', label: t('settingsThemeModeSelected') },
+              ], tokens[1] ?? '')
+            }
+            if ((tokens[0] === 'dark' || tokens[0] === 'light') && tokens.length === 2) {
+              return filterCommandOptions(themeOptions, tokens[1] ?? '')
+            }
+            return null
+          },
         },
         { name: 'settings', description: t('cmdSettings') },
         ...ctx.commands.list(liveAgent).map((command): SlashCommand => {
@@ -2543,6 +2700,7 @@ export class Tui extends Service {
         activeHandle = handle
         setActiveAgent(next)
         tokenTotals = { inputTokens: 0, outputTokens: 0 }
+      contextUsageCache.measuredAt = 0
         refreshContextEstimate(next, nextSelection)
         refreshGitBranch(next.session.header.cwd ?? process.cwd())
         header = new HeaderComponent(
