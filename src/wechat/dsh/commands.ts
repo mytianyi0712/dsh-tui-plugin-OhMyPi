@@ -20,19 +20,19 @@ import { sendTextToPeer } from '../core/send.ts'
 import { getContextToken } from '../core/bridge.ts'
 import { getConfig, setConfig, log } from '../core/runtime.ts'
 import { getActiveAgent, setActiveAgent } from './session.ts'
+import { getTuiForegroundControl, type TuiForegroundControl } from './tui-control.ts'
 
 /** Pending model picker: a bare-number reply selects by index. */
 let pendingModelPicker: { at: number; ids: string[] } | null = null
 
 const MODEL_PICKER_TTL_MS = 10 * 60 * 1000
 
-/** TUI 暴露给微信命令的前台建会话能力。 */
-interface TuiForegroundControl {
-  createForegroundSession: () => Promise<SessionId | undefined>
-}
-
 /** 读取 TUI 前台控制；无 TUI 或未挂载时返回 undefined。 */
 function getTuiForeground(ctx: Context): TuiForegroundControl | undefined {
+  const registered = getTuiForegroundControl()
+  if (registered !== undefined) return registered
+
+  // 回退到 Cordis 服务解析：兼容未安装新注册表模块的旧版 TUI。
   try {
     const tui = ctx.get('tui') as Partial<TuiForegroundControl> | undefined
     return typeof tui?.createForegroundSession === 'function' ? (tui as TuiForegroundControl) : undefined
@@ -322,12 +322,26 @@ async function cmdModels(_args: string, inv: CommandInvocation, ctx: Context): P
   return { kind: 'success', text: lines.join('\n') }
 }
 
+async function createForegroundSessionWithRetry(
+  tui: TuiForegroundControl,
+  timeoutMs = 5000,
+): Promise<SessionId | undefined> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const id = await tui.createForegroundSession()
+    if (id !== undefined) return id
+    // TUI 可能尚未挂载完成；短暂等待后重试，直到超时。
+    await new Promise(resolve => setTimeout(resolve, 100))
+  }
+  return tui.createForegroundSession()
+}
+
 async function cmdNew(_args: string, inv: CommandInvocation, ctx: Context): Promise<CommandResult> {
   const current = inv.agent
   try {
     const tui = getTuiForeground(ctx)
     if (tui !== undefined) {
-      const id = await tui.createForegroundSession()
+      const id = await createForegroundSessionWithRetry(tui)
       if (id === undefined) {
         return { kind: 'error', text: '⚠️ TUI 尚未就绪，新建会话失败' }
       }

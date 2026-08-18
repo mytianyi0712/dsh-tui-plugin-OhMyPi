@@ -127,6 +127,7 @@ import { filterProjectSessions, sameProject } from './session-filter.ts'
 import { hasConversationData, recordConversationPreset } from './session-lifecycle.ts'
 import type { BridgeConfig, WechatBridge } from './wechat/index.ts'
 import { setActiveAgent } from './wechat/dsh/session.ts'
+import { setTuiForegroundControl } from './wechat/dsh/tui-control.ts'
 
 export const name = 'tui'
 
@@ -2613,6 +2614,10 @@ export class Tui extends Service {
         return id
       }
       this.createForegroundSessionImpl = createAgent
+      setTuiForegroundControl({
+        foregroundAgent: () => this.foregroundAgent(),
+        createForegroundSession: () => this.createForegroundSession(),
+      })
 
       const switchAgent = async (targetId: SessionId): Promise<void> => {
         const current = agent ?? liveAgent
@@ -2740,6 +2745,7 @@ export class Tui extends Service {
     }
 
     ctx.effect(() => () => {
+      setTuiForegroundControl(undefined)
       offKeys()
       offEvent?.()
       offStatus?.()
