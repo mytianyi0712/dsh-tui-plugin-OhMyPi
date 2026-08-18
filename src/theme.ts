@@ -455,18 +455,23 @@ export function selectTheme(palette: Palette): SelectListTheme {
   }
 }
 
+/** One framed section: an optional labelled divider followed by body rows. */
+export interface FrameSection {
+  readonly title?: string
+  readonly lines: readonly string[]
+}
+
 /**
- * Frame rows with OMP's rounded output-block grammar. Titles begin after a
- * three-cell cap (`╭─── title ─╮`); an optional section label adds the matching
- * `├─── label ─┤` divider used by settled tool results.
+ * Frame rows with OMP's rounded output-block grammar and any number of
+ * labelled sections. Titles begin after a three-cell cap (`╭─── title ─╮`);
+ * each section with a label adds a matching `├─── label ─┤` divider.
  */
-export function frameBlock(
-  lines: readonly string[],
+export function frameBlockSections(
   width: number,
   border: ColorRole,
   background: ColorRole | undefined,
-  title?: string,
-  sectionTitle?: string,
+  title: string | undefined,
+  sections: readonly FrameSection[],
 ): string[] {
   const bodyInner = Math.max(1, width - 4)
   const paint = (row: string): string => background === undefined ? row : background(row)
@@ -479,17 +484,36 @@ export function frameBlock(
     const fill = '─'.repeat(Math.max(0, innerWidth - cap.length - visibleWidth(clippedLabel)))
     return paint(`${border(`${left}${cap}`)}${clippedLabel}${border(`${fill}${right}`)}`)
   }
-  const body = lines.map((line) => {
+  const body = (line: string): string => {
     const clipped = truncateToWidth(line, bodyInner, '')
     const pad = ' '.repeat(Math.max(0, bodyInner - visibleWidth(clipped)))
     return paint(`${border('│')} ${clipped}${pad} ${border('│')}`)
-  })
-  return [
-    bar('╭', '╮', title),
-    ...sectionTitle === undefined ? [] : [bar('├', '┤', sectionTitle)],
-    ...body,
-    bar('╰', '╯'),
-  ]
+  }
+  const rows = [bar('╭', '╮', title)]
+  for (const section of sections) {
+    if (section.title !== undefined) rows.push(bar('├', '┤', section.title))
+    for (const line of section.lines) rows.push(body(line))
+  }
+  rows.push(bar('╰', '╯'))
+  return rows
+}
+
+/**
+ * Frame a single body with OMP's rounded output-block grammar. Kept as the
+ * simple wrapper around {@link frameBlockSections} for callers with one section.
+ */
+export function frameBlock(
+  lines: readonly string[],
+  width: number,
+  border: ColorRole,
+  background: ColorRole | undefined,
+  title?: string,
+  sectionTitle?: string,
+): string[] {
+  return frameBlockSections(width, border, background, title, [
+    ...sectionTitle === undefined ? [] : [{ title: sectionTitle, lines: [] as readonly string[] }],
+    { lines },
+  ])
 }
 
 /** Sample text every `/palette` row renders, long enough to judge a tone against its neighbours. */

@@ -16,7 +16,7 @@ import {
 import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, TodoItem } from '@deepseek-ai/dsh-session'
-import { frameBlock, gradientLogo, type MarkdownTheme, type Palette } from '../theme.ts'
+import { frameBlock, frameBlockSections, gradientLogo, type MarkdownTheme, type Palette } from '../theme.ts'
 import type { Translator } from '../i18n.ts'
 import { contentText, parseArguments } from './content.ts'
 import { displayText } from './text.ts'
@@ -55,6 +55,28 @@ function center(text: string, width: number): string {
   const space = Math.max(0, width - visibleWidth(clipped))
   const left = Math.floor(space / 2)
   return `${' '.repeat(left)}${clipped}${' '.repeat(space - left)}`
+}
+
+/** Wrap one plain-text line into rows no wider than `width` display columns. */
+function wrapToWidth(text: string, width: number): string[] {
+  const safeWidth = Math.max(1, width)
+  if (visibleWidth(text) <= safeWidth) return [text]
+  const rows: string[] = []
+  let current = ''
+  let currentWidth = 0
+  for (const char of Array.from(text)) {
+    const charWidth = visibleWidth(char)
+    if (currentWidth + charWidth > safeWidth) {
+      if (current !== '') rows.push(current)
+      current = char
+      currentWidth = charWidth
+    } else {
+      current += char
+      currentWidth += charWidth
+    }
+  }
+  if (current !== '') rows.push(current)
+  return rows
 }
 
 /** Responsive two-column welcome panel following OMP's startup composition. */
@@ -374,23 +396,133 @@ function toolLabel(name: string): string {
     .replace(/\b\w/g, letter => letter.toUpperCase())
 }
 
-function toolSummary(name: string, argumentsJson: string): string {
-  const label = toolLabel(displayText(name))
-  const parsed = parseArguments(argumentsJson)
-  if (!parsed.valid || typeof parsed.value !== 'object' || parsed.value === null) return label
-  const args = parsed.value as Record<string, unknown>
-  const intent = typeof args.i === 'string' ? args.i.trim() : ''
-  if (intent !== '') return `${label}: ${displayText(intent)}`
-  const detailKeys = name === 'bash' || name === 'powershell'
-    ? ['command']
-    : ['path', 'file', 'pattern', 'query', 'action', 'op']
-  for (const key of detailKeys) {
+/** Summary key preference per tool variant, mirroring the official OMP tool row. */
+const SUMMARY_KEYS: Readonly<Record<string, readonly string[]>> = {
+  bash: ['command', 'description'],
+  read: ['path', 'file_path', 'url'],
+  search: ['query', 'pattern', 'url'],
+  write: ['path', 'file_path'],
+  edit: ['path', 'file_path'],
+  code: ['description'],
+}
+
+function toolVariant(name: string): string {
+  if (name === 'bash' || name === 'pwsh') return 'bash'
+  if (name === 'read' || name === 'web_fetch') return 'read'
+  if (name === 'web_search' || name === 'grep' || name === 'glob') return 'search'
+  if (name === 'write') return 'write'
+  if (name === 'edit') return 'edit'
+  if (name === 'run_code') return 'code'
+  return 'others'
+}
+
+/** Pick the first non-empty string arg for the given keys. */
+function pickString(args: Record<string, unknown>, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
     const value = args[key]
     if (typeof value === 'string' && value.trim() !== '') {
-      return `${label}: ${displayText(value.replace(/\s+/g, ' ').trim())}`
+      return displayText(value.trim())
     }
   }
-  return label
+  return undefined
+}
+
+/** Return a string argument, or an empty string when absent. */
+function stringArg(args: Record<string, unknown>, key: string): string {
+  const value = args[key]
+  return typeof value === 'string' ? value : ''
+}
+
+/**
+ * `str_replace_editor` renders the model-facing edit content here because its
+ * result text only says "edited successfully"; the actual old/new strings live
+ * in the call arguments.
+ */
+function strReplaceEditorDetail(args: Record<string, unknown>): string {
+  const path = stringArg(args, 'path')
+  const command = stringArg(args, 'command')
+  if (command === 'create') {
+    return `path: ${path}\nfile_text:\n${stringArg(args, 'file_text')}`
+  }
+  if (command === 'str_replace') {
+    return `path: ${path}\nold_str:\n${stringArg(args, 'old_str')}\nnew_str:\n${stringArg(args, 'new_str')}`
+  }
+  if (command === 'insert') {
+    const line = typeof args.insert_line === 'number' ? String(args.insert_line) : ''
+    return `path: ${path}\ninsert_line: ${line}\nnew_str:\n${stringArg(args, 'new_str')}`
+  }
+  if (command === 'view') {
+    const range = Array.isArray(args.view_range) ? args.view_range.join(', ') : ''
+    return `path: ${path}${range === '' ? '' : `\nview_range: [${range}]`}`
+  }
+  return `path: ${path}${command === '' ? '' : `\ncommand: ${command}`}`
+}
+
+/** Build `Input`/`Diff` sections for a settled `str_replace_editor` call. */
+function strReplaceEditorSections(
+  argumentsJson: string,
+  palette: Palette,
+  width: number,
+): { title: string; lines: string[] }[] {
+  const parsed = parseArguments(argumentsJson)
+  if (!parsed.valid || typeof parsed.value !== 'object' || parsed.value === null) return []
+  const args = parsed.value as Record<string, unknown>
+  const command = stringArg(args, 'command')
+  const path = stringArg(args, 'path')
+  const inputLines: string[] = []
+  if (path !== '') inputLines.push(`path: ${path}`)
+  if (command === 'view') {
+    const range = Array.isArray(args.view_range) ? args.view_range.join(', ') : ''
+    if (range !== '') inputLines.push(`view_range: [${range}]`)
+  }
+  const sections: { title: string; lines: string[] }[] = []
+  if (inputLines.length > 0) sections.push({ title: 'Input', lines: inputLines })
+
+  const diffWidth = Math.max(1, width - 6)
+  const plus = (line: string): string => palette.success(`+ ${line}`)
+  const minus = (line: string): string => palette.error(`- ${line}`)
+  const diffLines = (text: string, sign: 'plus' | 'minus'): string[] =>
+    text.split('\n')
+      .flatMap(line => wrapToWidth(line, diffWidth))
+      .map(line => sign === 'plus' ? plus(line) : minus(line))
+
+  if (command === 'create') {
+    sections.push({ title: 'Diff', lines: diffLines(stringArg(args, 'file_text'), 'plus') })
+  } else if (command === 'str_replace') {
+    sections.push({
+      title: 'Diff',
+      lines: [
+        ...diffLines(stringArg(args, 'old_str'), 'minus'),
+        ...diffLines(stringArg(args, 'new_str'), 'plus'),
+      ],
+    })
+  } else if (command === 'insert') {
+    sections.push({ title: 'Diff', lines: diffLines(stringArg(args, 'new_str'), 'plus') })
+  }
+  return sections
+}
+
+/**
+ * The concrete input content shown under the tool title and above `Output`:
+ * a shell command, a path, a query, or the first meaningful string argument.
+ */
+function toolDetail(name: string, argumentsJson: string): string | undefined {
+  const parsed = parseArguments(argumentsJson)
+  if (!parsed.valid || typeof parsed.value !== 'object' || parsed.value === null) {
+    const raw = displayText(argumentsJson).trim()
+    return raw === '' ? undefined : raw
+  }
+  const args = parsed.value as Record<string, unknown>
+  if (name === 'str_replace_editor') return strReplaceEditorDetail(args)
+  const picked = pickString(args, SUMMARY_KEYS[toolVariant(name)] ?? [])
+  if (picked !== undefined) return picked
+  for (const value of Object.values(args)) {
+    if (typeof value === 'string' && value.trim() !== '') {
+      return displayText(value.trim())
+    }
+  }
+  const raw = displayText(argumentsJson).trim()
+  return raw === '' ? undefined : raw
 }
 
 /**
@@ -439,10 +571,17 @@ export class ToolCardComponent implements Component {
 
   private renderUncached(width: number): string[] {
     if (this.visibility === 'hidden') return []
-    const summary = toolSummary(this.name, this.argumentsJson)
+    const title = toolLabel(displayText(this.name))
+    const detail = toolDetail(this.name, this.argumentsJson)
     if (this.result === undefined) {
-      const pending = `${this.palette.warning('')} ${this.palette.toolTitle(summary)}`
-      return ['', truncateToWidth(pending, Math.max(1, width), '')]
+      const pending = `${this.palette.warning('')} ${this.palette.toolTitle(title)}`
+      const rows = ['', truncateToWidth(pending, Math.max(1, width), '')]
+      if (detail !== undefined) {
+        for (const line of detail.split('\n').flatMap(line => wrapToWidth(line, Math.max(1, width - 3)))) {
+          rows.push(truncateToWidth(`   ${this.palette.muted(line)}`, Math.max(1, width), ''))
+        }
+      }
+      return rows
     }
 
     const isError = this.result.isError
@@ -450,27 +589,34 @@ export class ToolCardComponent implements Component {
     const statusBg = isError ? this.palette.toolErrorBg : this.palette.toolSuccessBg
     const glyph = isError ? '' : '•'
     const header = isError
-      ? this.palette.error(`${glyph} ${summary}`)
-      : `${this.palette.dim(glyph)} ${this.palette.toolTitle(summary)}`
+      ? this.palette.error(`${glyph} ${title}`)
+      : `${this.palette.dim(glyph)} ${this.palette.toolTitle(title)}`
     const output = displayText(contentText(this.result.content).trim())
-    let body = output === '' ? [this.palette.dim('(no output)')] : output.split('\n')
-    if (this.visibility === 'collapsed' && body.length > this.maxOutputLines) {
-      const hidden = body.length - this.maxOutputLines
-      body = [
-        ...body.slice(0, this.maxOutputLines),
+    let outputLines = output === '' ? [this.palette.dim('(no output)')] : output.split('\n')
+    if (this.visibility === 'collapsed' && outputLines.length > this.maxOutputLines) {
+      const hidden = outputLines.length - this.maxOutputLines
+      outputLines = [
+        ...outputLines.slice(0, this.maxOutputLines),
         this.palette.dim(`… +${hidden} lines (Ctrl+O to expand)`),
       ]
     }
+    const sections: { title: string; lines: string[] }[] = []
+    const editorSections = this.name === 'str_replace_editor'
+      ? strReplaceEditorSections(this.argumentsJson, this.palette, width)
+      : []
+    if (editorSections.length > 0) {
+      sections.push(...editorSections)
+    } else if (detail !== undefined) {
+      const inputLines = detail
+        .split('\n')
+        .flatMap(line => wrapToWidth(line, Math.max(1, width - 4)))
+        .map(line => this.palette.muted(line))
+      sections.push({ title: 'Input', lines: inputLines })
+    }
+    sections.push({ title: 'Output', lines: outputLines.map(line => this.palette.toolOutput(line)) })
     return [
       '',
-      ...frameBlock(
-        body.map(line => this.palette.toolOutput(line)),
-        width,
-        statusColor,
-        statusBg,
-        header,
-        'Output',
-      ),
+      ...frameBlockSections(width, statusColor, statusBg, header, sections),
     ]
   }
 }

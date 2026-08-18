@@ -74,7 +74,7 @@ describe('transcript components respect the render width', () => {
 
   it('uses an inline pending status and sectioned settled output', () => {
     const pending = new ToolCardComponent('read', '{"i":"Reading entrypoint","path":"src/index.ts"}', 6, palette)
-    assert.deepEqual(render(pending, 48), ['', ' Read: Reading entrypoint'])
+    assert.deepEqual(render(pending, 48), ['', ' Read', '   src/index.ts'])
 
     pending.updateResult({
       message: {
@@ -82,9 +82,76 @@ describe('transcript components respect the render width', () => {
       },
     } as never)
     const settled = render(pending, 48)
-    assert.match(settled[1]!, /^╭─── • Read: Reading entrypoint/)
-    assert.match(settled[2]!, /^├─── Output /)
+    assert.match(settled[1]!, /^╭─── • Read /)
+    assert.match(settled[2]!, /^├─── Input /)
+    assert.match(settled[3]!, /src\/index\.ts/)
+    assert.match(settled[4]!, /^├─── Output /)
   })
+  it('shows the command or query under the tool title', () => {
+    const pwsh = new ToolCardComponent('pwsh', JSON.stringify({ command: 'Get-Process -Name node' }), 6, palette)
+    assert.deepEqual(render(pwsh, 48), ['', ' Pwsh', '   Get-Process -Name node'])
+    const bash = new ToolCardComponent('bash', JSON.stringify({ description: 'list files', command: 'ls -la' }), 6, palette)
+    assert.deepEqual(render(bash, 48), ['', ' Bash', '   ls -la'])
+    const search = new ToolCardComponent('web_search', JSON.stringify({ query: 'dsh performance' }), 6, palette)
+    assert.deepEqual(render(search, 48), ['', ' Web Search', '   dsh performance'])
+  })
+
+  it('wraps long commands in the input section instead of truncating', () => {
+    const longCommand = `echo ${'a'.repeat(60)}`
+    const card = new ToolCardComponent('pwsh', JSON.stringify({ command: longCommand }), 6, palette)
+    card.updateResult({
+      message: {
+        content: [{ content: [{ type: 'text', text: 'done' }], isError: false }],
+      },
+    } as never)
+    const rows = render(card, 40)
+    for (const row of rows) assert.ok(visibleWidth(row) <= 40, `width=${visibleWidth(row)} row=${JSON.stringify(row)}`)
+    const inputRows = rows.filter(row => row.includes('aaa'))
+    assert.ok(inputRows.length >= 2, `expected wrapped input rows, got ${JSON.stringify(rows)}`)
+    assert.match(inputRows[0]!, /echo a+/)
+    assert.match(inputRows[1]!, /^│ a+/)
+  })
+
+  it('shows str_replace_editor edit content in the input section', () => {
+    const card = new ToolCardComponent('str_replace_editor', JSON.stringify({
+      command: 'str_replace',
+      path: 'D:/src/a.ts',
+      old_str: 'old line',
+      new_str: 'new line',
+    }), 6, palette)
+    assert.deepEqual(render(card, 60), [
+      '',
+      ' Str Replace Editor',
+      '   path: D:/src/a.ts',
+      '   old_str:',
+      '   old line',
+      '   new_str:',
+      '   new line',
+    ])
+  })
+
+  it('renders str_replace_editor edits as a diff section', () => {
+    const card = new ToolCardComponent('str_replace_editor', JSON.stringify({
+      command: 'str_replace',
+      path: 'D:/src/a.ts',
+      old_str: 'old line',
+      new_str: 'new line',
+    }), 6, palette)
+    card.updateResult({
+      message: {
+        content: [{ content: [{ type: 'text', text: 'done' }], isError: false }],
+      },
+    } as never)
+    const rows = render(card, 60)
+    assert.match(rows[1]!, /^╭─── • Str Replace Editor /)
+    assert.match(rows[2]!, /^├─── Input /)
+    assert.match(rows[3]!, /path: D:\/src\/a\.ts/)
+    assert.match(rows[4]!, /^├─── Diff /)
+    assert.match(rows[5]!, /^│ - old line/)
+    assert.match(rows[6]!, /^│ \+ new line/)
+    assert.match(rows[7]!, /^├─── Output /)
+  })
+
   it('strips carriage returns from multiline tool output', () => {
     const powershell = new ToolCardComponent('powershell', '{}', 6, palette)
     powershell.updateResult({

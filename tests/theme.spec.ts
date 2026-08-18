@@ -8,6 +8,7 @@ import {
   findTheme,
   findThemeForScheme,
   frameBlock,
+  frameBlockSections,
   resolveThemeId,
 } from '../src/theme.ts'
 import { THEME_DATA } from '../src/theme-data.ts'
@@ -53,6 +54,19 @@ describe('frameBlock', () => {
       assert.ok(row.startsWith('<bg>'))
       assert.ok(row.endsWith('</bg>'))
     }
+  })
+
+  it('renders multiple labelled sections in order', () => {
+    const rows = frameBlockSections(24, palette.border, undefined, 'Pwsh', [
+      { title: 'Input', lines: ['Get-Process'] },
+      { title: 'Output', lines: ['result'] },
+    ])
+    assert.equal(rows[0], '╭─── Pwsh ─────────────╮')
+    assert.equal(rows[1], '├─── Input ────────────┤')
+    assert.equal(rows[2], '│ Get-Process          │')
+    assert.equal(rows[3], '├─── Output ───────────┤')
+    assert.equal(rows[4], '│ result               │')
+    assert.equal(rows.at(-1), '╰──────────────────────╯')
   })
 })
 
