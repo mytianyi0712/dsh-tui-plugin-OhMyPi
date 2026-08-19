@@ -1,0 +1,37 @@
+diff --git a/lib/types/assembler.js b/lib/types/assembler.js
+index 7990811435798db25c659d8c4166c1176abd56be..1995537676ed02b33c53a584256a239ff2288f2b 100644
+--- a/lib/types/assembler.js
++++ b/lib/types/assembler.js
+@@ -54,9 +54,8 @@ export class BlockAssembler {
+                 const partial = this.ensure(chunk.index, 'tool-call');
+                 if (partial.block)
+                     return; // closed by block-end; ignore stragglers
+-                partial.toolCallId = chunk.id;
+-                if (chunk.name)
+-                    partial.toolCallName = chunk.name;
++                if (chunk.id !== undefined && chunk.id !== '') partial.toolCallId = chunk.id;
++                if (chunk.name !== undefined && chunk.name !== '') partial.toolCallName = chunk.name;
+                 partial.toolCallArguments += chunk.argumentsDelta;
+                 return;
+             }
+@@ -66,6 +65,20 @@ export class BlockAssembler {
+                 // and the final assembled block in agreement.
+                 if (partial.block)
+                     return;
++                if (chunk.block.type === 'tool-call') {
++                    const block = chunk.block;
++                    if ((block.id === undefined || block.id === '') && partial.toolCallId !== undefined && partial.toolCallId !== '') {
++                        block.id = partial.toolCallId;
++                    } else if (block.id === undefined || block.id === '') {
++                        block.id = CallId(`call-${chunk.index}`);
++                    }
++                    if ((block.name === undefined || block.name === '') && partial.toolCallName !== undefined && partial.toolCallName !== '') {
++                        block.name = partial.toolCallName;
++                    }
++                    if ((block.arguments === undefined || block.arguments === '') && partial.toolCallArguments !== undefined && partial.toolCallArguments !== '') {
++                        block.arguments = partial.toolCallArguments;
++                    }
++                }
+                 partial.block = chunk.block;
+                 return;
+             }

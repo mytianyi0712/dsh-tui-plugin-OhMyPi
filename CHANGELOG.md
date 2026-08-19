@@ -1,9 +1,12 @@
 # Changelog
 
-All notable changes to this project are documented here.
+## [0.2.2] - 2026-08-19
+
+- 修复超长会话恢复失败：`BlockAssembler` 空 `tool-call` 覆盖导致 `tool/result callId:""` 持久化后 `Session.fromRestore` 拒识，补丁忽略空 `id/name` 并回退 `block-end`，`repair-sessions.py` 按 `(turn,step)` 回填并重建多帧 `zstd`（`tui-695e` 86 帧、`tui-edaa` 截断至 233797 事件），`79` 会话校验 0 fail
+- 修复非官方接入点 `/compact` 400：`pi-ai openai-completions isDeepSeek` 扩展至 `deepseek-official` 与 `model.id`，`dsh-compaction-basic summarizeWithLlm` 增加 `configured/latest/agentTarget` 回退，`cordis.patch.yml` 保留 `deepseek-official/deepseek-v4-flash` 并提升 `AGENT_READY_TIMEOUT 10s→30s`
+- 将 `AGENT_READY_TIMEOUT_MS` 提升至 `30s` 并重建多帧存储以避免 `persistence.list()` 首帧 8k 未命中导致的启动超时
 
 ## [0.2.1] - 2026-08-18
-
 - Port all 98 concrete OMP themes from the local OMP installation into `src/theme-data.ts`; `/theme` and settings now list every dark, light, and neutral OMP theme with no preset family groups.
 - Rework theme selection into `dynamic` (dark/light slots chosen independently, follows the terminal scheme) and `selected` (one fixed theme); the dark slot may hold a light theme and vice versa.
 - Truecolor light schemes now use the light-slot OMP theme instead of falling back to ANSI colors.

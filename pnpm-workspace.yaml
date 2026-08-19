@@ -36,4 +36,5 @@ minimumReleaseAgeExclude:
   - '@deepseek-ai/dsh-agent-default-model@0.1.0-rc.6'
 
 patchedDependencies:
+  '@deepseek-ai/dsh-llm@0.1.0-rc.6': patches/@deepseek-ai__dsh-llm@0.1.0-rc.6.patch
   '@earendil-works/pi-tui@0.80.7': patches/@earendil-works__pi-tui@0.80.7.patch

@@ -1,9 +1,11 @@
 # dsh-omp-tui
 
-## 更新日志
+### v0.2.2 (2026-08-19)
+- 修复超长会话（20w+ 事件）恢复失败与 `unknown tool ""` 空 `callId` 持久化
+- 修复非官方网关（`local-oai`/`localhost:3000`）`/compact` 400，`isDeepSeek` 兼容 `deepseek-official` 与 `model.id` 并增加多提供方回退
+- 提升 `agent` 就绪超时至 30s 并修复单大帧 `zstd` 导致 `list` 首帧 8k 未命中
 
 ### v0.2.1 (2026-08-18)
-- 移植本机 OMP 的全部 98 个主题
 - 新增深色/浅色自适应主题模式
 - 浅色 truecolor 终端使用 OMP 浅色主题而非 ANSI 回退
 - `omdsh` 在 profile 内插件版本落后时自动更新
@@ -50,6 +52,8 @@
 - 本项目目前已可以作为一个tui工作，必要功能均已测试正常。
 - wechat-claw通道的远程控制能力已开发完成。
 - 目前项目文档由ai完成，后续功能开发完全后会重新编写readme以增强可读性。
+
+---
 
 OMP 风格的 DeepSeek Harness（dsh）终端界面。它是一个独立的 profile bundle（插件），负责终端呈现、输入交互与会话相关的 TUI 能力；agent、模型、工具、持久化和沙箱仍由 dsh harness 提供。
 

@@ -141,7 +141,7 @@ export const name = 'tui'
 const SPINNER_FRAMES = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 const SPINNER_INTERVAL_MS = 80
 /** How long to wait for the configured agent to publish before giving up. */
-const AGENT_READY_TIMEOUT_MS = 10000
+const AGENT_READY_TIMEOUT_MS = 30000
 /** Safety cap for a session resume's persistence load and setup phase. */
 const RESUME_TIMEOUT_MS = 30_000
 /** How many recent sessions to show in the `/resume` picker before title reads. */
