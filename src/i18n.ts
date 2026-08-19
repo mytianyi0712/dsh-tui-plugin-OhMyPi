@@ -96,6 +96,7 @@ export type Messages = {
   noticeModeNotBlank: string
   noticeModeMountFailed: string
   noticeModeSwitchFailed: string
+  noticeEventRenderFailed: string
   noticeThemeSet: string
   noticeThemeUnknown: string
   noticeThemeModeSet: string
@@ -174,6 +175,11 @@ export type Messages = {
   settingsThemeDark: string
   settingsThemeLight: string
   settingsThemeSelectedItem: string
+  settingsThemeCustom: string
+  settingsThemeCustomNone: string
+  settingsThemeCustomEditHint: string
+  noticeThemeCustomSet: string
+  noticeThemeCustomInvalid: string
   settingsTitleModel: string
   settingsProvider: string
   settingsModel: string
@@ -199,6 +205,13 @@ export type Messages = {
   settingsToolOutputLines: string
   settingsDefaultMode: string
   settingsMaxParallelToolCalls: string
+  settingsLeftPrompt: string
+  settingsRightPrompt: string
+  settingsPromptHint: string
+  settingsKeyTools: string
+  settingsKeyReasoning: string
+  noticeKeybindingSet: string
+  noticePromptSet: string
   settingsTabAdvanced: string
   settingsTabWechat: string
   settingsWechatProgressEnabled: string
@@ -311,6 +324,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeModeNotBlank: '会话已产生内容，无法切换模式；请在新会话中切换。',
     noticeModeMountFailed: '模式装配失败：{error}',
     noticeModeSwitchFailed: '模式切换失败：{error}',
+    noticeEventRenderFailed: '会话事件渲染失败：{error}',
     noticeThemeSet: '已切换主题：{name}。',
     noticeThemeUnknown: '未知主题：{name}',
     noticeThemeModeSet: '主题模式已切换：{mode}。',
@@ -388,6 +402,11 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsThemeDark: '深色主题',
     settingsThemeLight: '浅色主题',
     settingsThemeSelectedItem: '单一主题',
+    settingsThemeCustom: '主题颜色覆盖',
+    settingsThemeCustomNone: '未设置',
+    settingsThemeCustomEditHint: '输入 RGB 三元组，例如 250,179,135；留空清除覆盖',
+    noticeThemeCustomSet: '主题颜色覆盖已更新：{name}',
+    noticeThemeCustomInvalid: '颜色格式无效，请输入 0-255 范围内的三个数字，用逗号分隔。',
     settingsTitleModel: '标题模型',
     settingsProvider: '供应商',
     settingsModel: '模型',
@@ -413,6 +432,13 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsToolOutputLines: '工具输出行数',
     settingsDefaultMode: '默认模式',
     settingsMaxParallelToolCalls: '最大并行工具调用数',
+    settingsLeftPrompt: '左侧状态栏模板',
+    settingsRightPrompt: '底部状态栏模板',
+    settingsPromptHint: '输入提示词模板；留空恢复默认模板',
+    settingsKeyTools: '工具卡切换快捷键',
+    settingsKeyReasoning: '思考块开关快捷键',
+    noticeKeybindingSet: '快捷键已更新：{name}',
+    noticePromptSet: '提示词模板已更新：{name}',
     settingsTabAdvanced: '高级',
     settingsTabWechat: '微信claw',
     settingsWechatProgressEnabled: '进度汇报',
@@ -522,6 +548,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeModeNotBlank: 'Cannot switch modes: the session already produced content. Start a new session to switch.',
     noticeModeMountFailed: 'Preset mount failed: {error}',
     noticeModeSwitchFailed: 'Mode switch failed: {error}',
+    noticeEventRenderFailed: 'Session event render failed: {error}',
     noticeThemeSet: 'Theme switched to {name}.',
     noticeThemeUnknown: 'Unknown theme: {name}',
     noticeThemeModeSet: 'Theme mode switched to {mode}.',
@@ -599,6 +626,11 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsThemeDark: 'Dark theme',
     settingsThemeLight: 'Light theme',
     settingsThemeSelectedItem: 'Theme',
+    settingsThemeCustom: 'Theme color overrides',
+    settingsThemeCustomNone: 'None',
+    settingsThemeCustomEditHint: 'Enter an RGB triple, e.g. 250,179,135; leave blank to clear',
+    noticeThemeCustomSet: 'Theme color override updated: {name}',
+    noticeThemeCustomInvalid: 'Invalid color format. Enter three comma-separated numbers between 0 and 255.',
     settingsTitleModel: 'Title model',
     settingsProvider: 'Provider',
     settingsModel: 'Model',
@@ -624,6 +656,13 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsToolOutputLines: 'Tool output lines',
     settingsDefaultMode: 'Default mode',
     settingsMaxParallelToolCalls: 'Max parallel tool calls',
+    settingsLeftPrompt: 'Left status template',
+    settingsRightPrompt: 'Bottom status template',
+    settingsPromptHint: 'Enter a prompt template; leave blank to restore the default',
+    settingsKeyTools: 'Tool card cycle key',
+    settingsKeyReasoning: 'Reasoning toggle key',
+    noticeKeybindingSet: 'Keybinding updated: {name}',
+    noticePromptSet: 'Prompt template updated: {name}',
     settingsTabAdvanced: 'Advanced',
     settingsTabWechat: 'WeChat Claw',
     settingsWechatProgressEnabled: 'Progress reports',

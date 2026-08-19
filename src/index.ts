@@ -52,6 +52,8 @@ import type {} from '@deepseek-ai/dsh-compaction'
 // session event, plus the runtime preset resolver for resumed sessions.
 import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
 import {
+  DEFAULT_LEFT_PROMPT,
+  DEFAULT_RIGHT_PROMPT,
   TuiConfigSchema,
   resolveTuiConfig,
   type Config,
@@ -71,6 +73,7 @@ import {
 import { SkillAwareAutocompleteProvider } from './autocomplete.ts'
 import {
   BUILTIN_THEMES,
+  COLOR_ROLES,
   createPalette,
   detectTruecolor,
   findTheme,
@@ -91,6 +94,8 @@ import {
   ContextCardComponent,
   HeaderComponent,
   StaticCardComponent,
+  SubagentPanelComponent,
+  TranscriptFoldNoticeComponent,
   AssistantStreamController,
   TodoPanelComponent,
   ToolCardComponent,
@@ -340,7 +345,7 @@ export class Tui extends Service {
     // dsh-llm's configurable-provider directory. The TUI only follows the
     // declared namespace/path and never invents a provider-owned namespace.
     // Runtime theme state; `/theme` and `/settings` repaint in place.
-    const themeCustom: ThemeCustom | undefined = resolved.theme.custom
+
     const migrateLegacyThemeName = (name: string | undefined): Partial<{ themeMode: ThemeMode; themeDark: string; themeLight: string; themeSelected: string }> | undefined => {
       if (name === undefined) return undefined
       const concrete = findTheme(name)
@@ -352,9 +357,11 @@ export class Tui extends Service {
       if (dark !== undefined && light !== undefined) {
         return { themeMode: 'dynamic', themeDark: dark.id, themeLight: light.id, themeSelected: resolved.theme.selected }
       }
+
       return undefined
     }
     const persistedTheme = tuiSettings?.get()
+    let themeCustom: ThemeCustom | undefined = persistedTheme?.themeCustom ?? resolved.theme.custom
     const legacyThemeMigration = migrateLegacyThemeName(persistedTheme?.themeName)
     let themeMode: ThemeMode = persistedTheme?.themeMode ?? legacyThemeMigration?.themeMode ?? resolved.theme.mode
     let themeDark = persistedTheme?.themeDark ?? legacyThemeMigration?.themeDark ?? resolved.theme.dark
@@ -364,6 +371,10 @@ export class Tui extends Service {
     // same TUI settings namespace.
     let showReasoning = persistedTheme?.showReasoning ?? resolved.showReasoning
     let maxToolOutputLines = persistedTheme?.maxToolOutputLines ?? resolved.maxToolOutputLines
+    let leftPrompt = persistedTheme?.leftPrompt ?? resolved.theme.leftPrompt
+    let rightPrompt = persistedTheme?.rightPrompt ?? resolved.theme.rightPrompt
+    let keyTools = persistedTheme?.keyTools ?? 'ctrl+o'
+    let keyReasoning = persistedTheme?.keyReasoning ?? 'ctrl+r'
     const resolveDefaultMode = (): string => ctx.agentPresets?.defaultId ?? resolved.mode
     let uiMode: string = resolveDefaultMode()
     // Roster display names (id → name); refreshed from ctx.agentPresets.list().
@@ -418,31 +429,37 @@ export class Tui extends Service {
       frame: 'none',
       prompt: { first: '', continuation: '' },
     })
-    const leftTemplate = parseTuiPromptTemplate(displayInlineText(resolved.theme.leftPrompt))
-    const rightTemplate = parseTuiPromptTemplate(displayInlineText(resolved.theme.rightPrompt))
+    let leftTemplate = parseTuiPromptTemplate(displayInlineText(persistedTheme?.leftPrompt ?? resolved.theme.leftPrompt))
+    let rightTemplate = parseTuiPromptTemplate(displayInlineText(persistedTheme?.rightPrompt ?? resolved.theme.rightPrompt))
     const promptValue = (valueName: string): string | undefined => ctx.tuiPrompt.get(valueName)
-    const statusLine = new StatusLineComponent(leftTemplate, promptValue, palette)
+    let statusLine = new StatusLineComponent(leftTemplate, promptValue, palette)
     const todoPanel = new TodoPanelComponent(palette)
+    const subagentPanel = new SubagentPanelComponent(palette)
     const noticeSlot = new Container()
     const notice = new Text('', 1, 0)
     const askSlot = new Container()
     let commandHintText: string | undefined
     const commandHint = new CommandHintComponent(() => commandHintText, palette)
     const inputBorder = new InputBorderComponent(palette)
-    const footer = new ComposerFooterComponent(rightTemplate, promptValue, palette)
+    let footer = new ComposerFooterComponent(rightTemplate, promptValue, palette)
     let noticeMounted = false
     let noticeTimer: NodeJS.Timeout | undefined
 
-    ui.addChild(chat)
-    ui.addChild(todoPanel)
-    ui.addChild(noticeSlot)
-    ui.addChild(statusLine)
-    ui.addChild(askSlot)
-    ui.addChild(editor)
-    ui.addChild(commandHint)
-    ui.addChild(inputBorder)
-    ui.addChild(footer)
-    ui.setFocus(editor)
+    const rebuildChrome = (): void => {
+      ui.clear()
+      ui.addChild(chat)
+      ui.addChild(todoPanel)
+      ui.addChild(subagentPanel)
+      ui.addChild(noticeSlot)
+      ui.addChild(statusLine)
+      ui.addChild(askSlot)
+      ui.addChild(editor)
+      ui.addChild(commandHint)
+      ui.addChild(inputBorder)
+      ui.addChild(footer)
+      ui.setFocus(editor)
+    }
+    rebuildChrome()
     terminal.setTitle(resolved.title)
 
     // --- prompt values ----------------------------------------------------
@@ -674,6 +691,10 @@ export class Tui extends Service {
     let toolsVisibility: ToolCardVisibility = 'collapsed'
     let live = false
     let header: HeaderComponent | undefined
+    /** Transcript window: only the most recent events are rebuilt eagerly. */
+    const TRANSCRIPT_RECENT_LIMIT = 200
+    const TRANSCRIPT_LOAD_STEP = 200
+    let transcriptStart = 0
 
     const renderEvent = (event: SessionEvent, syncStatus = true, notify = true): void => {
       switch (event.type) {
@@ -758,19 +779,61 @@ export class Tui extends Service {
         default:
           break
       }
+      if ((event as { type: string }).type === 'subagent/descriptor') {
+        const data = (event as { data: { label?: string; provider?: string; mode?: 'one-shot' | 'continuable' } }).data
+        subagentPanel.add({ label: data.label, provider: data.provider ?? 'subagent', mode: data.mode ?? 'one-shot' })
+      }
       if (syncStatus) updateStatusValues()
     }
 
-    const rebuildTranscript = (): void => {
+    /** pi-tui keeps viewport state private; setting it keeps differential rendering anchored. */
+    const setViewportTop = (top: number): void => {
+      ;(ui as unknown as { previousViewportTop: number }).previousViewportTop = top
+    }
+
+    const renderTranscriptWindow = (start: number): void => {
       assistantStream.end()
       toolCards.clear()
       allToolCards.clear()
       chat.clear()
+      if (header !== undefined) chat.addChild(header)
+      chat.addChild(new TranscriptFoldNoticeComponent(() => transcriptStart, palette))
+      const events = agent!.session.events
+      let index = Math.max(0, start)
+      const chunkSize = 200
+      const renderChunk = (): void => {
+        // The active session may have changed while a chunked rebuild was
+        // still running; drop the stale work instead of mixing sessions.
+        if (agent === undefined || agent.session.events !== events) return
+        const end = Math.min(index + chunkSize, events.length)
+        for (; index < end; index++) {
+          renderEvent(events[index]!, false, false)
+        }
+        if (index < events.length) {
+          setImmediate(renderChunk)
+          ui.requestRender()
+        } else {
+          updateStatusValues()
+          ui.requestRender()
+        }
+      }
+      renderChunk()
+    }
+
+    const rebuildTranscript = (): void => {
+      subagentPanel.clear()
       tokenTotals = { inputTokens: 0, outputTokens: 0 }
       contextUsageCache.measuredAt = 0
-      if (header !== undefined) chat.addChild(header)
-      for (const event of agent!.session.events) renderEvent(event, false, false)
-      updateStatusValues()
+      const events = agent!.session.events
+      transcriptStart = Math.max(0, events.length - TRANSCRIPT_RECENT_LIMIT)
+      renderTranscriptWindow(transcriptStart)
+    }
+
+    const loadOlderTranscript = (): void => {
+      if (transcriptStart <= 0) return
+      transcriptStart = Math.max(0, transcriptStart - TRANSCRIPT_LOAD_STEP)
+      setViewportTop(0)
+      renderTranscriptWindow(transcriptStart)
     }
 
     // --- input ---------------------------------------------------------------
@@ -1043,6 +1106,7 @@ export class Tui extends Service {
             | 'theme-dark'
             | 'theme-light'
             | 'theme-selected'
+            | 'theme-custom'
             | 'show-reasoning'
             | 'tool-output-lines'
             | 'title-provider'
@@ -1081,7 +1145,8 @@ export class Tui extends Service {
             try {
               return ctx.get('wechat') as WechatBridge | undefined
             } catch {
-              return undefined
+
+      return undefined
             }
           }
           const getWechatConfig = (): BridgeConfig | undefined => wechatBridge()?.getBridgeConfig()
@@ -1209,6 +1274,10 @@ export class Tui extends Service {
           const themeSummary = (): string => themeMode === 'dynamic'
             ? `${t('settingsThemeModeDynamic')} · ${themeDark} / ${themeLight}`
             : `${t('settingsThemeModeSelected')} · ${themeSelected}`
+          const themeCustomSummary = (): string => {
+            const roles = themeCustom === undefined ? [] : Object.keys(themeCustom)
+            return roles.length === 0 ? t('settingsThemeCustomNone') : roles.join(', ')
+          }
           const buildSettingsTabs = (): SettingsTab[] => {
             const agentLoopSettings = settings.get(settingsNamespace('agent-loop')) as {
               maxParallelToolCalls?: number
@@ -1233,6 +1302,7 @@ export class Tui extends Service {
                 label: t('settingsTabGeneral'),
                 items: [
                   { value: 'theme', label: t('settingsTheme'), currentValue: themeSummary() },
+                  { value: 'theme-custom', label: t('settingsThemeCustom'), currentValue: themeCustomSummary() },
                   { value: 'show-reasoning', label: t('settingsShowReasoning'), currentValue: showReasoning ? t('settingsOn') : t('settingsOff') },
                   { value: 'tool-output-lines', label: t('settingsToolOutputLines'), currentValue: String(maxToolOutputLines) },
                   { value: 'provider', label: t('settingsDefaultModel'), currentValue: `${defaultSelection.provider}/${defaultSelection.model}` },
@@ -1266,6 +1336,10 @@ export class Tui extends Service {
                 label: t('settingsTabAdvanced'),
                 items: [
                   { value: 'max-parallel-tool-calls', label: t('settingsMaxParallelToolCalls'), currentValue: String(maxParallelToolCalls) },
+                  { value: 'left-prompt', label: t('settingsLeftPrompt'), currentValue: leftPrompt },
+                  { value: 'right-prompt', label: t('settingsRightPrompt'), currentValue: rightPrompt },
+                  { value: 'key-tools', label: t('settingsKeyTools'), currentValue: keyTools },
+                  { value: 'key-reasoning', label: t('settingsKeyReasoning'), currentValue: keyReasoning },
                 ],
               },
               {
@@ -1308,6 +1382,13 @@ export class Tui extends Service {
             { value: 'dynamic', label: t('settingsThemeModeDynamic') },
             { value: 'selected', label: t('settingsThemeModeSelected') },
           ]
+          const themeCustomItems = (): SelectItem[] => COLOR_ROLES.map(role => {
+            const rgb = themeCustom?.[role]
+            return {
+              value: role,
+              label: `${role} — ${rgb === undefined ? t('settingsThemeCustomNone') : `[${rgb.join(', ')}]`}`,
+            }
+          })
           const providerItems = (): SelectItem[] => {
             const registeredProviders = typeof ctx.llm.listProviders === 'function' ? ctx.llm.listProviders() : []
             const registeredProviderIds = new Set(registeredProviders.map(entry => entry.id))
@@ -1570,7 +1651,8 @@ export class Tui extends Service {
                       return found as DiscoveredModel[]
                     } catch (error: unknown) {
                       appendNotice(t('noticeProviderFailed', { error: errorChain(error) }), 'error')
-                      return undefined
+
+      return undefined
                     }
                   },
                   pickApi: async () => await showOverlay<string>(
@@ -1649,6 +1731,8 @@ export class Tui extends Service {
               if (selectedView === 'main') {
                 if (item.value === 'theme') {
                   showItems('theme', themeMenuItems(), t('settingsTheme'), 'mode')
+                } else if (item.value === 'theme-custom') {
+                  showItems('theme-custom', themeCustomItems(), t('settingsThemeCustom'), 'accent')
                 } else if (item.value === 'show-reasoning') {
                   showItems('show-reasoning', booleanItems, t('settingsShowReasoning'), String(showReasoning))
                 } else if (item.value === 'tool-output-lines') {
@@ -1698,7 +1782,50 @@ export class Tui extends Service {
                     t('settingsMaxParallelToolCalls'),
                     String(current),
                   )
-                } else if (item.value === 'wechat-progress-enabled') {
+                } else if (item.value === 'left-prompt' || item.value === 'right-prompt') {
+                  const editLeft = item.value === 'left-prompt'
+                  const initial = editLeft ? leftPrompt : rightPrompt
+                  const answer = await showOverlay<string>(
+                    ui,
+                    done => new InputDialog(t('settingsPromptHint'), palette, done, t, initial),
+                    { width: '80%', maxHeight: '50%' },
+                  )
+                  const trimmed = answer?.trim() ?? ''
+                  const next = trimmed === ''
+                    ? editLeft ? DEFAULT_LEFT_PROMPT : DEFAULT_RIGHT_PROMPT
+                    : trimmed
+                  if (editLeft) {
+                    leftPrompt = next
+                    leftTemplate = parseTuiPromptTemplate(displayInlineText(next))
+                    statusLine = new StatusLineComponent(leftTemplate, promptValue, palette)
+                  } else {
+                    rightPrompt = next
+                    rightTemplate = parseTuiPromptTemplate(displayInlineText(next))
+                    footer = new ComposerFooterComponent(rightTemplate, promptValue, palette)
+                  }
+                  await tuiSettings.update({ leftPrompt, rightPrompt })
+                  rebuildChrome()
+                  appendNotice(t('noticePromptSet', { name: editLeft ? t('settingsLeftPrompt') : t('settingsRightPrompt') }), 'info')
+                  if (selectedVersion === viewVersion && view === selectedView) showMain()
+                  else ui.requestRender()
+                  return                } else if (item.value === 'key-tools' || item.value === 'key-reasoning') {
+                  const editTools = item.value === 'key-tools'
+                  const initial = editTools ? keyTools : keyReasoning
+                  const answer = await showOverlay<string>(
+                    ui,
+                    done => new InputDialog(t('settingsPromptHint'), palette, done, t, initial),
+                    { width: '80%', maxHeight: '50%' },
+                  )
+                  const trimmed = answer?.trim() ?? ''
+                  if (trimmed !== '') {
+                    if (editTools) keyTools = trimmed
+                    else keyReasoning = trimmed
+                    await tuiSettings.update({ keyTools, keyReasoning })
+                  }
+                  appendNotice(t('noticeKeybindingSet', { name: editTools ? t('settingsKeyTools') : t('settingsKeyReasoning') }), 'info')
+                  if (selectedVersion === viewVersion && view === selectedView) showMain()
+                  else ui.requestRender()
+                  return                } else if (item.value === 'wechat-progress-enabled') {
                   const wechatConfig = getWechatConfig()
                   if (wechatConfig === undefined) {
                     appendNotice(t('settingsWechatUnavailable'), 'warning')
@@ -1889,6 +2016,40 @@ export class Tui extends Service {
                 return
               }
 
+              if (selectedView === 'theme-custom') {
+                const role = item.value
+                const currentRgb = themeCustom?.[role]
+                const initial = currentRgb === undefined ? '' : currentRgb.join(', ')
+                const answer = await showOverlay<string>(
+                  ui,
+                  done => new InputDialog(t('settingsThemeCustomEditHint'), palette, done, t, initial),
+                  { width: '80%', maxHeight: '50%' },
+                )
+                const trimmed = answer?.trim() ?? ''
+                const next = { ...(themeCustom ?? {}) } as Record<string, number[]>
+                if (trimmed === '') {
+                  delete next[role]
+                } else {
+                  const parts = trimmed.split(',').map(part => Number(part.trim()))
+                  if (parts.length !== 3 || parts.some(part => !Number.isFinite(part) || part < 0 || part > 255)) {
+                    appendNotice(t('noticeThemeCustomInvalid'), 'warning')
+                    if (selectedVersion === viewVersion && view === selectedView) showMain()
+                    else ui.requestRender()
+                    return
+                  }
+                  next[role] = [parts[0]!, parts[1]!, parts[2]!]
+                }
+                themeCustom = Object.keys(next).length === 0 ? undefined : next
+                await tuiSettings.update({ themeMode, themeDark, themeLight, themeSelected, themeCustom })
+                Object.assign(palette, createPalette(resolved.theme.color, currentScheme, truecolor, themeOverride()))
+                Object.assign(mdTheme, markdownTheme(palette))
+                rebuildTranscript()
+                setStatus(current.status)
+                appendNotice(t('noticeThemeCustomSet', { name: role }), 'info')
+                if (selectedVersion === viewVersion && view === selectedView) showMain()
+                else ui.requestRender()
+                return
+              }
               if (selectedView === 'show-reasoning') {
                 const next = item.value === 'true'
                 await tuiSettings.update({ showReasoning: next })
@@ -2380,14 +2541,19 @@ export class Tui extends Service {
         }
         return {}
       }
-      if (matchesKey(data, 'ctrl+o')) {
+      if (matchesKey(data, keyTools as Parameters<typeof matchesKey>[1])) {
         toggleTools()
         return {}
       }
-      if (matchesKey(data, 'ctrl+r')) {
+      if (matchesKey(data, keyReasoning as Parameters<typeof matchesKey>[1])) {
         toggleReasoning()
         return {}
       }
+      if (matchesKey(data, 'pageup' as Parameters<typeof matchesKey>[1]) && transcriptStart > 0) {
+        loadOlderTranscript()
+        return {}
+      }
+
       return undefined
     })
 
@@ -2648,26 +2814,40 @@ export class Tui extends Service {
         },
       })
 
-      offEvent = ctx.on('session/event', (session, event) => {
-        if (session.id !== liveAgent.session.id) return
-        if (event.type === 'session/title') updateTitle()
-        renderEvent(event)
-        updateStatusValues()
-        ui.requestRender()
-      })
+      const handleSessionEvent = (targetId: SessionId, session: Session, event: SessionEvent): void => {
+        if (session.id !== targetId) return
+        try {
+          if (event.type === 'session/title') updateTitle()
+          renderEvent(event)
+          updateStatusValues()
+          ui.requestRender()
+        } catch (error: unknown) {
+          appendNotice(t('noticeEventRenderFailed', { error: errorChain(error) }), 'error')
+        }
+      }
+      const handleAgentStatus = (targetId: SessionId, candidate: Agent, status: AgentStatus): void => {
+        if (candidate.id !== targetId) return
+        try {
+          setStatus(status)
+        } catch (error: unknown) {
+          appendNotice(t('noticeEventRenderFailed', { error: errorChain(error) }), 'error')
+        }
+      }
+      offEvent = ctx.on('session/event', (session, event) => handleSessionEvent(liveAgent.session.id, session, event))
 
-      offStatus = ctx.on('agent/status', ({ agent: candidate, status }) => {
-        if (candidate.id !== liveAgent.id) return
-        setStatus(status)
-      })
+      offStatus = ctx.on('agent/status', ({ agent: candidate, status }) => handleAgentStatus(liveAgent.id, candidate, status))
 
       offScheme = ui.onTerminalColorSchemeChange((scheme) => {
+        try {
         currentScheme = scheme
         Object.assign(palette, createPalette(resolved.theme.color, scheme, truecolor, themeOverride()))
         Object.assign(mdTheme, markdownTheme(palette))
         rebuildTranscript()
         setStatus(agent?.status ?? 'idle')
         ui.requestRender()
+        } catch (error: unknown) {
+          appendNotice(t('noticeEventRenderFailed', { error: errorChain(error) }), 'error')
+        }
       })
 
       // Compose fresh sessions from the selected mode without recording an
@@ -2711,17 +2891,8 @@ export class Tui extends Service {
           t,
           () => selectionRef.current,
         )
-        offEvent = ctx.on('session/event', (session, event) => {
-          if (session.id !== next.session.id) return
-          if (event.type === 'session/title') updateTitle()
-          renderEvent(event)
-          updateStatusValues()
-          ui.requestRender()
-        })
-        offStatus = ctx.on('agent/status', ({ agent: candidate, status }) => {
-          if (candidate.id !== next.id) return
-          setStatus(status)
-        })
+        offEvent = ctx.on('session/event', (session, event) => handleSessionEvent(next.session.id, session, event))
+        offStatus = ctx.on('agent/status', ({ agent: candidate, status }) => handleAgentStatus(next.id, candidate, status))
         rebuildTranscript()
         live = true
         setStatus(next.status)

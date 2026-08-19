@@ -689,6 +689,74 @@ export class StaticCardComponent implements Component {
  * the whole-list `todo/write` snapshot, omp `Plan` style. Renders nothing
  * while there is neither a goal nor any todo.
  */
+/** A child subagent descriptor shown above the transcript. */
+export interface SubagentDescriptor {
+  readonly label?: string
+  readonly provider: string
+  readonly mode: 'one-shot' | 'continuable'
+}
+
+/** One-line notice for older transcript entries that are currently folded. */
+export class TranscriptFoldNoticeComponent implements Component {
+  constructor(
+    private readonly resolveFolded: () => number,
+    private readonly palette: Palette,
+  ) {}
+
+  invalidate(): void {}
+
+  render(width: number): string[] {
+    const folded = this.resolveFolded()
+    if (folded <= 0) return []
+    const line = this.palette.dim(`… 已折叠更早的 ${folded} 条记录 · 按 PageUp 加载更早记录`)
+    return [truncateToWidth(line, Math.max(1, width), '')]
+  }
+}
+
+/**
+ * Subagent call panel rendered above the status line. The dsh harness appends
+ * `subagent/descriptor` events to child session logs; when the active session
+ * carries them (forked/child sessions), this panel keeps a tree-like list.
+ */
+export class SubagentPanelComponent implements Component {
+  private descriptors: readonly SubagentDescriptor[] = []
+  private renderCache: RenderCache | undefined
+
+  constructor(private readonly palette: Palette) {}
+
+  invalidate(): void {
+    this.renderCache = undefined
+  }
+
+  add(descriptor: SubagentDescriptor): void {
+    this.descriptors = [...this.descriptors, descriptor]
+    this.renderCache = undefined
+  }
+
+  clear(): void {
+    this.descriptors = []
+    this.renderCache = undefined
+  }
+
+  render(width: number): string[] {
+    const cacheKey = `${width}|${this.descriptors.map(descriptor => descriptor.label ?? descriptor.provider).join('\u0000')}`
+    const cached = cachedRender(this.renderCache, cacheKey, () => this.renderUncached(width))
+    this.renderCache = cached.cache
+    return cached.lines
+  }
+
+  private renderUncached(width: number): string[] {
+    if (this.descriptors.length === 0) return []
+    const lines = [this.palette.bold(this.palette.accent('Subagents'))]
+    this.descriptors.forEach((descriptor, index) => {
+      const branch = index === this.descriptors.length - 1 ? '└─' : '├─'
+      const name = descriptor.label ?? descriptor.provider
+      lines.push(this.palette.muted(` ${branch} ${name} · ${descriptor.mode}`))
+    })
+    return lines.map(line => truncateToWidth(line, Math.max(1, width), ''))
+  }
+}
+
 export class TodoPanelComponent implements Component {
   private todos: readonly TodoItem[] = []
   private goal: { readonly objective: string; readonly phase: string } | undefined

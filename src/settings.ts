@@ -18,6 +18,16 @@ export interface TuiSettings {
   themeLight?: string
   /** Fixed theme id for selected mode. */
   themeSelected?: string
+  /** Per-role truecolor overrides, e.g. `{ accent: [250, 179, 135] }`. */
+  themeCustom?: Record<string, number[]>
+  /** Template rendered in the status-line top rail. */
+  leftPrompt?: string
+  /** Template rendered below the editor's bottom rail. */
+  rightPrompt?: string
+  /** Keybinding for cycling tool cards. */
+  keyTools?: string
+  /** Keybinding for toggling reasoning blocks. */
+  keyReasoning?: string
   /** Whether model reasoning blocks are rendered. */
   showReasoning: boolean
   /** Maximum tool-card body lines retained in a collapsed preview. */
@@ -30,6 +40,11 @@ export const TuiSettingsSchema: z<TuiSettings> = z.object({
   themeDark: z.string(),
   themeLight: z.string(),
   themeSelected: z.string(),
+  themeCustom: z.dict(z.array(z.number().min(0).max(255)).min(3).max(3), z.string()),
+  leftPrompt: z.string(),
+  rightPrompt: z.string(),
+  keyTools: z.string(),
+  keyReasoning: z.string(),
   showReasoning: z.boolean().default(true),
   maxToolOutputLines: z.number().step(1).min(1).default(6),
 })

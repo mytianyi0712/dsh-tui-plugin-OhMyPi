@@ -8,6 +8,7 @@ import {
   ContextCardComponent,
   HeaderComponent,
   StaticCardComponent,
+  SubagentPanelComponent,
   TodoPanelComponent,
   ToolCardComponent,
   ThinkingBlock,
@@ -94,6 +95,17 @@ describe('transcript components respect the render width', () => {
     assert.deepEqual(render(bash, 48), ['', ' Bash', '   ls -la'])
     const search = new ToolCardComponent('web_search', JSON.stringify({ query: 'dsh performance' }), 6, palette)
     assert.deepEqual(render(search, 48), ['', ' Web Search', '   dsh performance'])
+  })
+
+  it('shows path or description for read/write/edit/run_code tools', () => {
+    const read = new ToolCardComponent('read', JSON.stringify({ file_path: 'src/a.ts' }), 6, palette)
+    assert.deepEqual(render(read, 48), ['', ' Read', '   src/a.ts'])
+    const write = new ToolCardComponent('write', JSON.stringify({ path: 'src/b.ts' }), 6, palette)
+    assert.deepEqual(render(write, 48), ['', ' Write', '   src/b.ts'])
+    const edit = new ToolCardComponent('edit', JSON.stringify({ file_path: 'src/c.ts' }), 6, palette)
+    assert.deepEqual(render(edit, 48), ['', ' Edit', '   src/c.ts'])
+    const code = new ToolCardComponent('run_code', JSON.stringify({ description: 'test snippet' }), 6, palette)
+    assert.deepEqual(render(code, 48), ['', ' Run Code', '   test snippet'])
   })
 
   it('wraps long commands in the input section instead of truncating', () => {
@@ -206,6 +218,20 @@ describe('transcript components respect the render width', () => {
     assert.ok(reasoning.some(row => row.includes('private model reasoning')))
     assert.ok(reasoning.every(row => !/[╭╮╰╯│]/.test(row)))
   })
+  it('subagent panel renders descriptor entries as a tree-like list', () => {
+    const panel = new SubagentPanelComponent(palette)
+    assert.deepEqual(render(panel, 40), [])
+    panel.add({ provider: 'in-process', label: 'child-a', mode: 'one-shot' })
+    panel.add({ provider: 'in-process', label: 'child-b', mode: 'continuable' })
+    const rows = render(panel, 40)
+    assert.ok(rows.some(row => row.includes('Subagents')))
+    assert.ok(rows.some(row => row.includes('├─ child-a · one-shot')))
+    assert.ok(rows.some(row => row.includes('└─ child-b · continuable')))
+    for (const row of rows) assert.ok(visibleWidth(row) <= 40)
+    panel.clear()
+    assert.deepEqual(render(panel, 40), [])
+  })
+
   it('static cards and todo panels stay within width', () => {
     for (const width of widths) {
       const card = new StaticCardComponent([longText, 'short'], palette)

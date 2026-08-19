@@ -11,6 +11,9 @@ All notable changes to this project are documented here.
 - Cache rendered transcript rows per component and throttle token-meter/permission reads to once per second, fixing the progressive slowdown as session history grows.
 - Tool cards now keep the title as the bare tool name and show the actual command or query in an `Input` section above `Output` for `pwsh`, `bash`, `read`, `write`, `edit`, `grep`, `glob`, `web_search`, `web_fetch`, and `run_code`; long commands wrap instead of truncating.
 - `str_replace_editor` renders `old_str`/`new_str` as a diff section (red removals, green additions) instead of hiding the edit content.
+- Wrap session-event rendering in try/catch error notices so one malformed event cannot crash the TUI.
+- Add Linux CI E2E smoke test (`dsh --profile tui` boots, renders `/help`) and WeChat command/config unit tests.
+- Add settings UI for per-role RGB theme overrides, status prompt templates, and tool/reasoning keybindings; add a subagent descriptor panel.
 
 ## [0.2.0] - 2026-08-18
 
