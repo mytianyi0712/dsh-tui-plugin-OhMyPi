@@ -96,6 +96,7 @@ import {
   StaticCardComponent,
   SubagentPanelComponent,
   TranscriptFoldNoticeComponent,
+  TranscriptViewport,
   AssistantStreamController,
   TodoPanelComponent,
   ToolCardComponent,
@@ -420,7 +421,6 @@ export class Tui extends Service {
     }
 
     // --- components -------------------------------------------------------
-    const chat = new Container()
     const editor = new Editor(ui, {
       borderColor: (text: string) => palette.borderMuted(text),
       selectList: selectTheme(palette),
@@ -444,6 +444,16 @@ export class Tui extends Service {
     let footer = new ComposerFooterComponent(rightTemplate, promptValue, palette)
     let noticeMounted = false
     let noticeTimer: NodeJS.Timeout | undefined
+
+    /** Lines consumed by every root child below the transcript viewport. */
+    const computeTranscriptHeight = (width: number): number => {
+      let used = 0
+      for (const child of [todoPanel, subagentPanel, noticeSlot, statusLine, askSlot, editor, commandHint, inputBorder, footer]) {
+        used += child.render(width).length
+      }
+      return Math.max(1, ui.terminal.rows - used)
+    }
+    const chat = new TranscriptViewport(computeTranscriptHeight)
 
     const rebuildChrome = (): void => {
       ui.clear()
@@ -695,6 +705,8 @@ export class Tui extends Service {
     const TRANSCRIPT_RECENT_LIMIT = 200
     const TRANSCRIPT_LOAD_STEP = 200
     let transcriptStart = 0
+    /** Invalidates chunked rebuilds that are superseded by a newer window. */
+    let transcriptBuildGeneration = 0
 
     const renderEvent = (event: SessionEvent, syncStatus = true, notify = true): void => {
       switch (event.type) {
@@ -786,24 +798,28 @@ export class Tui extends Service {
       if (syncStatus) updateStatusValues()
     }
 
-    /** pi-tui keeps viewport state private; setting it keeps differential rendering anchored. */
-    const setViewportTop = (top: number): void => {
-      ;(ui as unknown as { previousViewportTop: number }).previousViewportTop = top
-    }
-
-    const renderTranscriptWindow = (start: number): void => {
+    /**
+     * Rebuild the transcript from `start` to the end. `anchor` controls the
+     * viewport after the rebuild: `'bottom'` follows the latest event, while
+     * `'top'` keeps the newly prepended page in view (for paging backwards).
+     */
+    const renderTranscriptWindow = (start: number, anchor: 'bottom' | 'top' = 'bottom'): void => {
       assistantStream.end()
       toolCards.clear()
       allToolCards.clear()
+      chat.followLatest = anchor === 'bottom'
+      chat.lineOffset = 0
       chat.clear()
       if (header !== undefined) chat.addChild(header)
       chat.addChild(new TranscriptFoldNoticeComponent(() => transcriptStart, palette))
       const events = agent!.session.events
+      const generation = ++transcriptBuildGeneration
       let index = Math.max(0, start)
       const chunkSize = 200
       const renderChunk = (): void => {
-        // The active session may have changed while a chunked rebuild was
-        // still running; drop the stale work instead of mixing sessions.
+        // Drop stale work if a newer window build started or the active
+        // session changed while this chunked rebuild was still running.
+        if (generation !== transcriptBuildGeneration) return
         if (agent === undefined || agent.session.events !== events) return
         const end = Math.min(index + chunkSize, events.length)
         for (; index < end; index++) {
@@ -826,14 +842,51 @@ export class Tui extends Service {
       contextUsageCache.measuredAt = 0
       const events = agent!.session.events
       transcriptStart = Math.max(0, events.length - TRANSCRIPT_RECENT_LIMIT)
-      renderTranscriptWindow(transcriptStart)
+      renderTranscriptWindow(transcriptStart, 'bottom')
     }
 
     const loadOlderTranscript = (): void => {
       if (transcriptStart <= 0) return
       transcriptStart = Math.max(0, transcriptStart - TRANSCRIPT_LOAD_STEP)
-      setViewportTop(0)
-      renderTranscriptWindow(transcriptStart)
+      renderTranscriptWindow(transcriptStart, 'top')
+    }
+
+    /** Scroll the transcript by a signed number of lines; loading older pages at the top. */
+    const scrollTranscriptLines = (delta: number): void => {
+      if (delta < 0) {
+        if (chat.followLatest) {
+          chat.lineOffset = Math.max(0, chat.lastTotalLines - chat.lastViewportLines)
+          chat.followLatest = false
+        }
+        chat.lineOffset = Math.max(0, chat.lineOffset + delta)
+        if (chat.lineOffset === 0 && transcriptStart > 0) {
+          loadOlderTranscript()
+          return
+        }
+      } else if (delta > 0 && !chat.followLatest) {
+        const maxOffset = Math.max(0, chat.lastTotalLines - chat.lastViewportLines)
+        chat.lineOffset = Math.min(maxOffset, chat.lineOffset + delta)
+        if (chat.lineOffset >= maxOffset) chat.followLatest = true
+      }
+      ui.requestRender()
+    }
+
+    /** Scroll the transcript by one viewport page; loading older pages at the top. */
+    const scrollTranscriptPage = (direction: -1 | 1): void => {
+      scrollTranscriptLines(direction * Math.max(1, chat.lastViewportLines))
+    }
+
+    const latestCompactionError = (): string | undefined => {
+      const events = agent?.session.events
+      if (events === undefined) return undefined
+      for (let index = events.length - 1; index >= 0; index--) {
+        const event = events[index]!
+        if (event.type === 'compaction/end') {
+          const error = (event.data as { error?: string }).error
+          return typeof error === 'string' && error !== '' ? error : undefined
+        }
+      }
+      return undefined
     }
 
     // --- input ---------------------------------------------------------------
@@ -2458,6 +2511,17 @@ export class Tui extends Service {
       }
       if (result.kind === 'error') {
         appendNotice(resultText ?? '', 'error')
+        if (line.trim() === '/compact') {
+          const cause = latestCompactionError()
+          if (cause !== undefined && cause !== '' && !String(resultText ?? '').includes(cause)) {
+            appendNotice(t('noticeCompactionCause', { cause }), 'error')
+          }
+          if (cause !== undefined && cause.includes('400 status code')) {
+            appendNotice(t('noticeCompaction400Hint'), 'warning')
+          } else {
+            appendNotice(t('noticeCompactionHint'), 'warning')
+          }
+        }
       } else if (resultText !== undefined && resultText !== '') {
         appendNotice(resultText, 'info')
       }
@@ -2522,6 +2586,13 @@ export class Tui extends Service {
     const EXIT_ARM_WINDOW_MS = 2000
 
     const offKeys = ui.addInputListener((data) => {
+      const mouseMatch = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])/.exec(data)
+      if (mouseMatch !== null) {
+        const button = Number(mouseMatch[1])
+        if (button === 64) scrollTranscriptLines(-3) // wheel up
+        else if (button === 65) scrollTranscriptLines(3) // wheel down
+        return { consume: true }
+      }
       if (matchesKey(data, 'ctrl+c')) {
         if (exitArmed) {
           clearTimeout(exitArmTimer)
@@ -2549,9 +2620,21 @@ export class Tui extends Service {
         toggleReasoning()
         return {}
       }
-      if (matchesKey(data, 'pageup' as Parameters<typeof matchesKey>[1]) && transcriptStart > 0) {
-        loadOlderTranscript()
-        return {}
+      if (matchesKey(data, 'pageup' as Parameters<typeof matchesKey>[1])) {
+        scrollTranscriptPage(-1)
+        return { consume: true }
+      }
+      if (matchesKey(data, 'pagedown' as Parameters<typeof matchesKey>[1])) {
+        scrollTranscriptPage(1)
+        return { consume: true }
+      }
+      // While reading history, Down arrow jumps straight back to the live
+      // latest message; otherwise it keeps its normal editor behavior.
+      if (matchesKey(data, 'down' as Parameters<typeof matchesKey>[1]) && !chat.followLatest) {
+        chat.followLatest = true
+        chat.lineOffset = Math.max(0, chat.lastTotalLines - chat.lastViewportLines)
+        ui.requestRender()
+        return { consume: true }
       }
 
       return undefined
@@ -3048,6 +3131,9 @@ export class Tui extends Service {
         ui.requestRender()
       })()
       ui.start()
+      // Report mouse wheel events (normal tracking + SGR encoding) so the
+      // transcript can page on scroll without sending legacy X10 sequences.
+      terminal.write('\x1b[?1000h\x1b[?1006h')
       warnIfFullAccess(liveAgent)
 
     }
@@ -3084,6 +3170,7 @@ export class Tui extends Service {
       stopSpinner()
       clearTimeout(noticeTimer)
       clearTimeout(exitArmTimer)
+      terminal.write('\x1b[?1006l\x1b[?1000l')
       ui.stop()
       terminal.stop()
     })

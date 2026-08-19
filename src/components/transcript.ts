@@ -35,6 +35,37 @@ interface RenderCache {
   lines: string[]
 }
 
+/**
+ * Transcript viewport: renders all children, then returns only the visible
+ * line window. In follow-latest mode the window stays anchored to the bottom
+ * as live events arrive; paging up freezes the top offset for history reading.
+ */
+export class TranscriptViewport extends Container {
+  lineOffset = 0
+  followLatest = true
+  lastTotalLines = 0
+  lastViewportLines = 0
+
+  constructor(private readonly resolveViewportHeight: (width: number) => number) {
+    super()
+  }
+
+  override render(width: number): string[] {
+    const allLines = super.render(width)
+    const maxLines = Math.max(0, Math.floor(this.resolveViewportHeight(width)))
+    const maxOffset = Math.max(0, allLines.length - maxLines)
+    if (this.followLatest) {
+      this.lineOffset = maxOffset
+    } else {
+      this.lineOffset = Math.max(0, Math.min(this.lineOffset, maxOffset))
+    }
+    this.lastTotalLines = allLines.length
+    this.lastViewportLines = Math.max(0, Math.min(maxLines, allLines.length - this.lineOffset))
+    if (allLines.length <= maxLines) return allLines
+    return allLines.slice(this.lineOffset, this.lineOffset + maxLines)
+  }
+}
+
 function cachedRender(
   cache: RenderCache | undefined,
   key: string,
@@ -59,12 +90,15 @@ function center(text: string, width: number): string {
 
 /** Wrap one plain-text line into rows no wider than `width` display columns. */
 function wrapToWidth(text: string, width: number): string[] {
+  // Materialize tabs exactly like displayText/pi-tui measure them (3 cells),
+  // so the terminal's hardware tab stops can never reflow a wrapped row.
+  const safeText = text.replace(/\t/g, '   ')
   const safeWidth = Math.max(1, width)
-  if (visibleWidth(text) <= safeWidth) return [text]
+  if (visibleWidth(safeText) <= safeWidth) return [safeText]
   const rows: string[] = []
   let current = ''
   let currentWidth = 0
-  for (const char of Array.from(text)) {
+  for (const char of Array.from(safeText)) {
     const charWidth = visibleWidth(char)
     if (currentWidth + charWidth > safeWidth) {
       if (current !== '') rows.push(current)
@@ -427,10 +461,10 @@ function pickString(args: Record<string, unknown>, keys: readonly string[]): str
   return undefined
 }
 
-/** Return a string argument, or an empty string when absent. */
+/** Return a display-safe string argument, or an empty string when absent. */
 function stringArg(args: Record<string, unknown>, key: string): string {
   const value = args[key]
-  return typeof value === 'string' ? value : ''
+  return typeof value === 'string' ? displayText(value) : ''
 }
 
 /**
@@ -452,7 +486,7 @@ function strReplaceEditorDetail(args: Record<string, unknown>): string {
     return `path: ${path}\ninsert_line: ${line}\nnew_str:\n${stringArg(args, 'new_str')}`
   }
   if (command === 'view') {
-    const range = Array.isArray(args.view_range) ? args.view_range.join(', ') : ''
+    const range = Array.isArray(args.view_range) ? args.view_range.map(item => displayText(String(item))).join(', ') : ''
     return `path: ${path}${range === '' ? '' : `\nview_range: [${range}]`}`
   }
   return `path: ${path}${command === '' ? '' : `\ncommand: ${command}`}`
@@ -472,7 +506,7 @@ function strReplaceEditorSections(
   const inputLines: string[] = []
   if (path !== '') inputLines.push(`path: ${path}`)
   if (command === 'view') {
-    const range = Array.isArray(args.view_range) ? args.view_range.join(', ') : ''
+    const range = Array.isArray(args.view_range) ? args.view_range.map(item => displayText(String(item))).join(', ') : ''
     if (range !== '') inputLines.push(`view_range: [${range}]`)
   }
   const sections: { title: string; lines: string[] }[] = []
@@ -708,7 +742,7 @@ export class TranscriptFoldNoticeComponent implements Component {
   render(width: number): string[] {
     const folded = this.resolveFolded()
     if (folded <= 0) return []
-    const line = this.palette.dim(`… 已折叠更早的 ${folded} 条记录 · 按 PageUp 加载更早记录`)
+    const line = this.palette.dim(`… 已折叠更早的 ${folded} 条记录`)
     return [truncateToWidth(line, Math.max(1, width), '')]
   }
 }

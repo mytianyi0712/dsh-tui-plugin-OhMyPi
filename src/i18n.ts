@@ -82,6 +82,9 @@ export type Messages = {
   noticeCompacting: string
   noticeCompactionDone: string
   noticeCompactionFailed: string
+  noticeCompactionCause: string
+  noticeCompactionHint: string
+  noticeCompaction400Hint: string
   noticeTurnEnded: string
   noticeToolCards: string
   noticeReasoningShown: string
@@ -310,6 +313,9 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeCompacting: '上下文压缩中…',
     noticeCompactionDone: '上下文压缩完成。',
     noticeCompactionFailed: '上下文压缩失败：{error}',
+    noticeCompactionCause: '详细原因：{cause}',
+    noticeCompactionHint: '压缩失败通常表示可压缩历史太少或摘要未比原文更短。建议继续对话积累更多历史后再试。',
+    noticeCompaction400Hint: '压缩请求被模型 API 拒绝（HTTP 400）。请检查 DEEPSEEK_BASE_URL 网关是否兼容 compaction 请求，以及当前模型是否支持该请求体。',
     noticeTurnEnded: '回合结束：{reason}。',
     noticeToolCards: '工具卡：{visibility}。',
     noticeReasoningShown: '思考块已显示。',
@@ -534,6 +540,9 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeCompacting: 'Context being compacted…',
     noticeCompactionDone: 'Compaction finished.',
     noticeCompactionFailed: 'Compaction failed: {error}',
+    noticeCompactionCause: 'Detailed reason: {cause}',
+    noticeCompactionHint: 'Compaction usually fails when the compactable history is too small or the summary is not shorter. Continue the conversation and retry later.',
+    noticeCompaction400Hint: 'The model API rejected the compaction request (HTTP 400). Check whether DEEPSEEK_BASE_URL gateway supports compaction requests and whether the current model accepts the request body.',
     noticeTurnEnded: 'Turn ended: {reason}.',
     noticeToolCards: 'Tool cards {visibility}.',
     noticeReasoningShown: 'Reasoning blocks shown.',

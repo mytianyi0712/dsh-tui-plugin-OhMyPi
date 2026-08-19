@@ -11,6 +11,7 @@ import {
   SubagentPanelComponent,
   TodoPanelComponent,
   ToolCardComponent,
+  TranscriptViewport,
   ThinkingBlock,
   UserMessageComponent,
 } from '../src/components/transcript.ts'
@@ -164,6 +165,27 @@ describe('transcript components respect the render width', () => {
     assert.match(rows[7]!, /^├─── Output /)
   })
 
+  it('sanitizes tabs and controls in str_replace_editor call arguments', () => {
+    const card = new ToolCardComponent('str_replace_editor', JSON.stringify({
+      command: 'str_replace',
+      path: 'D:/src/a.ts',
+      old_str: 'line1\r\n\tindented old',
+      new_str: 'line1\r\n\tindented new',
+    }), 6, palette)
+    const pending = render(card, 60)
+    assert.ok(pending.every(row => !row.includes('\t') && !row.includes('\r') && !row.includes('\x1b')))
+
+    card.updateResult({
+      message: {
+        content: [{ content: [{ type: 'text', text: 'done' }], isError: false }],
+      },
+    } as never)
+    const settled = render(card, 60)
+    assert.ok(settled.every(row => !row.includes('\t') && !row.includes('\r') && !row.includes('\x1b')))
+    assert.ok(settled.some(row => row.includes('indented old')))
+    assert.ok(settled.some(row => row.includes('indented new')))
+  })
+
   it('strips carriage returns from multiline tool output', () => {
     const powershell = new ToolCardComponent('powershell', '{}', 6, palette)
     powershell.updateResult({
@@ -296,6 +318,46 @@ describe('transcript chronology', () => {
     assert.ok(firstUser < firstModel)
     assert.ok(firstModel < secondUser)
     assert.ok(secondUser < secondModel)
+  })
+})
+
+describe('transcript viewport', () => {
+  const lines = Array.from({ length: 20 }, (_, i) => `line-${i}`)
+  const staticComponent = (rows: string[]) => ({
+    invalidate() {},
+    render: () => rows,
+  })
+
+  it('follows the latest line by default', () => {
+    const viewport = new TranscriptViewport(() => 6)
+    viewport.addChild(staticComponent(lines) as never)
+    const rows = render(viewport, 80)
+    assert.deepEqual(rows, lines.slice(14, 20))
+    assert.equal(viewport.followLatest, true)
+    assert.equal(viewport.lineOffset, 14)
+    assert.equal(viewport.lastViewportLines, 6)
+  })
+
+  it('keeps a frozen top offset when not following the latest', () => {
+    const viewport = new TranscriptViewport(() => 6)
+    viewport.addChild(staticComponent(lines) as never)
+    viewport.followLatest = false
+    viewport.lineOffset = 3
+    const rows = render(viewport, 80)
+    assert.deepEqual(rows, lines.slice(3, 9))
+    assert.equal(viewport.lineOffset, 3)
+  })
+
+  it('clamps the offset and returns all lines when the transcript fits', () => {
+    const viewport = new TranscriptViewport(() => 60)
+    viewport.addChild(staticComponent(lines) as never)
+    viewport.followLatest = false
+    viewport.lineOffset = 10
+    const rows = render(viewport, 80)
+    assert.deepEqual(rows, lines)
+    assert.equal(viewport.lineOffset, 0)
+    assert.equal(viewport.lastTotalLines, 20)
+    assert.equal(viewport.lastViewportLines, 20)
   })
 })
 

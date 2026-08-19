@@ -37,6 +37,15 @@
     thinking: enabled
     reasoningEffort: max
 
+# The local OpenAI-compatible gateway rejects compaction requests that replay
+# assistant tool-call messages without `reasoning_content`. Route compaction
+# summarization through the DeepSeek adapter/model, which the gateway accepts
+# for these replay shapes.
+- id: compaction-basic
+  config:
+    summarizationProvider: deepseek-official
+    summarizationModel: deepseek-v4-flash
+
 - id: fs-sandbox
   config:
     cwd: !!js process.cwd()
