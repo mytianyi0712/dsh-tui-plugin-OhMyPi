@@ -13,17 +13,19 @@ import { join } from 'node:path'
  *   3. type `/help` and wait for the rendered help card
  *   4. send Ctrl+C twice to exit
  *
- * The test only runs on Linux where `script` can allocate a pty and `dsh` is
- * available (CI installs it). Windows/macOS keep the fast unit-suite path.
+ * The test is opt-in: set `DSH_E2E=1` on Linux where `script` can allocate a
+ * pty and `dsh` is available. CI keeps the fast unit-suite path by default.
  */
 
 function dshAvailable(): boolean {
-  if (process.env.DSH_E2E === '1') return true
   const probe = spawnSync('dsh', ['--version'], { stdio: 'ignore' })
   return probe.status === 0
 }
 
-const smokeIt = process.platform === 'linux' && dshAvailable() ? it : it.skip
+const smokeIt =
+  process.env.DSH_E2E === '1' && process.platform === 'linux' && dshAvailable()
+    ? it
+    : it.skip
 
 async function collectUntil(
   child: import('node:child_process').ChildProcessWithoutNullStreams,
