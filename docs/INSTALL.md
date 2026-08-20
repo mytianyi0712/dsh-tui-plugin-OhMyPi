@@ -8,13 +8,13 @@
 全局安装本地 tarball 时，包内的 dsh 宿主 peer 依赖已标记为 optional，npm 11 可以继续完成依赖解析，不会因该 peer 图在 Arborist 中触发 `null.children` 崩溃。
 
 ```sh
-npm install --global ./dsh-omp-tui-0.2.1.tgz
+npm install --global ./dsh-omp-tui-0.2.3.tgz
 ```
 
 随后安装官方 dsh（若尚未安装），再运行启动器：
 
 ```sh
-npm install --global @deepseek-ai/dsh@0.1.0-rc.6
+npm install --global @deepseek-ai/dsh@0.1.0-rc.8
 omdsh
 ```
 
@@ -26,7 +26,7 @@ omdsh
 |---|---|
 | Node.js | `^22.19.0` 或 `>=24.0.0` |
 | pnpm | `11.7.0` 或兼容的 pnpm 11 |
-| dsh | `0.1.0-rc.6` |
+| dsh | `0.1.0-rc.8` |
 | 终端 | 支持 truecolor；Nerd Font 可获得完整图标显示 |
 
 当前 dsh 仍处于 developer preview，升级 dsh 可能包含兼容性破坏变更。首次安装建议固定 dsh 版本和插件 release tag。
@@ -40,8 +40,8 @@ omdsh
 npm install --global pnpm@11.7.0
 # 或：corepack enable
 
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
-  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.1/dsh-omp-tui-0.2.1.tgz
+npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add \
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.3/dsh-omp-tui-0.2.3.tgz
 ```
 
 tarball 已经包含构建后的 `lib/`，安装时不需要在用户机器上编译项目，也不会执行 Git 依赖的 `prepare` 构建流程。
@@ -51,9 +51,9 @@ tarball 已经包含构建后的 `lib/`，安装时不需要在用户机器上�
 Release 尚未创建或需要安装某个提交时，可以直接安装 Git 仓库。Git 依赖包含 `prepare` 构建脚本；pnpm 11 默认会阻止依赖构建脚本，因此必须显式允许本项目构建：
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
+npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add \
   --allow-build=dsh-omp-tui \
-  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.2.1
+  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.2.3
 ```
 
 不要省略 `--allow-build=dsh-omp-tui`。如果 pnpm 已打印了 `allowBuilds` 建议，也可以按提示将该精确包名写入 `~/.config/pnpm/rc` 或 profile 的 `pnpm-workspace.yaml` 后重试。
@@ -61,7 +61,7 @@ npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
 固定 tag 比直接使用 `#main` 安全、可复现；开发测试才使用：
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
+npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add \
   --allow-build=dsh-omp-tui \
   github:mytianyi0712/dsh-tui-plugin-OhMyPi#main
 ```
@@ -71,14 +71,14 @@ npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
 如果使用 `npx`：
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 --profile tui
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 --profile tui --resume <session-id>
+npx --yes @deepseek-ai/dsh@0.1.0-rc.8 --profile tui
+npx --yes @deepseek-ai/dsh@0.1.0-rc.8 --profile tui --resume <session-id>
 ```
 
 也可以安装 dsh launcher 后直接使用 `dsh`：
 
 ```sh
-npm install --global @deepseek-ai/dsh@0.1.0-rc.6
+npm install --global @deepseek-ai/dsh@0.1.0-rc.8
 dsh --profile tui
 ```
 
@@ -125,7 +125,7 @@ export DEEPSEEK_BASE_URL='http://localhost:3000/v1'
 $env:DEEPSEEK_BASE_URL = 'http://localhost:3000/v1'
 ```
 
-`cordis.patch.yml` 当前默认 agent 为 `deepseek-official/deepseek-v4-pro`。启动后可以用 `/model` 选择并持久化 provider、model 和 reasoning effort。
+`cordis.patch.yml` 当前默认 agent 为 `deepseek-official/deepseek-v4-flash`。启动后可以用 `/model` 选择并持久化 provider、model 和 reasoning effort。
 
 ## 升级
 
@@ -133,7 +133,7 @@ $env:DEEPSEEK_BASE_URL = 'http://localhost:3000/v1'
 
 ```sh
 dsh plugin --profile tui add \
-  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.1/dsh-omp-tui-0.2.1.tgz
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.3/dsh-omp-tui-0.2.3.tgz
 ```
 
 若当前依赖跟踪的是 `main`，可以更新 Git 依赖：
@@ -167,13 +167,13 @@ pnpm run check
 pnpm run prepare
 
 # dsh 会把相对路径按调用目录解析；link 适合持续开发
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add link:.
+npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add link:.
 ```
 
 修改源码后运行 `pnpm run prepare`，link profile 会立即使用新的 `lib/`。需要模拟发布拷贝时使用：
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add file:.
+npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add file:.
 ```
 
 ## 微信桥（WeChat iLink）
@@ -217,3 +217,5 @@ Git 安装会从源码执行 `prepare`，这是 pnpm 的供应链保护行为，
 ### Windows 路径
 
 PowerShell 使用上面的 `$env:...` 语法；Git Bash 可直接运行 `npx`、`pnpm` 和 dsh 命令。路径包含空格时用引号包住完整路径。
+
+

@@ -2530,7 +2530,15 @@ export class Tui extends Service {
         ui.requestRender()
         return
       }
-      const execution = await ctx.commands.execute(current, line, new AbortController().signal)
+      // dsh rc8 added an `images` parameter to commands.execute. Pass an empty
+      // image batch so the same source compiles and runs against rc6 and rc8.
+      const executeCommand = ctx.commands.execute as unknown as (
+        agent: Agent,
+        line: string,
+        images: readonly unknown[],
+        signal: AbortSignal,
+      ) => ReturnType<typeof ctx.commands.execute>
+      const execution = await executeCommand(current, line, [], new AbortController().signal)
       if (execution === undefined) {
         appendNotice(t('noticeUnknownCommand', {
           name: line.slice(1, line.indexOf(' ') === -1 ? undefined : line.indexOf(' ')),

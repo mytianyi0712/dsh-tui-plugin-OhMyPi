@@ -98,6 +98,11 @@ describe('transcript components respect the render width', () => {
     assert.deepEqual(render(search, 48), ['', ' Web Search', '   dsh performance'])
   })
 
+  it('falls back to Unknown for an empty tool name', () => {
+    const empty = new ToolCardComponent('', '{}', 6, palette)
+    assert.deepEqual(render(empty, 48), ['', ' Unknown', '   {}'])
+  })
+
   it('shows path or description for read/write/edit/run_code tools', () => {
     const read = new ToolCardComponent('read', JSON.stringify({ file_path: 'src/a.ts' }), 6, palette)
     assert.deepEqual(render(read, 48), ['', ' Read', '   src/a.ts'])

@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { ConversationWriteGate } from '../src/session-persistence.ts'
+import { Session, SessionId, SESSION_FORMAT_VERSION, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { ConversationWriteGate, repairLegacyToolEvents } from '../src/session-persistence.ts'
 
 function event(seq: number, type: string): SessionEvent {
   return { seq, time: seq, type, data: {} } as SessionEvent
@@ -41,5 +41,50 @@ describe('conversation-gated persistence', () => {
     gate.drop(id)
     const write = gate.stage(id, [event(1, 'turn/start')], true)
     assert.deepEqual(write?.events.map(item => item.seq), [1])
+  })
+
+  it('repairs legacy empty tool call ids so a stored session can be restored', () => {
+    const id = SessionId('repair-empty-tool-call')
+    const events = [
+      {
+        type: 'tool/call',
+        seq: 0,
+        time: 0,
+        data: { turn: 0, step: 0, callId: '', name: '', arguments: '' },
+      },
+      {
+        type: 'tool/result',
+        seq: 1,
+        time: 1,
+        data: {
+          turn: 0,
+          step: 0,
+          message: {
+            id: 'm1',
+            role: 'user',
+            source: { kind: 'tool', callId: '' },
+            content: [{ type: 'tool-result', toolCallId: '', content: [{ type: 'text', text: 'ok' }] }],
+          },
+        },
+        surfaceOp: 'append',
+        sourceEventSeqs: [0],
+      },
+    ] as unknown as SessionEvent[]
+
+    const repaired = repairLegacyToolEvents(events) as SessionEvent[]
+    const session = Session.fromRestore(id, repaired, {
+      version: SESSION_FORMAT_VERSION,
+      id,
+      createdAt: 0,
+    })
+
+    assert.equal(session.events.length, 3) // tool/call + tool/result + session/end-seed
+    const call = session.events[0] as { data: { callId: string; name: string; arguments: string } }
+    assert.equal(call.data.callId, 'call-0')
+    assert.equal(call.data.name, 'unknown')
+    assert.equal(call.data.arguments, '{}')
+    const result = session.events[1] as { data: { message: { source: { callId: string }; content: [{ toolCallId: string }] } } }
+    assert.equal(result.data.message.source.callId, 'call-0')
+    assert.equal(result.data.message.content[0].toolCallId, 'call-0')
   })
 })

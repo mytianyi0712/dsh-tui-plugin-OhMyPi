@@ -1,5 +1,13 @@
 # dsh-omp-tui
 
+### v0.2.3 (2026-08-20)
+- 升级 dsh 宿主依赖与开发依赖至 `0.1.0-rc.8`
+- 适配 rc8 `commands.execute(agent, line, images, signal)` 新签名，TUI 与微信命令路径统一传入空图片批次
+- 移除失效的 dsh-llm pnpm patch，改为 TUI 侧 `llm/stream` 流式消毒器：空 `tool-call-delta`/`block-end` 的 `id`/`name` 在进入 BlockAssembler 前替换为 `call-<index>`/`unknown`
+- 在 JSONL backend 读写边界修复历史异常工具调用：`tool/call`、`tool/result`、`assistant/message` 中空 `callId`/`name`/`arguments` 规范化，使存在空工具 id 的存量会话可恢复
+- 工具卡空名称显示回退为 `Unknown`
+- 新增回归测试：空工具 id 损坏会话可 `Session.fromRestore` 恢复；空工具名工具卡回退渲染
+
 ### v0.2.2 (2026-08-20)
 - 修复上下文压缩进度提示仅 5s 瞬时消失：`compaction/start` 持久经 `indicator` 显示 `上下文压缩中…` 直至 `compaction/end`，与 `running` 旋钮互斥
 - 修复压缩后插入的上下文卡片无法展开：`ContextCard` 接入 `Ctrl+O` 显隐循环，截断提示持久化
@@ -107,7 +115,7 @@ OMP 风格的 DeepSeek Harness（dsh）终端界面。它是一个独立的 prof
 |---|---|
 | Node.js | `^22.19.0` 或 `>=24.0.0` |
 | pnpm | `11.7.0` 或兼容的 pnpm 11 |
-| dsh | `0.1.0-rc.6` |
+| dsh | `0.1.0-rc.8` |
 | 终端 | 推荐支持 truecolor；Nerd Font 可获得完整图标显示 |
 
 当前 dsh 仍处于 developer preview。首次安装建议固定 dsh 版本和插件 release tag。
@@ -123,8 +131,8 @@ npm install --global pnpm@11.7.0
 然后安装当前 release tarball：
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
-  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.1.3/dsh-omp-tui-0.1.3.tgz
+npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add \
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.3/dsh-omp-tui-0.2.3.tgz
 ```
 
 tarball 已包含构建后的 `lib/`，用户机器无需编译本项目。
@@ -134,9 +142,9 @@ tarball 已包含构建后的 `lib/`，用户机器无需编译本项目。
 Git 安装会执行本项目的 `prepare` 构建。pnpm 11 默认阻止依赖构建脚本，因此必须显式允许本包：
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
+npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add \
   --allow-build=dsh-omp-tui \
-  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.1.3
+  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.2.3
 ```
 
 固定 tag 比直接使用 `#main` 更容易复现。完整的升级、卸载和安装排障说明见 [`docs/INSTALL.md`](docs/INSTALL.md)。
@@ -144,8 +152,8 @@ npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add \
 如果希望直接使用 `omdsh` 启动器，也可以全局安装本地 tarball；包内的 dsh 宿主 peer 依赖为 optional，npm 11 不会因 peer 图触发 Arborist 的 `null.children` 崩溃：
 
 ```sh
-npm install --global ./dsh-omp-tui-0.2.1.tgz
-npm install --global @deepseek-ai/dsh@0.1.0-rc.6
+npm install --global ./dsh-omp-tui-0.2.3.tgz
+npm install --global @deepseek-ai/dsh@0.1.0-rc.8
 omdsh
 ```
 
@@ -157,9 +165,9 @@ omdsh
 
 ```sh
 # 使用 npx
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 --profile tui
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 --profile tui --session my-id
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 --profile tui --resume <session-id>
+npx --yes @deepseek-ai/dsh@0.1.0-rc.8 --profile tui
+npx --yes @deepseek-ai/dsh@0.1.0-rc.8 --profile tui --session my-id
+npx --yes @deepseek-ai/dsh@0.1.0-rc.8 --profile tui --resume <session-id>
 
 # 已安装 dsh launcher 后
 dsh --profile tui
@@ -326,7 +334,7 @@ node --experimental-transform-types scripts/perf-probe.ts
 测试使用 Node 原生 `node:test` 运行 `.ts` 文件，不依赖兄弟 harness checkout。修改源码后重新运行 `pnpm run prepare`，再使用 `link:` profile 验证：
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.0-rc.6 plugin --profile tui add link:.
+npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add link:.
 ```
 
 dsh 仍处于 rc 阶段。上游接口变更时，先更新 [`docs/contracts.md`](docs/contracts.md)，再同步代码、依赖版本，并运行测试与 `dsh --profile tui` 实机 smoke。
@@ -356,3 +364,5 @@ docs/assets/            README 使用的实机截图
 ## 许可
 
 BSD-3-Clause。`patches/@earendil-works__pi-tui@0.80.7.patch` vendored from `turtle1999/turtle-ui`（BSD-3），完整声明见 [`patches/NOTICE.md`](patches/NOTICE.md)。
+
+

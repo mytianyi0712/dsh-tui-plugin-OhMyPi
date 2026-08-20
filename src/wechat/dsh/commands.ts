@@ -25,6 +25,16 @@ import { getTuiForegroundControl, type TuiForegroundControl } from './tui-contro
 /** Pending model picker: a bare-number reply selects by index. */
 let pendingModelPicker: { at: number; ids: string[] } | null = null
 
+/** dsh rc8 added an `images` parameter to commands.execute; pass an empty batch. */
+function executeCommand(ctx: Context, agent: Agent, line: string, signal: AbortSignal) {
+  return (ctx.commands.execute as unknown as (
+    agent: Agent,
+    line: string,
+    images: readonly unknown[],
+    signal: AbortSignal,
+  ) => ReturnType<typeof ctx.commands.execute>)(agent, line, [], signal)
+}
+
 const MODEL_PICKER_TTL_MS = 10 * 60 * 1000
 
 /** 读取 TUI 前台控制；无 TUI 或未挂载时返回 undefined。 */
@@ -180,7 +190,7 @@ async function runCommand(ctx: Context, account: Account, userId: string, line: 
     return
   }
   try {
-    const execution = await ctx.commands.execute(agent, `/dsh-${line}`, new AbortController().signal)
+    const execution = await executeCommand(ctx, agent, `/dsh-${line}`, new AbortController().signal)
     if (execution?.result.text) {
       await safeSend(account, userId, execution.result.text)
     }
@@ -364,7 +374,7 @@ async function cmdNew(_args: string, inv: CommandInvocation, ctx: Context): Prom
 
 async function cmdCompress(_args: string, inv: CommandInvocation, ctx: Context): Promise<CommandResult> {
   try {
-    const execution = await ctx.commands.execute(inv.agent, '/compact', inv.signal)
+    const execution = await executeCommand(ctx, inv.agent, '/compact', inv.signal)
     if (execution?.result.kind === 'error') {
       return { kind: 'error', text: `❌ 压缩失败: ${execution.result.text}` }
     }

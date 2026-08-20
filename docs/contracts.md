@@ -1,9 +1,9 @@
 # dsh-omp-tui 合约速查表（contracts.md）
 
-> dsh 0.1.0-rc.6 唯一真相源。类型文本逐字引自 npm 安装包
+> dsh 0.1.0-rc.8 唯一真相源。类型文本逐字引自 npm 安装包
 > `@deepseek-ai/*/lib/types/*.d.ts`。本文件是 TUI bundle 消费 harness 服务的地图；
 > 上游接口变更时先更新本表再改代码。
-> 包根：`$PKG = C:/Users/mytianyi/AppData/Local/npm-cache/_npx/1e7f6d9597241db0/node_modules/@deepseek-ai`
+> 包根：`node_modules/@deepseek-ai`（本仓库 pnpm 安装）与全局 dsh 安装目录中的 `node_modules/@deepseek-ai`
 
 ---
 
@@ -19,7 +19,7 @@ export interface SessionEventMap {
   'step/end': { turn: number; step: number };
   'user/message': UserMessage;           // 直接人类提示 / 注入上下文 / goal 续轮；data.source 区分
   'assistant/chunk': { turn: number; step: number; chunk: StreamChunk };
-  'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage };
+  'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true };
   'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string };
   'tool/result': { turn: number; step: number; message: ToolResultMessage; error?: { name: string; code: string }; meta?: JsonValue };
   'todo/write': { todos: TodoItem[] };   // 整表快照，后写覆盖；仅 UI 状态，不进派生历史
@@ -31,6 +31,8 @@ export interface SessionEventMap {
 ```
 
 插件扩展方式：`declare module '@deepseek-ai/dsh-session/types' { interface SessionEventMap { ... } }`。
+
+rc8 已知新事件（log-only，TUI 默认忽略）：`team/member`、`team/message/delivered`、`team/message/queued`、`team/task`。
 
 ### 1.2 TurnEndReason
 
@@ -265,8 +267,10 @@ export type StreamChunk =
   | { type: 'tool-call-delta'; index: number; id: CallId; name?: string; argumentsDelta: string }
   | { type: 'block-end'; index: number; block: ContentBlock }
   | { type: 'usage'; usage: TokenUsage }
-  | { type: 'finish'; reason: FinishReason; replayState?: unknown };
+  | { type: 'finish'; reason: FinishReason; replayState?: ReplayEnvelope };
 ```
+
+`ReplayEnvelope = { response: unknown; blocks?: readonly unknown[] }`：适配器私有重放状态，按块位置与 `BlockAssembler.blocks()` 同步裁剪；长度不匹配则整体丢弃。
 
 ### 5.4 用量与失败
 
@@ -294,7 +298,7 @@ credentials、llm-pi-ai、session-persistence-jsonl（root=`dshHomePath('session
 session-query-sqlite（path `:memory:`、openAt `never`）、session-projection、session-telemetry-otel、
 subprocess、sandbox、sandbox-policy（mode `workspace-write`，workspaceRoot=process.cwd()）、
 bash-sandbox（win32 禁用）、pwsh-sandbox（仅 win32）、approval、permission、shell-env、
-tool-bash（win32 禁用）、tool-pwsh（仅 win32）、tool-jobs、fs-observation-policy、tool-fs、
+tool-bash（win32 禁用）、tool-pwsh（仅 win32）、tool-pwsh-persistent（仅 win32）、tool-jobs、fs-observation-policy、tool-fs、
 tool-fs-search、agent-instructions、skill、skill-filesystem、skill-badge（disabled）、tool-skill、
 commands、command-feedback、goal、goal-round-driver、command-goal、plan-mode、token-meter、
 compaction-basic、command-compact、subagent 三件套、tool-subagent-control(+list-agents)、
@@ -307,7 +311,7 @@ tool-todo、tool-goal、tool-ralph、tool-str-replace-editor、repeat-tool-remin
 
 ---
 
-## 6. 会话持久化/投影/查询（scout 汇总，rc.6 逐字）
+## 6. 会话持久化/投影/查询（scout 汇总，rc.8 逐字）
 
 ### 6.1 SessionPersistence（`ctx.sessionPersistence`，抽象服务）
 
@@ -389,7 +393,7 @@ class CommandRuntime extends Service {
   register(definition: CommandDefinition): () => void;   // { name, description, input?, recordInput?, handler }
   list(agent: Agent): readonly CommandDescriptor[];
   find(agent: Agent, name): CommandDefinition | undefined;
-  execute(agent, line, signal): Promise<CommandExecution | undefined>;  // 语法/未知名 → undefined 不记日志
+  execute(agent, line, images, signal): Promise<CommandExecution | undefined>;  // rc8 新增 images: base64 图片批次；语法/未知名 → undefined 不记日志
 }
 parseCommand(line: string): ParsedCommand | undefined;
 // SessionEvent：'command/run' { commandId, name, args?, source } / 'command/done' { commandId, kind, text?, sourceEventSeq? }
@@ -484,7 +488,7 @@ interface Config {
 - `tools`：`{ mode?: 'native'|'code'|'both' (default native), maxParallelSubCalls?: number (default 10) }`
 - `system-prompt`：`{ persona?, toolOrder?, includeHarnessIdentity?, includeRuntimeContext? }`
 - `fs-sandbox`：`{ cwd }`（workspace 根）
-- `llm-deepseek`：`{ apiKeyEnv?, baseURL?, thinking?, reasoningEffort? }`（settings 分节 llm-deepseek 可热覆盖 baseURL）
+- `llm-deepseek`：`{ apiKeyEnv?, baseURL?, thinking?, reasoningEffort?, maxRequestImageBytes? }`；`reasoningEffort` 支持 `off | low | high | max`；`models[]` 可声明 `inputModalities: ['text'] | ['text','image']`（settings 分节 llm-deepseek 可热覆盖）
 - `dsh-terminal`：无配置；**TUI 不直调**（owner 绑定，供 dsh-tool-terminal 消费）
 
 ---
@@ -498,6 +502,6 @@ interface Config {
 5. **提交输入**：`agent.followup(createUserMessage({ content, source: { kind: 'user' } }))`。
 6. **中断**：`agent.cancel({ kind: 'user' })`。
 7. **提问**：`ctx.userQuestions.registerProvider(provider)`；对话框完成后 resolve `AskUserQuestionAnswer`。
-8. **命令**：`ctx.commands.execute(agent, line, signal)`；`/help` 列表用 `ctx.commands.list(agent)`。
+8. **命令**：`ctx.commands.execute(agent, line, images, signal)`（rc8 起必须传 `images`，TUI 当前传 `[]`）；`/help` 列表用 `ctx.commands.list(agent)`。
 9. **模型选择**：`installModelSelection(agent.ctx, selectionRef)` + `agentDefaultModel.currentSelection()/saveSelection()`。
 10. **投影消费**：`ctx.sessionProjections.snapshot(session)` 或 `sessionProjectionCache.cachedSnapshot(header)`（列表零 I/O）。

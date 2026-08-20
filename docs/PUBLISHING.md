@@ -70,7 +70,7 @@ OMP-styled terminal UI profile bundle for DeepSeek Harness (dsh)
 - 开启 Issues；保留 Discussions 作为使用问题和设计讨论渠道。
 - 在 **Settings → Security → Security policy** 启用 GitHub Private Vulnerability Reporting。
 - 保持 Actions 可运行；本仓库的 release workflow 需要 `contents: write` 来创建 release 和上传 tarball。
-- 默认分支使用 `main`，release tag 使用 `v<package.version>`，例如 `v0.1.1`。
+- 默认分支使用 `main`，release tag 使用 `v<package.version>`，例如 `v0.2.3`。
 - 保护 `main`，至少要求 CI 通过后再合并。
 
 仓库已提供：
@@ -109,13 +109,13 @@ pnpm pack --dry-run
 
 ```sh
 git add .
-git commit -m "chore: prepare v0.1.1 release"
+git commit -m "chore: prepare v0.2.3 release"
 git push origin main
-git tag -a v0.1.1 -m "Release v0.1.1"
-git push origin v0.1.1
+git tag -a v0.2.3 -m "Release v0.2.3"
+git push origin v0.2.3
 ```
 
-`release.yml` 会在 tag 推送后重新安装依赖、跑类型检查和测试、构建 bundle、生成 `dsh-omp-tui-0.1.1.tgz`，并将其作为 GitHub Release asset 上传。用户优先从该 tarball 安装，避免在用户机器执行 Git 依赖构建脚本。
+`release.yml` 会在 tag 推送后重新安装依赖、跑类型检查和测试、构建 bundle、生成 `dsh-omp-tui-0.2.3.tgz`，并将其作为 GitHub Release asset 上传。用户优先从该 tarball 安装，避免在用户机器执行 Git 依赖构建脚本。
 
 ## 5. 后续版本
 
@@ -140,3 +140,5 @@ npm publish --access public
 `package.json` 已设置 `publishConfig.access = public`。发布前必须确认包名 `dsh-omp-tui` 仍可用、repository/homepage/bugs 已指向真实仓库，并检查 `pnpm pack --dry-run` 内容。
 
 npm 发布不会替代 GitHub 的 `dsh-plugin` topic；topic 仍然是官方 README 指定的插件发现方式。
+
+

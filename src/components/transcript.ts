@@ -425,7 +425,8 @@ export class AssistantStreamController {
 }
 
 function toolLabel(name: string): string {
-  return name
+  const safeName = name.trim() === '' ? 'unknown' : name
+  return safeName
     .replace(/[-_]+/g, ' ')
     .replace(/\b\w/g, letter => letter.toUpperCase())
 }

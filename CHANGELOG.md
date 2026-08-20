@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.3] - 2026-08-20
+
+- 升级 dsh 宿主依赖与开发依赖到 `0.1.0-rc.8`：适配 `commands.execute(agent, line, images, signal)` 新签名，TUI 与微信命令路径统一传入空图片批次
+- 移除失效的 `@deepseek-ai/dsh-llm` pnpm patch（原 patch 只改 `lib/types/assembler.js`，实际主入口 `lib/index.js` 未被修复）；改为 TUI 侧 `llm/stream` 流式消毒器，在 `tool-call-delta` / `block-end` 进入 BlockAssembler 前把空 `id`/`name` 替换为 `call-<index>` / `unknown`
+- 在会话持久化读写边界修复历史异常工具调用：包装 JSONL backend 的 `appendBatch` 与 `loadStored`，对 `tool/call`、`tool/result`、`assistant/message` 中的空 `callId`/`name`/`arguments` 做规范化，使存在空工具 id 的存量会话可被恢复
+- 工具卡空名称显示回退为 `Unknown`，不再出现空白标题
+- 新增回归测试：空工具 id 的损坏会话可 `Session.fromRestore` 恢复；空工具名工具卡回退渲染
+
 ## [0.2.2] - 2026-08-20
 
 - 修复上下文压缩进度提示仅 5s 瞬时消失：`compaction/start` 置 `isCompacting` 并经 `indicator` 持久显示 `上下文压缩中…`，`compaction/end` 清除，与 `running` 旋钮互斥，且在 `rebuildTranscript` 时按事件重建
