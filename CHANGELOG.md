@@ -1,7 +1,10 @@
 # Changelog
 
-## [0.2.2] - 2026-08-19
+## [0.2.2] - 2026-08-20
 
+- 修复上下文压缩进度提示仅 5s 瞬时消失：`compaction/start` 置 `isCompacting` 并经 `indicator` 持久显示 `上下文压缩中…`，`compaction/end` 清除，与 `running` 旋钮互斥，且在 `rebuildTranscript` 时按事件重建
+- 修复压缩后插入的上下文卡片无法展开：`ContextCardComponent` 增加 `collapsed/expanded` 状态并接入 `Ctrl+O` 全局显隐循环，`maxOutputLines` 截断时持久提示 `… +N lines (Ctrl+O to expand)`
+- 修复压缩后上下文用量仍显示旧长度：`compaction/end` 强制 `contextUsageCache.measuredAt=0` 触发 `tokenMeter.measure` 立即重算，`rebuildTranscript` 重建时同步 `isCompacting` 状态
 - 修复超长会话恢复失败：`BlockAssembler` 空 `tool-call` 覆盖导致 `tool/result callId:""` 持久化后 `Session.fromRestore` 拒识，补丁忽略空 `id/name` 并回退 `block-end`，`repair-sessions.py` 按 `(turn,step)` 回填并重建多帧 `zstd`（`tui-695e` 86 帧、`tui-edaa` 截断至 233797 事件），`79` 会话校验 0 fail
 - 修复非官方接入点 `/compact` 400：`pi-ai openai-completions isDeepSeek` 扩展至 `deepseek-official` 与 `model.id`，`dsh-compaction-basic summarizeWithLlm` 增加 `configured/latest/agentTarget` 回退，`cordis.patch.yml` 保留 `deepseek-official/deepseek-v4-flash` 并提升 `AGENT_READY_TIMEOUT 10s→30s`
 - 将 `AGENT_READY_TIMEOUT_MS` 提升至 `30s` 并重建多帧存储以避免 `persistence.list()` 首帧 8k 未命中导致的启动超时

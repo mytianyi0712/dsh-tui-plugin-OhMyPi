@@ -554,25 +554,48 @@ export class Tui extends Service {
     let currentScheme: TerminalColorScheme = 'dark'
     let spinnerTimer: NodeJS.Timeout | undefined
     let spinnerIndex = 0
+    let isCompacting = false
+    const refreshCompacting = (): void => {
+      if (isCompacting) {
+        indicatorValue.set(palette.warning(` ${t('noticeCompacting')} `))
+      } else if (spinnerTimer === undefined) {
+        indicatorValue.set(undefined)
+      }
+      updateInputPrompt()
+      ui.requestRender()
+    }
     let estimatedContextWindow = DEFAULT_CONTEXT_WINDOW
     let contextEstimateRevision = 0
 
     const startSpinner = (): void => {
-      if (spinnerTimer !== undefined) return
       spinnerIndex = 0
       spinnerTimer = setInterval(() => {
         spinnerIndex = (spinnerIndex + 1) % SPINNER_FRAMES.length
-        indicatorValue.set(palette.bold(palette.accent(SPINNER_FRAMES[spinnerIndex] ?? '')))
+        if (isCompacting) {
+          indicatorValue.set(palette.warning(` ${t('noticeCompacting')} `))
+        } else {
+          indicatorValue.set(palette.bold(palette.accent(SPINNER_FRAMES[spinnerIndex] ?? '')))
+        }
         updateInputPrompt()
         ui.requestRender()
       }, SPINNER_INTERVAL_MS)
+      if (isCompacting) {
+        indicatorValue.set(palette.warning(` ${t('noticeCompacting')} `))
+      } else {
+        indicatorValue.set(palette.bold(palette.accent(SPINNER_FRAMES[spinnerIndex] ?? '')))
+      }
+      updateInputPrompt()
     }
 
     const stopSpinner = (): void => {
       if (spinnerTimer === undefined) return
       clearInterval(spinnerTimer)
       spinnerTimer = undefined
-      indicatorValue.set(undefined)
+      if (isCompacting) {
+        indicatorValue.set(palette.warning(` ${t('noticeCompacting')} `))
+      } else {
+        indicatorValue.set(undefined)
+      }
       updateInputPrompt()
     }
 
@@ -698,16 +721,15 @@ export class Tui extends Service {
     const assistantStream = new AssistantStreamController(chat, palette, mdTheme)
     const toolCards = new Map<CallId, ToolCardComponent>()
     const allToolCards = new Set<ToolCardComponent>()
+    const contextCards = new Set<ContextCardComponent>()
     let toolsVisibility: ToolCardVisibility = 'collapsed'
     let live = false
     let header: HeaderComponent | undefined
-    /** Transcript window: only the most recent events are rebuilt eagerly. */
     const TRANSCRIPT_RECENT_LIMIT = 200
     const TRANSCRIPT_LOAD_STEP = 200
     let transcriptStart = 0
     /** Invalidates chunked rebuilds that are superseded by a newer window. */
     let transcriptBuildGeneration = 0
-
     const renderEvent = (event: SessionEvent, syncStatus = true, notify = true): void => {
       switch (event.type) {
         case 'user/message': {
@@ -717,7 +739,10 @@ export class Tui extends Service {
           chat.addChild(new Spacer(1))
           if (source.kind !== 'user') {
             const label = source.kind === 'plugin' ? source.plugin : source.kind
-            chat.addChild(new ContextCardComponent(label, text, maxToolOutputLines, palette))
+            const card = new ContextCardComponent(label, text, maxToolOutputLines, palette)
+            card.setVisibility(toolsVisibility)
+            contextCards.add(card)
+            chat.addChild(card)
           } else {
             chat.addChild(new UserMessageComponent(text, palette, mdTheme))
           }
@@ -768,9 +793,16 @@ export class Tui extends Service {
           }
           break
         case 'compaction/start':
+          isCompacting = true
+          refreshCompacting()
           if (live && notify) appendNotice(t('noticeCompacting'), 'info')
           break
         case 'compaction/end':
+          isCompacting = false
+          refreshCompacting()
+          // Force token counts to re-measure: the compressed history is
+          // dramatically smaller than the shadowed range.
+          contextUsageCache.measuredAt = 0
           if (live && notify) {
             appendNotice(
               event.data.error === undefined ? t('noticeCompactionDone') : t('noticeCompactionFailed', { error: event.data.error }),
@@ -807,6 +839,7 @@ export class Tui extends Service {
       assistantStream.end()
       toolCards.clear()
       allToolCards.clear()
+      contextCards.clear()
       chat.followLatest = anchor === 'bottom'
       chat.lineOffset = 0
       chat.clear()
@@ -841,6 +874,13 @@ export class Tui extends Service {
       tokenTotals = { inputTokens: 0, outputTokens: 0 }
       contextUsageCache.measuredAt = 0
       const events = agent!.session.events
+      // Re-derive persistent compacting flag when rebuilding a truncated window.
+      isCompacting = false
+      for (const ev of events) {
+        if (ev.type === 'compaction/start') isCompacting = true
+        else if (ev.type === 'compaction/end') isCompacting = false
+      }
+      refreshCompacting()
       transcriptStart = Math.max(0, events.length - TRANSCRIPT_RECENT_LIMIT)
       renderTranscriptWindow(transcriptStart, 'bottom')
     }
@@ -894,6 +934,7 @@ export class Tui extends Service {
       toolsVisibility = toolsVisibility === 'collapsed' ? 'expanded'
         : toolsVisibility === 'expanded' ? 'hidden' : 'collapsed'
       for (const card of allToolCards) card.setVisibility(toolsVisibility)
+      for (const card of contextCards) card.setVisibility(toolsVisibility)
       appendNotice(t('noticeToolCards', { visibility: toolsVisibility }), 'info')
     }
 

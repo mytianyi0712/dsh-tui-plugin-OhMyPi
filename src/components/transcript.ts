@@ -663,33 +663,47 @@ export type ToolCardVisibility = 'hidden' | 'collapsed' | 'expanded'
  * be mistaken for the assistant's unframed italic reasoning prose.
  */
 export class ContextCardComponent implements Component {
-  private readonly body: Text
+  private readonly fullLines: string[]
   private readonly title: string
+  private visibility: ToolCardVisibility = 'collapsed'
   private renderCache: RenderCache | undefined
 
   constructor(
     label: string,
     text: string,
-    maxOutputLines: number,
+    private readonly maxOutputLines: number,
     private readonly palette: Palette,
   ) {
-    const lines = displayText(text).split('\n')
-    const visible = lines.length > maxOutputLines
-      ? [...lines.slice(0, maxOutputLines), `… +${lines.length - maxOutputLines} lines`]
-      : lines
+    this.fullLines = displayText(text).split('\n')
     this.title = `${palette.context('Injected context')} ${palette.dim(`· ${displayText(label)}`)}`
-    this.body = new Text(visible.map((line, index) =>
-      index >= maxOutputLines ? palette.dim(line) : palette.muted(line)).join('\n'), 0, 0)
+  }
+
+  setVisibility(visibility: ToolCardVisibility): void {
+    if (this.visibility === visibility) return
+    this.visibility = visibility
+    this.renderCache = undefined
   }
 
   invalidate(): void {
     this.renderCache = undefined
-    this.body.invalidate?.()
   }
 
   render(width: number): string[] {
-    const cached = cachedRender(this.renderCache, String(width), () => {
-      const rows = this.body.render(Math.max(1, width - 4))
+    const cacheKey = `${width}|${this.visibility}`
+    const cached = cachedRender(this.renderCache, cacheKey, () => {
+      let linesToRender: string[]
+      let truncated = false
+      if (this.visibility === 'hidden') return []
+      if (this.visibility === 'collapsed' && this.fullLines.length > this.maxOutputLines) {
+        const hidden = this.fullLines.length - this.maxOutputLines
+        linesToRender = [...this.fullLines.slice(0, this.maxOutputLines), `… +${hidden} lines (Ctrl+O to expand)`]
+        truncated = true
+      } else {
+        linesToRender = this.fullLines
+      }
+      const body = new Text(linesToRender.map((line, index) =>
+        truncated && index >= this.maxOutputLines ? this.palette.dim(line) : this.palette.muted(line)).join('\n'), 0, 0)
+      const rows = body.render(Math.max(1, width - 4))
       return frameBlock(rows, width, this.palette.borderMuted, this.palette.toolPendingBg, this.title)
     })
     this.renderCache = cached.cache

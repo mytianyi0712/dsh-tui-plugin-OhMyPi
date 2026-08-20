@@ -1,6 +1,9 @@
 # dsh-omp-tui
 
-### v0.2.2 (2026-08-19)
+### v0.2.2 (2026-08-20)
+- 修复上下文压缩进度提示仅 5s 瞬时消失：`compaction/start` 持久经 `indicator` 显示 `上下文压缩中…` 直至 `compaction/end`，与 `running` 旋钮互斥
+- 修复压缩后插入的上下文卡片无法展开：`ContextCard` 接入 `Ctrl+O` 显隐循环，截断提示持久化
+- 修复压缩后上下文用量仍显示旧长度：`compaction/end` 后强制重算 `tokenMeter`
 - 修复超长会话（20w+ 事件）恢复失败与 `unknown tool ""` 空 `callId` 持久化
 - 修复非官方网关（`local-oai`/`localhost:3000`）`/compact` 400，`isDeepSeek` 兼容 `deepseek-official` 与 `model.id` 并增加多提供方回退
 - 提升 `agent` 就绪超时至 30s 并修复单大帧 `zstd` 导致 `list` 首帧 8k 未命中
