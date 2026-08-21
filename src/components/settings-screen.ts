@@ -107,6 +107,22 @@ export class SettingsScreen implements Component, Focusable {
       this.moveSelection(1)
       return
     }
+    if (kb.matches(data, 'tui.select.pageUp')) {
+      this.moveSelection(-this.maxVisible)
+      return
+    }
+    if (kb.matches(data, 'tui.select.pageDown')) {
+      this.moveSelection(this.maxVisible)
+      return
+    }
+    if (matchesKey(data, 'home')) {
+      this.selectedIndex = 0
+      return
+    }
+    if (matchesKey(data, 'end')) {
+      this.selectedIndex = Math.max(0, this.items.length - 1)
+      return
+    }
     if (kb.matches(data, 'tui.select.confirm') || data === ' ') {
       const item = this.items[this.selectedIndex]
       if (item !== undefined) this.onSelect?.(item, this.getActiveTabId())

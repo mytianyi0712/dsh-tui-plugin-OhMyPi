@@ -1,6 +1,7 @@
 import {
   Input,
   getKeybindings,
+  matchesKey,
   truncateToWidth,
   visibleWidth,
   wrapTextWithAnsi,
@@ -74,6 +75,22 @@ export class ModelListDialog implements Component {
     }
     if (kb.matches(data, 'tui.select.down')) {
       this.move(1)
+      return
+    }
+    if (kb.matches(data, 'tui.select.pageUp')) {
+      this.movePage(-8)
+      return
+    }
+    if (kb.matches(data, 'tui.select.pageDown')) {
+      this.movePage(8)
+      return
+    }
+    if (matchesKey(data, 'home')) {
+      this.moveToRow(0)
+      return
+    }
+    if (matchesKey(data, 'end')) {
+      this.moveToRow(Math.max(0, this.rows.length - 1))
       return
     }
     if (kb.matches(data, 'tui.select.confirm') || data === ' ') {
@@ -153,6 +170,18 @@ export class ModelListDialog implements Component {
     this.error = undefined
     if (this.rows.length === 0) return
     this.activeIndex = (this.activeIndex + delta + this.rows.length) % this.rows.length
+    const row = this.rows[this.activeIndex]
+    if (row?.kind === 'model') this.selectedIndex = row.index
+  }
+
+  private movePage(delta: number): void {
+    this.error = undefined
+    if (this.rows.length === 0) return
+    this.moveToRow(Math.max(0, Math.min(this.rows.length - 1, this.activeIndex + delta)))
+  }
+
+  private moveToRow(index: number): void {
+    this.activeIndex = index
     const row = this.rows[this.activeIndex]
     if (row?.kind === 'model') this.selectedIndex = row.index
   }

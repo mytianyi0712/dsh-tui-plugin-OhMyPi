@@ -366,3 +366,36 @@ index 6c03aeec4148571558713e885ac7f7df18a511bc..213f47d53a36608888ca96def0a4215b
                  for (const chunk of chunks) {
                      visualLines.push({
                          logicalLine: i,
+diff --git a/dist/components/select-list.js b/dist/components/select-list.js
+index 2e9231150951c3d3f3e13ac8ae8d623f06d38d5d..5fe8abc8f0aa95cffd05871e5683d6d170912dbd 100644
+--- a/dist/components/select-list.js
++++ b/dist/components/select-list.js
+@@ -1,4 +1,5 @@
+ import { getKeybindings } from "../keybindings.js";
++import { matchesKey } from "../keys.js";
+ import { truncateToWidth, visibleWidth } from "../utils.js";
+ const DEFAULT_PRIMARY_COLUMN_WIDTH = 32;
+ const PRIMARY_COLUMN_GAP = 2;
+@@ -71,6 +71,22 @@
+         // Down arrow - wrap to top when at bottom
+         else if (kb.matches(keyData, "tui.select.down")) {
+             this.selectedIndex = this.selectedIndex === this.filteredItems.length - 1 ? 0 : this.selectedIndex + 1;
+             this.notifySelectionChange();
+         }
++        else if (kb.matches(keyData, "tui.select.pageUp")) {
++            this.selectedIndex = Math.max(0, this.selectedIndex - this.maxVisible);
++            this.notifySelectionChange();
++        }
++        else if (kb.matches(keyData, "tui.select.pageDown")) {
++            this.selectedIndex = Math.min(this.filteredItems.length - 1, this.selectedIndex + this.maxVisible);
++            this.notifySelectionChange();
++        }
++        else if (matchesKey(keyData, "home")) {
++            this.selectedIndex = 0;
++            this.notifySelectionChange();
++        }
++        else if (matchesKey(keyData, "end")) {
++            this.selectedIndex = Math.max(0, this.filteredItems.length - 1);
++            this.notifySelectionChange();
++        }
+         // Enter

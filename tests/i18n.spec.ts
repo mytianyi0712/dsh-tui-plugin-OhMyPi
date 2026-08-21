@@ -24,7 +24,8 @@ describe('translator', () => {
   it('resolves zh-CN by default and substitutes parameters', () => {
     const t = createTranslator('zh-CN')
     assert.equal(t('noticeSessionResumed', { id: 's-1' }), '会话 s-1 已恢复。')
-    assert.equal(t('helpCtrlC'), '中断当前回合')
+    assert.equal(t('helpCtrlC'), '清屏 / 中断；双击退出')
+    assert.equal(t('helpEsc'), '中断当前回合')
   })
 
   it('switches to English when requested', () => {

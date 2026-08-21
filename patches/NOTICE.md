@@ -1,7 +1,8 @@
 # Vendored patch notice
 
 `patches/@earendil-works__pi-tui@0.80.7.patch` adds `frame`/`prompt`/`setPrompt`
-support to the pi-tui Editor component.
+support to the pi-tui Editor component, and extends `SelectList` navigation
+with `PageUp`/`PageDown`/`Home`/`End`.
 
 It is vendored verbatim from [turtle1999/turtle-ui](https://github.com/turtle1999/turtle-ui)
 (upstream commit `b08ed69`, file `patches/@earendil-works__pi-tui@0.80.7.patch`),

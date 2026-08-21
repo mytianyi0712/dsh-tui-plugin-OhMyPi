@@ -7,6 +7,7 @@
 import {
   Input,
   getKeybindings,
+  matchesKey,
   truncateToWidth,
   visibleWidth,
   type Component,
@@ -87,6 +88,22 @@ export class CustomModelForm implements Component, Focusable {
     }
     if (kb.matches(data, 'tui.select.down') || kb.matches(data, 'tui.editor.cursorRight')) {
       this.move(1)
+      return
+    }
+    if (kb.matches(data, 'tui.select.pageUp')) {
+      this.move(-6)
+      return
+    }
+    if (kb.matches(data, 'tui.select.pageDown')) {
+      this.move(6)
+      return
+    }
+    if (matchesKey(data, 'home')) {
+      this.activeIndex = 0
+      return
+    }
+    if (matchesKey(data, 'end')) {
+      this.activeIndex = Math.max(0, this.fields.length - 1)
       return
     }
     if (kb.matches(data, 'tui.select.confirm') || data === ' ') {
