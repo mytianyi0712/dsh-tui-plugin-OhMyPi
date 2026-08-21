@@ -4,7 +4,7 @@
 
 | Version | Supported |
 |---|---|
-| `0.1.x` | Yes |
+| `0.2.x` | Yes |
 | Older versions | No |
 
 该插件运行在 dsh profile 中，并可能接触 dsh 为当前 workspace 提供的文件、命令和模型服务。请将插件 release tag 视为需要审查和固定的供应链输入。

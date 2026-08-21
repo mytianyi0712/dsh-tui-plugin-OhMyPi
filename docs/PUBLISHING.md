@@ -1,20 +1,10 @@
 # 发布 dsh 插件到 GitHub
 
-本项目通过标准 npm package manifest + `dsh.bundle.patch` 声明成为 dsh profile bundle。dsh 没有单独的插件市场提交步骤：用户把包安装到 profile 后，插件管理器会发现 `dsh.bundle.patch`，并自动把包加入 `dsh.profile.bundles`。
+本项目通过标准 npm package manifest + `package.json` 的 `dsh.bundle.patch` 字段（`"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`）声明成为 dsh profile bundle。dsh 没有单独的插件市场提交步骤：用户把包安装到 profile 后，插件管理器会发现该字段，并自动把包加入 `dsh.profile.bundles`。
 
-## 1. 创建空白仓库
+## 1. 确认仓库信息
 
-在 GitHub 创建一个公开仓库，例如 `dsh-omp-tui`。建议创建时不要勾选 README、License 或 `.gitignore`，因为本地仓库已经包含这些文件。
-
-仓库 URL 确定后，在本地执行：
-
-```sh
-git remote add origin https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi.git
-git branch -M main
-git push --set-upstream origin main
-```
-
-发布前必须把 `package.json` 中的以下字段补成真实仓库 URL；当前工作区没有 GitHub owner，因此不能安全地替你写入：
+发布前确认 `package.json` 的 repository / homepage / bugs 指向真实仓库；当前清单已经填写：
 
 ```json
 {
@@ -29,7 +19,7 @@ git push --set-upstream origin main
 }
 ```
 
-仓库地址已确定；发布前请确认 `package.json` 使用上面的真实 URL。
+若日后迁移仓库，必须同步更新这里、README 与 `docs/INSTALL.md` 中的下载链接。仅在新仓库首次初始化时才需要执行 `git remote add origin ...`、`git branch -M main` 和 `git push --set-upstream origin main`。
 
 ## 2. GitHub About 与 Topics
 
@@ -70,7 +60,7 @@ OMP-styled terminal UI profile bundle for DeepSeek Harness (dsh)
 - 开启 Issues；保留 Discussions 作为使用问题和设计讨论渠道。
 - 在 **Settings → Security → Security policy** 启用 GitHub Private Vulnerability Reporting。
 - 保持 Actions 可运行；本仓库的 release workflow 需要 `contents: write` 来创建 release 和上传 tarball。
-- 默认分支使用 `main`，release tag 使用 `v<package.version>`，例如 `v0.2.3`。
+- 默认分支使用 `main`，release tag 使用 `v<package.version>`，例如 `v0.2.4`。
 - 保护 `main`，至少要求 CI 通过后再合并。
 
 仓库已提供：
@@ -95,27 +85,33 @@ pnpm run prepare
 pnpm pack --dry-run
 ```
 
-`pnpm pack --dry-run` 应包含：
+`pnpm pack --dry-run` 至少应包含：
 
 - `lib/index.js`
 - `lib/startup.js`
 - `lib/prompt.js`
+- `lib/session-title.js`
+- `lib/session-persistence.js`
+- `lib/wechat/index.js`
 - `cordis.patch.yml`
+- `patches/@earendil-works__pi-tui@0.80.7.patch`
 - `patches/NOTICE.md`
 - `docs/INSTALL.md`
 - `LICENSE`
+
+发布包还会按 `package.json` 的 `files` 字段附带 `package.json`、`README.md`、`CHANGELOG.md`、`scripts/omdsh*` 和 `src/`。
 
 提交并推送版本 tag：
 
 ```sh
 git add .
-git commit -m "chore: prepare v0.2.3 release"
+git commit -m "chore: prepare v0.2.4 release"
 git push origin main
-git tag -a v0.2.3 -m "Release v0.2.3"
-git push origin v0.2.3
+git tag -a v0.2.4 -m "Release v0.2.4"
+git push origin v0.2.4
 ```
 
-`release.yml` 会在 tag 推送后重新安装依赖、跑类型检查和测试、构建 bundle、生成 `dsh-omp-tui-0.2.3.tgz`，并将其作为 GitHub Release asset 上传。用户优先从该 tarball 安装，避免在用户机器执行 Git 依赖构建脚本。
+`release.yml` 会在 tag 推送后重新安装依赖、跑类型检查和测试、构建 bundle、生成 `dsh-omp-tui-0.2.4.tgz`，并将其作为 GitHub Release asset 上传。用户优先从该 tarball 安装，避免在用户机器执行 Git 依赖构建脚本。
 
 ## 5. 后续版本
 
@@ -123,8 +119,10 @@ git push origin v0.2.3
 
 1. `package.json` 的 `version`；
 2. `CHANGELOG.md`；
-3. 需要时的 `docs/contracts.md` 和安装示例；
-4. tag `v<version>`。
+3. README 与 `docs/INSTALL.md` 中的下载链接和版本示例；
+4. 需要时的 `docs/contracts.md`；
+5. `SECURITY.md` 的 Supported versions（主版本变化时）；
+6. tag `v<version>`。
 
 先在本地运行 `pnpm run check` 和 `pnpm run prepare`，再创建 tag。不要复用已经发布过的版本号；npm 和 GitHub release 都把 name + version 当作不可变发布标识。
 

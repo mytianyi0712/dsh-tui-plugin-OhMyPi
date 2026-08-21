@@ -26,7 +26,7 @@ export interface SessionEventMap {
   'request/header': { header: EpochHeader; reason: RequestHeaderReason };
   'request/context': RequestContext;
   'session/end-seed': Record<string, never>;
-  // 插件合并扩展：dsh-agent 追加 'agent/inbox/spliced'；compaction/goal 各自追加（见 §7）
+  // 插件合并扩展：dsh-agent 追加 'agent/inbox/spliced'；compaction/goal 各自追加（见 §8）
 }
 ```
 
@@ -284,13 +284,7 @@ export interface LlmFailure { message: string; code: string; status?: number; pr
 
 ---
 
-## 6. 会话持久化/投影/查询 —（scout 章节，待补）
-
-## 7. skill/commands/token-meter/goal/compaction/system-prompt/title/reference —（scout 章节，待补）
-
-## 8. agent-loop/tools/terminal 配置 schema —（scout 章节，待补）
-
-## 9. dsh-base 默认行清单（bundle 层参考）
+## 6. dsh-base 默认行清单（bundle 层参考）
 
 `$PKG/dsh-base/cordis.patch.yml`（一行 insert）已挂载：timer、hmr、llm、session、typert 三件套、
 session-title(+llm)、user-questions、agent、agent-default-model、jobs、llm-retry、settings、
@@ -311,9 +305,9 @@ tool-todo、tool-goal、tool-ralph、tool-str-replace-editor、repeat-tool-remin
 
 ---
 
-## 6. 会话持久化/投影/查询（scout 汇总，rc.8 逐字）
+## 7. 会话持久化/投影/查询（scout 汇总，rc.8 逐字）
 
-### 6.1 SessionPersistence（`ctx.sessionPersistence`，抽象服务）
+### 7.1 SessionPersistence（`ctx.sessionPersistence`，抽象服务）
 
 ```ts
 abstract class SessionPersistence extends Service {
@@ -331,7 +325,7 @@ abstract class SessionPersistence extends Service {
 }
 ```
 
-### 6.2 SessionProjectionRegistry（`ctx.sessionProjections`）
+### 7.2 SessionProjectionRegistry（`ctx.sessionProjections`）
 
 ```ts
 interface SessionProjectionMap {}   // merge-extensible：goal/title/tokenUsage/contextPressure/contextBreakdown 等键
@@ -347,7 +341,7 @@ class SessionProjectionRegistry extends Service {
 }
 ```
 
-### 6.3 SessionProjectionCache（`ctx.sessionProjectionCache`）
+### 7.3 SessionProjectionCache（`ctx.sessionProjectionCache`）
 
 ```ts
 class SessionProjectionCache extends Service {
@@ -359,7 +353,7 @@ class SessionProjectionCache extends Service {
 // 必写点：turn/end、会话 detach。行绑定日志生命周期（createdAt+cwd 见证），ver 不匹配即弃。
 ```
 
-### 6.4 SessionQueryEngine（`ctx.sessionQuery`，抽象服务）
+### 7.4 SessionQueryEngine（`ctx.sessionQuery`，抽象服务）
 
 ```ts
 abstract class SessionQueryEngine extends Service {
@@ -384,9 +378,9 @@ abstract class SessionQueryEngine extends Service {
 
 ---
 
-## 7. 状态与能力面（scout 汇总）
+## 8. 状态与能力面（scout 汇总）
 
-### 7.1 dsh-commands（`ctx.commands`）
+### 8.1 dsh-commands（`ctx.commands`）
 
 ```ts
 class CommandRuntime extends Service {
@@ -400,16 +394,16 @@ parseCommand(line: string): ParsedCommand | undefined;
 // CommandResult: { kind:'success', text?, sourceEventSeq? } | { kind:'error', text }
 ```
 
-### 7.2 dsh-goal（`ctx.goals`）
+### 8.2 dsh-goal（`ctx.goals`）
 
 ```ts
 // SessionEvent：'goal/change' = 全量快照变更（kind:'goal/change', version:1, operation: create|edit|pause|resume|complete|block|clear, goal: GoalSnapshot, …）或 clear tombstone
-foldGoal(events): FoldedGoal;          // 严格重放；TUI 用 applyGoalProjection（投影宽松版）
+foldGoal(events): FoldedGoal;          // 严格重放；TUI 直接消费 goal/change 的 goal 快照渲染面板
 interface TodoItem { content: string; status: 'pending' | 'in_progress' | 'completed'; }  // 真身在 dsh-session
 interface GoalSnapshot extends GoalRef { objective; phase: 'active'|'paused'|'blocked'|'complete'; blockedReason?; maxGoalRounds }
 ```
 
-### 7.3 dsh-compaction（`ctx.compaction`，抽象）
+### 8.3 dsh-compaction（`ctx.compaction`，抽象）
 
 ```ts
 // SessionEvent：'compaction/start'|'summary'|'end'|'prune'（log-only 锁括号 + 阴影价协议）
@@ -417,7 +411,7 @@ interface GoalSnapshot extends GoalRef { objective; phase: 'active'|'paused'|'bl
 // TUI：start 起显示 "Context being compacted" 状态；end 或 error 清除；replace 事件由事件驱动的 transcript 天然处理
 ```
 
-### 7.4 dsh-token-meter（`ctx.tokenMeter`）
+### 8.4 dsh-token-meter（`ctx.tokenMeter`）
 
 ```ts
 measure(session, requestHeader?): TokenMeasurement;  // { totalTokens, surfaceTokens, … }
@@ -425,7 +419,7 @@ measure(session, requestHeader?): TokenMeasurement;  // { totalTokens, surfaceTo
 // 占用率 UI：projectedTokens / 独立解析的 capacity（requestContext().contextWindow 或 LlmResolvedModelInfo.context）
 ```
 
-### 7.5 dsh-system-prompt（`ctx.systemPrompt`）
+### 8.5 dsh-system-prompt（`ctx.systemPrompt`）
 
 ```ts
 // Config: { includeHarnessIdentity?, includeRuntimeContext?, persona?, toolOrder? }
@@ -433,7 +427,7 @@ measure(session, requestHeader?): TokenMeasurement;  // { totalTokens, surfaceTo
 renderPrompt(assembly: PromptAssembly): string;   // 严格 {{variable}} 插值
 ```
 
-### 7.6 dsh-session-title（`ctx.sessionTitle`）
+### 8.6 dsh-session-title（`ctx.sessionTitle`）
 
 ```ts
 // SessionEvent：'session/title'（last-wins，log-only）；投影键 title: string | null
@@ -441,7 +435,7 @@ foldSessionTitle(events): SessionTitleSnapshot | undefined;
 // 服务：get(session) / rename(session, title)（pin 住）/ refresh(session, signal?) / register(provider)
 ```
 
-### 7.7 dsh-session-reference（`ctx.sessionReferenceResolver`）
+### 8.7 dsh-session-reference（`ctx.sessionReferenceResolver`）
 
 ```ts
 parseSessionReferenceText(text): { text; references: SessionReferenceInput[] };   // @[label](dsh-session:<b64>)
@@ -450,7 +444,7 @@ prepare(agent, content, references, signal?): Promise<PreparedReferencedMessage>
 // 限制：MAX_REFERENCES=3、DEFAULT_CANDIDATE_LIMIT=50、DEFAULT_MAX_REFERENCE_BYTES=65536
 ```
 
-### 7.8 dsh-skill（`ctx.skills`）
+### 8.8 dsh-skill（`ctx.skills`）
 
 ```ts
 class SkillRegistry extends Service {
@@ -463,9 +457,9 @@ isUserInvocable(skill): boolean;   // TUI `/skill:` 列表过滤
 
 ---
 
-## 8. 配置行 schema（cordis.patch.yml 编写依据）
+## 9. 配置行 schema（cordis.patch.yml 编写依据）
 
-### 8.1 agent-loop 行
+### 9.1 agent-loop 行
 
 ```ts
 interface Config {
@@ -481,7 +475,7 @@ interface Config {
 // 无 sessionId/resumeSessionId → ${id}-session-<uuid> 每次重启新会话；配置 agent 自动启动
 ```
 
-### 8.2 其他行
+### 9.2 其他行
 
 - `agent-default-model`：`{ provider: string (req), model: string (req) }`；settings 分节另有 `reasoningEffort?`
 - `agent-instructions`：`maxBytes` 必填；其余可选（projectRootMarkers 默认 ['.git']、candidates [AGENTS.md, CLAUDE.md]…）
@@ -493,13 +487,13 @@ interface Config {
 
 ---
 
-## 9. TUI 接线备忘（从合约到实现）
+## 10. TUI 接线备忘（从合约到实现）
 
 1. **启动**：`tui-startup` 行 inject `cmdlineArgs`，commander 解析 `--resume`/`--session`/`--help` → 提供 `tuiStartup`（sessionId / resumeSessionId）；agent-loop 行 `inject: [tuiStartup]` 惰性读。
 2. **取 agent**：`ctx.agents.get(sessionId)` → `Agent`；`agent.session.events` 为不可变日志快照。
 3. **渲染主通道**：`session/event` 事件（追加后馈送）+ 初始 `agent.session.events` 重放（种子不发出）。
 4. **状态**：`agent/status` 事件 → 编辑框边框/指示器；`agent.session.header.cwd` 为 workspace。
-5. **提交输入**：`agent.followup(createUserMessage({ content, source: { kind: 'user' } }))`。
+5. **提交输入**：空闲时 `agent.followup(createUserMessage({ content, source: { kind: 'user' } }))`；生成中改为 `agent.steer(...)` 把消息送进下一步插话队列。
 6. **中断**：`agent.cancel({ kind: 'user' })`。
 7. **提问**：`ctx.userQuestions.registerProvider(provider)`；对话框完成后 resolve `AskUserQuestionAnswer`。
 8. **命令**：`ctx.commands.execute(agent, line, images, signal)`（rc8 起必须传 `images`，TUI 当前传 `[]`）；`/help` 列表用 `ctx.commands.list(agent)`。

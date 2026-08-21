@@ -1,68 +1,17 @@
 # dsh-omp-tui
 
-### v0.2.3 (2026-08-20)
-- 升级 dsh 宿主依赖与开发依赖至 `0.1.0-rc.8`
-- 适配 rc8 `commands.execute(agent, line, images, signal)` 新签名，TUI 与微信命令路径统一传入空图片批次
-- 移除失效的 dsh-llm pnpm patch，改为 TUI 侧 `llm/stream` 流式消毒器：空 `tool-call-delta`/`block-end` 的 `id`/`name` 在进入 BlockAssembler 前替换为 `call-<index>`/`unknown`
-- 在 JSONL backend 读写边界修复历史异常工具调用：`tool/call`、`tool/result`、`assistant/message` 中空 `callId`/`name`/`arguments` 规范化，使存在空工具 id 的存量会话可恢复
-- 工具卡空名称显示回退为 `Unknown`
-- 新增回归测试：空工具 id 损坏会话可 `Session.fromRestore` 恢复；空工具名工具卡回退渲染
 
-### v0.2.2 (2026-08-20)
-- 修复上下文压缩进度提示仅 5s 瞬时消失：`compaction/start` 持久经 `indicator` 显示 `上下文压缩中…` 直至 `compaction/end`，与 `running` 旋钮互斥
-- 修复压缩后插入的上下文卡片无法展开：`ContextCard` 接入 `Ctrl+O` 显隐循环，截断提示持久化
-- 修复压缩后上下文用量仍显示旧长度：`compaction/end` 后强制重算 `tokenMeter`
-- 修复超长会话（20w+ 事件）恢复失败与 `unknown tool ""` 空 `callId` 持久化
-- 修复非官方网关（`local-oai`/`localhost:3000`）`/compact` 400，`isDeepSeek` 兼容 `deepseek-official` 与 `model.id` 并增加多提供方回退
-- 提升 `agent` 就绪超时至 30s 并修复单大帧 `zstd` 导致 `list` 首帧 8k 未命中
+## 变更记录
 
-### v0.2.1 (2026-08-18)
-- 新增深色/浅色自适应主题模式
-- 浅色 truecolor 终端使用 OMP 浅色主题而非 ANSI 回退
-- `omdsh` 在 profile 内插件版本落后时自动更新
-- 缓存转录组件渲染并限流 token/权限读取，修复长会话卡顿
-- 工具卡标题仅显示工具名，具体命令/参数显示在 Input 区，超长内容自动折行
-- `str_replace_editor` 以 Diff 分区展示 old_str/new_str 编辑差异
+完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。
 
-### v0.2.0 (2026-08-18)
-- 修复微信入站消息路由：始终跟随 TUI 前台会话，只有成功排队才回复“任务进行中”
-- `@dsh new` 通过 TUI 创建新会话并切换到前台
-- 新增 `omdsh` 启动器：使用系统 PATH 中的 dsh，首次运行自动安装、版本落后时自动更新 tui profile
-- 会话指针始终指向前台会话，进度与结果可见
-
-### v0.1.3 (2026-08-17)
-- 修复 `/resume`、`/new` 后微信桥活动会话未同步的问题
-- 微信开始回执和最终结果推送与周期进度汇报开关解耦
-- 修复 `/model` 和设置中用户新增 provider 的模型读取
-- 完善 provider 模型管理：增删改、长 ID/URL 完整显示
-- 修复窄终端下模型目录对话框文本裁剪
-
-### v0.1.2 (2026-08-16)
-- 接入微信 iLink 桥：`/wechat-*` 命令、`@dsh` 远程命令、`wechat_send`/`wechat_status` 工具、进度与结果推送、ask 微信双通道
-- 设置界面重构为全屏框架，新增 General / Models & Providers / Advanced 标签页
-- 新增自定义供应商表单与模型发现/手动录入
-- 新增默认模型、思考强度、权限模式等配置
-- 新增 skill 快速命令 `skill:<name>` 与补全
-- 修复 ANSI/C1 转义与 Tab 导致渲染错乱
-- 新增“微信claw”设置标签页
-
-### v0.1.1 (2026-08-15)
-- 新增 `/new` 进程内创建新会话
-- 新增 `/think` 思考强度切换
-- 新增 `/mode` 切换本地 agent 预设
-- 接入 `/permission` 权限模式
-- 优化 OMP 风格状态栏与窄侧边栏
-- 强化会话恢复性能与超时保护
-
-### v0.1.0 (2026-08-14)
-- 初始发布，OMP 风格 Catppuccin 终端界面
-- 基础用户、助手、推理、工具渲染
 
 ## 重要提示
-- 因为DeepSeek的大幅涨价，连带opencode go的可用额度也大幅减少，在找到合适的替代之前DeepSeek的性价比已经降低到一个相对较低的水准，并且本人已不打算继续大规模使用DeepSeek，因此本项目开发将进入缓慢阶段，将在完成一些最后的收尾工作后暂时停止继续更新，如有bug可通过issue反馈，看到后会酌情考虑修复。
-- 本项目目前已可以作为一个tui工作，必要功能均已测试正常。
-- wechat-claw通道的远程控制能力已开发完成。
-- 目前项目文档由ai完成，后续功能开发完全后会重新编写readme以增强可读性。
+
+- 因为 DeepSeek 的大幅涨价，连带 opencode go 的可用额度也大幅减少，在找到合适的替代之前 DeepSeek 的性价比已经降低到一个相对较低的水准；本人已不打算继续大规模使用 DeepSeek，因此本项目开发将进入缓慢阶段，将在完成一些最后的收尾工作后暂时停止继续更新。如有 bug 可通过 issue 反馈，看到后会酌情考虑修复。
+- 本项目目前已可以作为一个 TUI 工具使用，必要功能均已测试正常。
+- wechat-claw 通道的远程控制能力已开发完成。
+- 更多开发约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ---
 
@@ -70,6 +19,8 @@ OMP 风格的 DeepSeek Harness（dsh）终端界面。它是一个独立的 prof
 
 ## 目录
 
+- [变更记录](#变更记录)
+- [重要提示](#重要提示)
 - [界面预览](#界面预览)
 - [功能概览](#功能概览)
 - [安装](#安装)
@@ -101,6 +52,7 @@ OMP 风格的 DeepSeek Harness（dsh）终端界面。它是一个独立的 prof
 - **OMP 风格 TUI**：默认 Catppuccin 动态深浅主题、truecolor、Nerd Font 图标和 Powerline 状态栏。
 - **响应式布局**：窄终端优先保留模式、工作目录、Git 与 `ctx`，空间不足时逐级压缩或隐藏低优先级字段。
 - **会话管理**：支持新建、命名、恢复和进程内切换持久化会话。
+- **插话队列**：生成中按 Enter 会把消息加入插话队列，在下一步（通常在工具调用完成后）送达模型；`Alt+Up` 可编辑尚未生效的插话并取消其排队状态。
 - **模型与思考等级**：通过 `/model`、`/think` 选择 provider、model 和 reasoning effort。
 - **工作模式**：支持 dsh 官方 `standard`、`minimal`、`code`、`cordis` 预设，也能发现本地安装的 agent preset。
 - **权限模式**：通过 `/permission` 在 `read-only`、`workspace-write`、`full-access` 等部署可用预设间切换。
@@ -132,7 +84,7 @@ npm install --global pnpm@11.7.0
 
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add \
-  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.3/dsh-omp-tui-0.2.3.tgz
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.4/dsh-omp-tui-0.2.4.tgz
 ```
 
 tarball 已包含构建后的 `lib/`，用户机器无需编译本项目。
@@ -144,7 +96,7 @@ Git 安装会执行本项目的 `prepare` 构建。pnpm 11 默认阻止依赖构
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add \
   --allow-build=dsh-omp-tui \
-  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.2.3
+  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.2.4
 ```
 
 固定 tag 比直接使用 `#main` 更容易复现。完整的升级、卸载和安装排障说明见 [`docs/INSTALL.md`](docs/INSTALL.md)。
@@ -152,7 +104,7 @@ npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add \
 如果希望直接使用 `omdsh` 启动器，也可以全局安装本地 tarball；包内的 dsh 宿主 peer 依赖为 optional，npm 11 不会因 peer 图触发 Arborist 的 `null.children` 崩溃：
 
 ```sh
-npm install --global ./dsh-omp-tui-0.2.3.tgz
+npm install --global ./dsh-omp-tui-0.2.4.tgz
 npm install --global @deepseek-ai/dsh@0.1.0-rc.8
 omdsh
 ```
@@ -181,9 +133,19 @@ dsh --profile tui --resume <session-id>
 
 | 快捷键 | 作用 |
 |---|---|
-| `Ctrl+C` | 中断当前回合；2 秒内再次按下退出程序 |
-| `Ctrl+O` | 工具卡显示循环：折叠 → 展开 → 隐藏 |
-| `Ctrl+R` | 显示或隐藏思考块 |
+| `Esc` | 中断当前回合 |
+| `Enter` | 空闲时发送；生成中把当前消息加入插话队列 |
+| `Ctrl+C` | 空闲时清屏 / 运行中中断；2 秒内再次按下退出程序 |
+| `Ctrl+D` | 编辑器为空时退出程序 |
+| `Ctrl+T` | 显示 / 隐藏思考块 |
+| `Ctrl+O` | 展开 / 折叠工具输出 |
+| `Ctrl+Shift+O` | 显示 / 隐藏工具活动卡 |
+| `Alt+L` | 重置终端显示 |
+| `Alt+Up` | 编辑下一条尚未生效的插话（自动取消排队） |
+| `Ctrl+P` / `Shift+Ctrl+P` | 循环切换模型（Shift 反向） |
+| `Alt+M` | 打开模型选择器 |
+| `Ctrl+Q` / `Ctrl+Enter` | 提交当前草稿（生成中为插话） |
+| `PageUp` / `PageDown` | 翻页滚动 transcript |
 | `Tab` | 补全当前斜杠命令、参数或路径 |
 | `@` | 开始会话或文件引用补全 |
 
@@ -204,7 +166,7 @@ dsh --profile tui --resume <session-id>
 | `/settings` | 打开可视化设置 |
 | `/skills` | 列出可用技能 |
 
-`@[label](dsh-session:<id>)` 会将目标会话的模型可见快照注入当前会话。更多命令以运行中的 `/help` 为准。
+`@[label](dsh-session:…)` 会把目标会话的模型可见快照注入当前会话；具体 URI 由输入 `@` 触发补全生成。更多命令以运行中的 `/help` 为准。
 
 ### 微信远程桥接（WeChat iLink）
 
@@ -309,7 +271,7 @@ $env:DEEPSEEK_BASE_URL = 'http://localhost:3000/v1'
 
 - `mode` 只对空白会话生效；切换结果会写入会话日志，恢复会话时沿用。
 - `/theme` 和 `/settings` 的选择在存在官方 settings provider 时写入 `$DSH_HOME/settings.yaml`。
-- `/settings` 分为“常规 / 模型与供应商 / 高级”三页；模型与供应商页支持新增/编辑供应商、模型探测与手动模型列表。接口类型使用 dsh-llm-pi-ai 官方值：OAI 兼容 `openai-completions`、Response `openai-responses`、Message `anthropic-messages`。
+- `/settings` 分为“常规 / 模型与供应商 / 高级 / 微信claw”四页；模型与供应商页支持新增/编辑供应商、模型探测与手动模型列表。接口类型使用 dsh-llm-pi-ai 官方值：OAI 兼容 `openai-completions`、Response `openai-responses`、Message `anthropic-messages`。
 - 默认模式会读取 dsh settings 中保存的 `agent-presets.default`：设置页修改后，新会话启动会使用该默认模式，而不是固定回退到 `standard`。
 - `theme.custom` 只接受 RGB 三元组；未知角色和非法值会被忽略。
 - `theme.mode` 可选 `dynamic`（动态，按终端明暗在 `theme.dark` / `theme.light` 之间切换）或 `selected`（选定，固定使用 `theme.selected`）。三个主题槽位均填写具体 OMP 主题 id，不校验主题自身明暗，可任意搭配。
@@ -360,6 +322,8 @@ docs/assets/            README 使用的实机截图
 - [`docs/contracts.md`](docs/contracts.md)：dsh harness 合约唯一真相源
 - [`docs/PUBLISHING.md`](docs/PUBLISHING.md)：GitHub release、tarball 和 CI 发布流程
 - [`CHANGELOG.md`](CHANGELOG.md)：版本变更记录
+- [`CONTRIBUTING.md`](CONTRIBUTING.md)：开发与 PR 约定
+- [`SECURITY.md`](SECURITY.md)：安全策略与漏洞上报
 
 ## 许可
 

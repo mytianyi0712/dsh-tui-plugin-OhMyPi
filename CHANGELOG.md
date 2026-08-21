@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.2.4] - 2026-08-21
+
+- 修复 TUI 手动 `/compact` 等命令执行器抛错时未捕获导致 TUI 崩溃：改为显示命令失败通知，并保留压缩失败原因与提示
+- 修复 rc8 `commands.execute` 方法被解包调用后丢失 `this`，导致手动 `/compact` 报 `Cannot read properties of undefined (reading 'view')`：TUI 与微信命令路径改为绑定 `ctx.commands` 调用
+- 修复微信远程 `@dsh model`/`@dsh think` 只写入默认模型、未更新 TUI 前台 `selectionRef`，导致 TUI 状态栏仍显示旧模型且实际请求仍走旧模型：微信命令现在优先通过 TUI 前台控制保存模型选择
+- 修复 `@dsh models` 只探测当前 provider：改为遍历全部已注册/可配置 provider 并合并模型列表，数字回复可直接跨 provider 切换
+- 新增 TUI 插话机制：生成中回车把消息加入插话队列（`agent.steer`），在下一步/工具调用结束后送达模型；`Alt+Up` 可编辑未生效插话并自动取消其排队状态
+- 修复 Ctrl+C 只清屏无法退出：恢复双击 Ctrl+C 退出，单次仍用于中断/清屏
+- 迁移 Oh My Pi 原版快捷键：Esc 中断、Ctrl+C 清屏/中断（双击退出）、Ctrl+D 空编辑器退出、Ctrl+T 思考块、Ctrl+O 工具输出展开、Ctrl+Shift+O 工具活动显隐、Alt+L 重置显示、Ctrl+P/Shift+Ctrl+P 循环模型、Alt+M 模型选择、Ctrl+Q/Ctrl+Enter follow-up；选择器补齐 PageUp/PageDown/Home/End
+
 ## [0.2.3] - 2026-08-20
 
 - 升级 dsh 宿主依赖与开发依赖到 `0.1.0-rc.8`：适配 `commands.execute(agent, line, images, signal)` 新签名，TUI 与微信命令路径统一传入空图片批次
@@ -82,4 +92,3 @@
 - Initial public dsh profile bundle.
 - OMP-styled Catppuccin terminal layout with responsive welcome panel.
 - Chronological user, injected-context, assistant, reasoning, and tool rendering.
-- GitHub Release tarball workflow for reproducible profile installation.
