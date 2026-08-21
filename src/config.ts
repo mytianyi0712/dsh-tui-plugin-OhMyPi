@@ -63,7 +63,7 @@ export interface TuiConfig {
 }
 
 export const DEFAULT_LEFT_PROMPT = '${mode}${cwd}${git/worktree}'
-export const DEFAULT_RIGHT_PROMPT = '${model}${effort}${context}${permission}'
+export const DEFAULT_RIGHT_PROMPT = '${model}${effort}${context}${permission}${queued}'
 export const DEFAULT_INPUT_PROMPT = '${indicator}'
 export const DEFAULT_INPUT_PLACEHOLDER = ''
 

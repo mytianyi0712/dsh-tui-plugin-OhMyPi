@@ -375,7 +375,7 @@ export class Tui extends Service {
     let leftPrompt = persistedTheme?.leftPrompt ?? resolved.theme.leftPrompt
     let rightPrompt = persistedTheme?.rightPrompt ?? resolved.theme.rightPrompt
     let keyTools = persistedTheme?.keyTools ?? 'ctrl+o'
-    let keyReasoning = persistedTheme?.keyReasoning ?? 'ctrl+r'
+    let keyReasoning = persistedTheme?.keyReasoning ?? 'ctrl+t'
     const resolveDefaultMode = (): string => ctx.agentPresets?.defaultId ?? resolved.mode
     let uiMode: string = resolveDefaultMode()
     // Roster display names (id → name); refreshed from ctx.agentPresets.list().
@@ -599,6 +599,44 @@ export class Tui extends Service {
       updateInputPrompt()
     }
 
+    // --- interjection queue -------------------------------------------------
+    // While the agent is running, Enter queues the composed text as an
+    // interjection (`agent.steer`) instead of a normal follow-up. The loop
+    // claims it at the next step boundary, so it reaches the model right after
+    // the in-flight tool call settles (or immediately after the current model
+    // message when there are no tool calls). Entries are removed from this list
+    // once their matching `user/message` event is rendered.
+    const pendingInterjections: Array<{ message: ReturnType<typeof createUserMessage>; text: string }> = []
+
+    const refreshInterjectionIndicator = (): void => {
+      queuedValue.set(pendingInterjections.length === 0
+        ? undefined
+        : ` ${palette.muted('·')} ${palette.warning(`⏳${pendingInterjections.length}`)}`)
+    }
+
+    const enqueueInterjection = (text: string): void => {
+      const current = agent
+      if (current === undefined) return
+      const message = createUserMessage({
+        content: [{ type: 'text', text }],
+        source: { kind: 'user' },
+      })
+      pendingInterjections.push({ message, text })
+      try {
+        current.steer(message)
+      } catch (error: unknown) {
+        pendingInterjections.pop()
+        appendNotice(t('noticeInterjectionFailed', { error: errorChain(error) }), 'error')
+        refreshInterjectionIndicator()
+        ui.requestRender()
+        return
+      }
+      appendNotice(t('noticeInterjectionQueued'), 'info')
+      refreshInterjectionIndicator()
+      updateStatusValues()
+      ui.requestRender()
+    }
+
     /** Expensive status inputs (token meter + permission) are refreshed at most once per second. */
     const CONTEXT_USAGE_REFRESH_MS = 1_000
     let contextUsageCache: { measuredAt: number; totalTokens: number; permission: string } = {
@@ -666,7 +704,7 @@ export class Tui extends Service {
       const permissionText = permissionRole(displayText(displayPermissionName(permission)))
       permissionValue.set(` ${palette.muted('·')} ${permissionText}`)
       permissionCompactValue.set(permissionText)
-      queuedValue.set(undefined)
+      refreshInterjectionIndicator()
       symbolValue.set(undefined)
       updateInputPrompt()
     }
@@ -746,6 +784,10 @@ export class Tui extends Service {
           } else {
             chat.addChild(new UserMessageComponent(text, palette, mdTheme))
           }
+          // Interjections are durable user messages; once the loop appends one
+          // it has taken effect and is no longer editable with Alt+Up.
+          const pendingIndex = pendingInterjections.findIndex(entry => entry.message.id === event.data.id)
+          if (pendingIndex >= 0) pendingInterjections.splice(pendingIndex, 1)
           break
         }
         case 'step/start':
@@ -922,7 +964,7 @@ export class Tui extends Service {
       for (let index = events.length - 1; index >= 0; index--) {
         const event = events[index]!
         if (event.type === 'compaction/end') {
-          const error = (event.data as { error?: string }).error
+          const error = (event.data as { error?: string } | undefined)?.error
           return typeof error === 'string' && error !== '' ? error : undefined
         }
       }
@@ -930,11 +972,22 @@ export class Tui extends Service {
     }
 
     // --- input ---------------------------------------------------------------
-    const toggleTools = (): void => {
-      toolsVisibility = toolsVisibility === 'collapsed' ? 'expanded'
-        : toolsVisibility === 'expanded' ? 'hidden' : 'collapsed'
+    const applyToolsVisibility = (): void => {
       for (const card of allToolCards) card.setVisibility(toolsVisibility)
       for (const card of contextCards) card.setVisibility(toolsVisibility)
+    }
+
+    /** Ctrl+O (OMP-style): expand or collapse truncated tool cards. */
+    const expandTools = (): void => {
+      toolsVisibility = toolsVisibility === 'expanded' ? 'collapsed' : 'expanded'
+      applyToolsVisibility()
+      appendNotice(t('noticeToolCards', { visibility: toolsVisibility }), 'info')
+    }
+
+    /** Ctrl+Shift+O (OMP-style): show or hide tool activity cards. */
+    const toggleToolActivity = (): void => {
+      toolsVisibility = toolsVisibility === 'hidden' ? 'collapsed' : 'hidden'
+      applyToolsVisibility()
       appendNotice(t('noticeToolCards', { visibility: toolsVisibility }), 'info')
     }
 
@@ -948,6 +1001,47 @@ export class Tui extends Service {
     const toggleReasoning = (): void => {
       showReasoning = !showReasoning
       appendNotice(showReasoning ? t('noticeReasoningShown') : t('noticeReasoningHidden'), 'info')
+    }
+
+    const resetDisplay = (): void => {
+      rebuildTranscript()
+      appendNotice(t('noticeDisplayReset'), 'info')
+    }
+
+    const cycleModel = async (direction: 1 | -1): Promise<void> => {
+      const save = handles.saveSelection
+      const selection = handles.selectionRef?.current
+      if (save === undefined || selection === undefined) return
+      try {
+        const entries: ModelSelection[] = []
+        for (const provider of ctx.llm.listProviders()) {
+          try {
+            const models = await ctx.llm.listModels(provider.id)
+            for (const model of models) {
+              entries.push({ provider: provider.id, model: model.id })
+            }
+          } catch {
+            // Providers may expose no model catalog; the current selection
+            // still participates below.
+          }
+        }
+        const currentIndex = entries.findIndex(entry =>
+          entry.provider === selection.provider && entry.model === selection.model)
+        if (currentIndex !== -1 && entries.length > 1) {
+          const target = entries[(currentIndex + direction + entries.length) % entries.length]!
+          const next: ModelSelection = {
+            provider: target.provider,
+            model: target.model,
+            ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
+          }
+          await save(next)
+          appendNotice(t('noticeModelSet', { provider: next.provider, model: next.model }), 'info')
+        } else {
+          appendNotice(t('noticeNoModels'), 'warning')
+        }
+      } catch (error: unknown) {
+        appendNotice(t('noticeModelFailed', { error: errorChain(error) }), 'error')
+      }
     }
 
     const runCommand = async (line: string): Promise<void> => {
@@ -2507,9 +2601,18 @@ export class Tui extends Service {
         const rows = [
           palette.bold(palette.accent(t('helpShortcuts'))),
           '',
+          `${palette.dim('Esc')}  ${t('helpEsc')}`,
+          `${palette.dim('Enter')}  ${t('helpEnter')}`,
           `${palette.dim('Ctrl+C')}  ${t('helpCtrlC')}`,
+          `${palette.dim('Ctrl+D')}  ${t('helpCtrlD')}`,
+          `${palette.dim('Ctrl+T')}  ${t('helpCtrlT')}`,
           `${palette.dim('Ctrl+O')}  ${t('helpCtrlO')}`,
-          `${palette.dim('Ctrl+R')}  ${t('helpCtrlR')}`,
+          `${palette.dim('Ctrl+Shift+O')}  ${t('helpCtrlShiftO')}`,
+          `${palette.dim('Alt+L')}  ${t('helpAltL')}`,
+          `${palette.dim('Alt+Up')}  ${t('helpAltUp')}`,
+          `${palette.dim('Ctrl+P / Shift+Ctrl+P')}  ${t('helpCtrlP')}`,
+          `${palette.dim('Alt+M')}  ${t('helpAltM')}`,
+          `${palette.dim('Ctrl+Q / Ctrl+Enter')}  ${t('helpCtrlQ')}`,
           '',
           palette.bold(palette.accent(t('helpCommands'))),
           `/palette — ${t('helpPalette')}`,
@@ -2532,7 +2635,8 @@ export class Tui extends Service {
       }
       // dsh rc8 added an `images` parameter to commands.execute. Pass an empty
       // image batch so the same source compiles and runs against rc6 and rc8.
-      const executeCommand = ctx.commands.execute as unknown as (
+      // Keep the method bound: CommandRuntime.execute reads `this.view(agent)`.
+      const executeCommand = ctx.commands.execute.bind(ctx.commands) as unknown as (
         agent: Agent,
         line: string,
         images: readonly unknown[],
@@ -2583,7 +2687,34 @@ export class Tui extends Service {
       if (trimmed === '') return
       editor.addToHistory(text)
       if (trimmed.startsWith('/')) {
-        void runCommand(trimmed)
+        // A command handler (e.g. /compact) may reject after logging a partial
+        // attempt; surface it as a notice instead of an unhandled rejection.
+        void runCommand(trimmed).catch((error: unknown) => {
+          try {
+            const message = errorChain(error)
+            if (trimmed === '/compact') {
+              const cause = latestCompactionError()
+              if (cause !== undefined && cause !== '' && !message.includes(cause)) {
+                appendNotice(t('noticeCompactionCause', { cause }), 'error')
+              }
+              if (cause !== undefined && cause.includes('400 status code')) {
+                appendNotice(t('noticeCompaction400Hint'), 'warning')
+              } else {
+                appendNotice(t('noticeCompactionHint'), 'warning')
+              }
+            }
+            appendNotice(t('noticeCommandFailed', { error: message }), 'error')
+          } catch {
+            appendNotice(t('noticeCommandFailed', { error: error instanceof Error ? error.message : String(error) }), 'error')
+          }
+        })
+        return
+      }
+      // While the agent is generating, Enter defaults to the interjection
+      // queue: the message is steered into the next step boundary instead of
+      // opening a brand-new follow-up turn.
+      if (current.status === 'running') {
+        enqueueInterjection(text)
         return
       }
       const refreshTitle = (): void => {
@@ -2627,9 +2758,8 @@ export class Tui extends Service {
       refreshTitle()
     }
 
-    // First Ctrl+C interrupts the running turn (or hints at the exit path
-    // when idle); a second press within the window requests process exit
-    // through the launcher's bounded `appExit` hook.
+    // First Ctrl+C clears the display (or interrupts a running turn); a second
+    // press within the window exits through the launcher's bounded appExit hook.
     let exitArmed = false
     let exitArmTimer: NodeJS.Timeout | undefined
     const EXIT_ARM_WINDOW_MS = 2000
@@ -2637,17 +2767,34 @@ export class Tui extends Service {
     const offKeys = ui.addInputListener((data) => {
       const mouseMatch = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])/.exec(data)
       if (mouseMatch !== null) {
-        const button = Number(mouseMatch[1])
-        if (button === 64) scrollTranscriptLines(-3) // wheel up
-        else if (button === 65) scrollTranscriptLines(3) // wheel down
-        return { consume: true }
+        if (!ui.hasOverlay()) {
+          const button = Number(mouseMatch[1])
+          if (button === 64) scrollTranscriptLines(-3) // wheel up
+          else if (button === 65) scrollTranscriptLines(3) // wheel down
+          return { consume: true }
+        }
+        return undefined
       }
+
+      // OMP-style Esc: interrupt the running turn. Overlays keep Esc for cancel.
+      if (matchesKey(data, 'escape')) {
+        if (!ui.hasOverlay() && agent?.status === 'running') {
+          agent.cancel({ kind: 'user' })
+          return { consume: true }
+        }
+        return undefined
+      }
+
+      // OMP-style Ctrl+C with the legacy double-press exit retained: overlays
+      // keep Ctrl+C for cancel/selection, a running turn is interrupted, an
+      // idle screen is cleared, and a second press within the window exits.
       if (matchesKey(data, 'ctrl+c')) {
+        if (ui.hasOverlay()) return undefined
         if (exitArmed) {
           clearTimeout(exitArmTimer)
           exitArmed = false
           ctx.appExit?.(0)
-          return {}
+          return { consume: true }
         }
         exitArmed = true
         clearTimeout(exitArmTimer)
@@ -2657,33 +2804,109 @@ export class Tui extends Service {
         if (agent?.status === 'running') {
           agent.cancel({ kind: 'user' })
         } else {
+          resetDisplay()
           appendNotice(t('noticeExitHint'), 'info')
         }
-        return {}
-      }
-      if (matchesKey(data, keyTools as Parameters<typeof matchesKey>[1])) {
-        toggleTools()
-        return {}
-      }
-      if (matchesKey(data, keyReasoning as Parameters<typeof matchesKey>[1])) {
-        toggleReasoning()
-        return {}
-      }
-      if (matchesKey(data, 'pageup' as Parameters<typeof matchesKey>[1])) {
-        scrollTranscriptPage(-1)
         return { consume: true }
       }
-      if (matchesKey(data, 'pagedown' as Parameters<typeof matchesKey>[1])) {
-        scrollTranscriptPage(1)
-        return { consume: true }
+
+      // OMP-style Ctrl+D: exit when the editor is empty; otherwise keep the
+      // editor's delete-forward behavior.
+      if (matchesKey(data, 'ctrl+d')) {
+        if (!ui.hasOverlay() && editor.getText().trim() === '') {
+          ctx.appExit?.(0)
+          return { consume: true }
+        }
+        return undefined
       }
-      // While reading history, Down arrow jumps straight back to the live
-      // latest message; otherwise it keeps its normal editor behavior.
-      if (matchesKey(data, 'down' as Parameters<typeof matchesKey>[1]) && !chat.followLatest) {
-        chat.followLatest = true
-        chat.lineOffset = Math.max(0, chat.lastTotalLines - chat.lastViewportLines)
-        ui.requestRender()
-        return { consume: true }
+
+      // OMP-style Ctrl+Q / Ctrl+Enter: submit the current draft even while
+      // the agent is running.
+      if (matchesKey(data, 'ctrl+q') || matchesKey(data, 'ctrl+enter')) {
+        if (!ui.hasOverlay() && editor.getText().trim() !== '') {
+          return { data: '\r' }
+        }
+        return undefined
+      }
+
+      // Global app shortcuts only when no overlay owns keyboard focus.
+      if (!ui.hasOverlay()) {
+        // Alt+Up: edit the oldest still-pending interjection. Entering edit
+        // cancels its queued state in the agent inbox before it takes effect.
+        if (matchesKey(data, 'alt+up' as Parameters<typeof matchesKey>[1])) {
+          const current = agent
+          const item = pendingInterjections.shift()
+          if (current !== undefined && item !== undefined) {
+            try {
+              const stillPending = current.inbox.remove(item.message.id)
+              if (!stillPending) {
+                refreshInterjectionIndicator()
+                updateStatusValues()
+                appendNotice(t('noticeInterjectionAlreadyEffective'), 'warning')
+                ui.requestRender()
+                return { consume: true }
+              }
+              editor.setText(item.text)
+              ui.setFocus(editor)
+              refreshInterjectionIndicator()
+              updateStatusValues()
+              appendNotice(t('noticeInterjectionEdit'), 'info')
+              ui.requestRender()
+              return { consume: true }
+            } catch (error: unknown) {
+              pendingInterjections.unshift(item)
+              refreshInterjectionIndicator()
+              appendNotice(t('noticeInterjectionFailed', { error: errorChain(error) }), 'error')
+              ui.requestRender()
+              return { consume: true }
+            }
+          }
+          return undefined
+        }
+        if (matchesKey(data, keyTools as Parameters<typeof matchesKey>[1])) {
+          expandTools()
+          return { consume: true }
+        }
+        if (matchesKey(data, 'ctrl+shift+o' as Parameters<typeof matchesKey>[1])) {
+          toggleToolActivity()
+          return { consume: true }
+        }
+        if (matchesKey(data, keyReasoning as Parameters<typeof matchesKey>[1])) {
+          toggleReasoning()
+          return { consume: true }
+        }
+        if (matchesKey(data, 'alt+l' as Parameters<typeof matchesKey>[1])) {
+          resetDisplay()
+          return { consume: true }
+        }
+        if (matchesKey(data, 'alt+m' as Parameters<typeof matchesKey>[1])) {
+          void runCommand('/model')
+          return { consume: true }
+        }
+        if (matchesKey(data, 'ctrl+p' as Parameters<typeof matchesKey>[1])) {
+          void cycleModel(1)
+          return { consume: true }
+        }
+        if (matchesKey(data, 'shift+ctrl+p' as Parameters<typeof matchesKey>[1])) {
+          void cycleModel(-1)
+          return { consume: true }
+        }
+        if (matchesKey(data, 'pageup' as Parameters<typeof matchesKey>[1])) {
+          scrollTranscriptPage(-1)
+          return { consume: true }
+        }
+        if (matchesKey(data, 'pagedown' as Parameters<typeof matchesKey>[1])) {
+          scrollTranscriptPage(1)
+          return { consume: true }
+        }
+        // While reading history, Down arrow jumps straight back to the live
+        // latest message; otherwise it keeps its normal editor behavior.
+        if (matchesKey(data, 'down' as Parameters<typeof matchesKey>[1]) && !chat.followLatest) {
+          chat.followLatest = true
+          chat.lineOffset = Math.max(0, chat.lastTotalLines - chat.lastViewportLines)
+          ui.requestRender()
+          return { consume: true }
+        }
       }
 
       return undefined
@@ -2694,6 +2917,7 @@ export class Tui extends Service {
     let offStatus: (() => void) | undefined
     let offScheme: (() => void) | undefined
     let offModelSelection: (() => void) | undefined
+    let offInbox: (() => void) | undefined
     let offWechatOutput: (() => void) | undefined
     let activeHandle: AgentHandle | undefined
     let mounted = false
@@ -2969,6 +3193,18 @@ export class Tui extends Service {
 
       offStatus = ctx.on('agent/status', ({ agent: candidate, status }) => handleAgentStatus(liveAgent.id, candidate, status))
 
+      // If an interjection is discarded (cancellation, inbox clear, or an
+      // Alt+Up edit racing the loop), drop it from the TUI queue too.
+      offInbox = ctx.on('agent/inbox/discarded', (payload) => {
+        if (payload.agent.id !== liveAgent.id) return
+        const index = pendingInterjections.findIndex(entry => entry.message.id === payload.message.id)
+        if (index < 0) return
+        pendingInterjections.splice(index, 1)
+        refreshInterjectionIndicator()
+        updateStatusValues()
+        ui.requestRender()
+      })
+
       offScheme = ui.onTerminalColorSchemeChange((scheme) => {
         try {
         currentScheme = scheme
@@ -3003,6 +3239,7 @@ export class Tui extends Service {
         offEvent?.()
         offStatus?.()
         offModelSelection?.()
+        offInbox?.()
         const nextSelection = selectionFor(next)
         selectionRef.current = nextSelection
         selectionRef.assembled = undefined
@@ -3013,6 +3250,10 @@ export class Tui extends Service {
         setActiveAgent(next)
         tokenTotals = { inputTokens: 0, outputTokens: 0 }
       contextUsageCache.measuredAt = 0
+        // Pending interjections belong to the previous foreground session;
+        // switching sessions drops them from the TUI queue.
+        pendingInterjections.length = 0
+        refreshInterjectionIndicator()
         refreshContextEstimate(next, nextSelection)
         refreshGitBranch(next.session.header.cwd ?? process.cwd())
         header = new HeaderComponent(
@@ -3025,6 +3266,15 @@ export class Tui extends Service {
         )
         offEvent = ctx.on('session/event', (session, event) => handleSessionEvent(next.session.id, session, event))
         offStatus = ctx.on('agent/status', ({ agent: candidate, status }) => handleAgentStatus(next.id, candidate, status))
+        offInbox = ctx.on('agent/inbox/discarded', (payload) => {
+          if (payload.agent.id !== next.id) return
+          const index = pendingInterjections.findIndex(entry => entry.message.id === payload.message.id)
+          if (index < 0) return
+          pendingInterjections.splice(index, 1)
+          refreshInterjectionIndicator()
+          updateStatusValues()
+          ui.requestRender()
+        })
         rebuildTranscript()
         live = true
         setStatus(next.status)
@@ -3078,6 +3328,10 @@ export class Tui extends Service {
       setTuiForegroundControl({
         foregroundAgent: () => this.foregroundAgent(),
         createForegroundSession: () => this.createForegroundSession(),
+        currentModelSelection: () => selectionRef.current,
+        saveModelSelection: async (selection: ModelSelection) => {
+          await commitSelection(selection)
+        },
       })
 
       const switchAgent = async (targetId: SessionId): Promise<void> => {
@@ -3215,6 +3469,7 @@ export class Tui extends Service {
       offStatus?.()
       offScheme?.()
       offModelSelection?.()
+      offInbox?.()
       offWechatOutput?.()
       stopSpinner()
       clearTimeout(noticeTimer)

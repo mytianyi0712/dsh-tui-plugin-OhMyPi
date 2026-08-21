@@ -13,7 +13,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 import type { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Account } from '../core/state.ts'
 import { loadAccount } from '../core/state.ts'
 import { sendTextToPeer } from '../core/send.ts'
@@ -23,7 +23,7 @@ import { getActiveAgent, setActiveAgent } from './session.ts'
 import { getTuiForegroundControl, type TuiForegroundControl } from './tui-control.ts'
 
 /** Pending model picker: a bare-number reply selects by index. */
-let pendingModelPicker: { at: number; ids: string[] } | null = null
+let pendingModelPicker: { at: number; entries: Array<{ provider: string; model: string; name?: string }> } | null = null
 
 /** dsh rc8 added an `images` parameter to commands.execute; pass an empty batch. */
 function executeCommand(ctx: Context, agent: Agent, line: string, signal: AbortSignal) {
@@ -32,7 +32,7 @@ function executeCommand(ctx: Context, agent: Agent, line: string, signal: AbortS
     line: string,
     images: readonly unknown[],
     signal: AbortSignal,
-  ) => ReturnType<typeof ctx.commands.execute>)(agent, line, [], signal)
+  ) => ReturnType<typeof ctx.commands.execute>).call(ctx.commands, agent, line, [], signal)
 }
 
 const MODEL_PICKER_TTL_MS = 10 * 60 * 1000
@@ -154,13 +154,13 @@ export async function handleDshMessage(
     const picker = pendingModelPicker
     if (picker && Date.now() - picker.at < MODEL_PICKER_TTL_MS) {
       const idx = Number(rest) - 1
-      const id = picker.ids[idx]
+      const entry = picker.entries[idx]
       pendingModelPicker = null
-      if (!id) {
-        await safeSend(account, userId, `❌ 序号无效（请输入 1-${picker.ids.length}）`)
+      if (!entry) {
+        await safeSend(account, userId, `❌ 序号无效（请输入 1-${picker.entries.length}）`)
         return true
       }
-      await runCommand(ctx, account, userId, `model ${id}`)
+      await applyModelSelection(ctx, account, userId, entry.provider, entry.model)
       return true
     }
     pendingModelPicker = null
@@ -225,6 +225,17 @@ function fmtPercent(p: number): string {
 }
 
 function currentModel(ctx: Context, agent: Agent): { provider: string; model: string; reasoningEffort?: ReasoningEffortId } {
+  // Prefer the TUI foreground agent's live selection: it is the one that
+  // actually routes the next request and drives the status line.
+  const tui = getTuiForeground(ctx)
+  const live = tui?.currentModelSelection?.()
+  if (live !== undefined) {
+    return {
+      provider: live.provider,
+      model: live.model,
+      reasoningEffort: live.reasoningEffort,
+    }
+  }
   const def = ctx.get('agentDefaultModel')
   if (def && typeof def.currentSelection === 'function') {
     const sel = def.currentSelection() as { provider: string; model: string; reasoningEffort?: ReasoningEffortId }
@@ -237,6 +248,106 @@ function currentModel(ctx: Context, agent: Agent): { provider: string; model: st
   return {
     provider: agent.options.provider ?? '',
     model: agent.options.model ?? '',
+  }
+}
+
+interface ModelCatalogEntry {
+  provider: string
+  model: string
+  name?: string
+}
+
+/** Save a model selection through the TUI when available, else agentDefaultModel. */
+async function saveModelSelection(
+  ctx: Context,
+  selection: { provider: string; model: string; reasoningEffort?: ReasoningEffortId },
+): Promise<void> {
+  const tui = getTuiForeground(ctx)
+  if (tui?.saveModelSelection !== undefined) {
+    await tui.saveModelSelection(selection as ModelSelection)
+    return
+  }
+  const def = ctx.get('agentDefaultModel')
+  if (def && typeof def.saveSelection === 'function') {
+    await def.saveSelection(selection as ModelSelection)
+    return
+  }
+  throw new Error('当前部署缺少 agentDefaultModel 服务，无法保存模型选择')
+}
+
+/** Probe every registered/configurable provider's model list and merge the results. */
+async function listAllModels(ctx: Context): Promise<ModelCatalogEntry[]> {
+  const providers = typeof ctx.llm.listProviders === 'function' ? ctx.llm.listProviders() : []
+  const seen = new Set<string>()
+  const entries: ModelCatalogEntry[] = []
+  const add = (provider: string, model: { id: string; name?: string }): void => {
+    const key = `${provider}\u0000${model.id}`
+    if (seen.has(key)) return
+    seen.add(key)
+    entries.push({ provider, model: model.id, name: model.name })
+  }
+  for (const provider of providers) {
+    try {
+      for (const model of await ctx.llm.listModels(provider.id)) add(provider.id, model)
+    } catch {
+      // Providers without credentials or a live catalog are skipped.
+    }
+  }
+  if (typeof ctx.llm.listConfigurableProviders === 'function') {
+    for (const entry of ctx.llm.listConfigurableProviders()) {
+      if (providers.some(provider => provider.id === entry.provider)) continue
+      try {
+        for (const model of await ctx.llm.listModels(entry.provider)) add(entry.provider, model)
+      } catch {
+        // Dormant configurable providers may not expose a live catalog.
+      }
+    }
+  }
+  return entries
+}
+
+/** Resolve a model query across all providers, preferring the current provider. */
+function resolveModelQuery(
+  entries: ModelCatalogEntry[],
+  q: string,
+  currentProvider: string,
+): ModelCatalogEntry | undefined {
+  const currentMatches = entries.filter(entry => entry.provider === currentProvider)
+  const exact = currentMatches.find(entry => entry.model === q || entry.name === q)
+    ?? entries.find(entry => entry.model === q || entry.name === q)
+  if (exact !== undefined) return exact
+  const slash = q.indexOf('/')
+  if (slash > 0) {
+    const provider = q.slice(0, slash)
+    const model = q.slice(slash + 1)
+    return entries.find(entry => entry.provider === provider && entry.model === model)
+  }
+  return undefined
+}
+
+/** Switch a model by provider/model from the pending picker or direct command. */
+async function applyModelSelection(
+  ctx: Context,
+  account: Account,
+  userId: string,
+  provider: string,
+  model: string,
+): Promise<void> {
+  const agent = getActiveAgent()
+  if (!agent) {
+    await safeSend(account, userId, '❌ 未找到活动会话（dsh agent 尚未就绪）')
+    return
+  }
+  const current = currentModel(ctx, agent)
+  try {
+    await saveModelSelection(ctx, {
+      provider,
+      model,
+      ...(current.reasoningEffort !== undefined ? { reasoningEffort: current.reasoningEffort } : {}),
+    })
+    await safeSend(account, userId, `✅ 已切换模型: ${model}（${provider}）`)
+  } catch (err) {
+    await safeSend(account, userId, `❌ 切换失败: ${err instanceof Error ? err.message : String(err)}`)
   }
 }
 
@@ -260,7 +371,6 @@ const THINK_LEVELS: readonly string[] = ['off', 'minimal', 'low', 'medium', 'hig
 
 async function cmdThink(args: string, inv: CommandInvocation, ctx: Context): Promise<CommandResult> {
   const level = args.trim().toLowerCase()
-  const def = ctx.get('agentDefaultModel')
   if (!level) {
     const model = currentModel(ctx, inv.agent)
     return {
@@ -271,12 +381,13 @@ async function cmdThink(args: string, inv: CommandInvocation, ctx: Context): Pro
   if (!THINK_LEVELS.includes(level)) {
     return { kind: 'error', text: `❌ 无效等级: ${level}\n可用: ${THINK_LEVELS.join(' / ')}` }
   }
-  if (def && typeof def.saveSelection === 'function') {
-    const sel = currentModel(ctx, inv.agent)
-    await def.saveSelection({ provider: sel.provider, model: sel.model, reasoningEffort: level as ReasoningEffortId })
+  const sel = currentModel(ctx, inv.agent)
+  try {
+    await saveModelSelection(ctx, { provider: sel.provider, model: sel.model, reasoningEffort: level as ReasoningEffortId })
     return { kind: 'success', text: `✅ 思考强度已切换: ${level}` }
+  } catch (err) {
+    return { kind: 'error', text: `❌ 切换失败: ${err instanceof Error ? err.message : String(err)}` }
   }
-  return { kind: 'error', text: '当前部署没有 agentDefaultModel 服务，无法切换思考强度' }
 }
 
 async function cmdModel(args: string, inv: CommandInvocation, ctx: Context): Promise<CommandResult> {
@@ -284,51 +395,37 @@ async function cmdModel(args: string, inv: CommandInvocation, ctx: Context): Pro
   if (!q) {
     return { kind: 'success', text: '用法: @dsh model <模型ID或别名>（@dsh models 查看列表）' }
   }
-  const def = ctx.get('agentDefaultModel')
-  const provider = currentModel(ctx, inv.agent).provider
-  let models: { id: string; name?: string }[] = []
-  try {
-    models = provider ? await ctx.llm.listModels(provider) : []
-  } catch {
-    models = []
-  }
-  const resolved = models.find((m) => m.id === q || m.name === q)
+  const current = currentModel(ctx, inv.agent)
+  const entries = await listAllModels(ctx)
+  const resolved = resolveModelQuery(entries, q, current.provider)
   if (!resolved) {
     return { kind: 'error', text: `❌ 未找到模型: ${q}（用 @dsh models 查看可用列表）` }
   }
-  if (def && typeof def.saveSelection === 'function') {
-    const current = currentModel(ctx, inv.agent)
-    await def.saveSelection({
-      provider: current.provider || provider,
-      model: resolved.id,
+  try {
+    await saveModelSelection(ctx, {
+      provider: resolved.provider,
+      model: resolved.model,
       ...(current.reasoningEffort !== undefined ? { reasoningEffort: current.reasoningEffort } : {}),
     })
-    return { kind: 'success', text: `✅ 已切换模型: ${resolved.id}` }
+    return { kind: 'success', text: `✅ 已切换模型: ${resolved.model}（${resolved.provider}）` }
+  } catch (err) {
+    return { kind: 'error', text: `❌ 切换失败: ${err instanceof Error ? err.message : String(err)}` }
   }
-  return { kind: 'error', text: `❌ 切换失败（缺少 agentDefaultModel 服务）: ${q}` }
 }
 
 async function cmdModels(_args: string, inv: CommandInvocation, ctx: Context): Promise<CommandResult> {
-  const provider = currentModel(ctx, inv.agent).provider
-  let models: { id: string; name?: string }[] = []
-  try {
-    models = provider ? await ctx.llm.listModels(provider) : []
-  } catch {
-    models = []
-  }
-  if (!models.length) {
+  const entries = await listAllModels(ctx)
+  if (!entries.length) {
     return { kind: 'error', text: '❌ 没有可用模型（检查 API key 配置）' }
   }
-  const shown = models.slice(0, 30)
-  const ids: string[] = []
+  const shown = entries.slice(0, 30)
   const lines = ['🤖 可用模型（回复 @dsh <数字> 切换）:']
   shown.forEach((m, i) => {
-    ids.push(m.id)
-    lines.push(`${i + 1}. ${m.id}${m.name && m.name !== m.id ? ` (${m.name})` : ''}`)
+    lines.push(`${i + 1}. ${m.model}${m.name && m.name !== m.model ? ` (${m.name})` : ''} — ${m.provider}`)
   })
-  if (models.length > shown.length) lines.push(`…还有 ${models.length - shown.length} 个未列出`)
+  if (entries.length > shown.length) lines.push(`…还有 ${entries.length - shown.length} 个未列出`)
   lines.push('', '例如：回复 3 切换第 3 个模型（10 分钟内有效）')
-  pendingModelPicker = { at: Date.now(), ids }
+  pendingModelPicker = { at: Date.now(), entries: shown }
   return { kind: 'success', text: lines.join('\n') }
 }
 

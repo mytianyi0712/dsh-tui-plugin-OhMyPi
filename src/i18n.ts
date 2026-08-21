@@ -30,6 +30,16 @@ export type Messages = {
   helpCtrlC: string
   helpCtrlO: string
   helpCtrlR: string
+  helpEsc: string
+  helpEnter: string
+  helpCtrlD: string
+  helpCtrlT: string
+  helpCtrlShiftO: string
+  helpAltL: string
+  helpAltUp: string
+  helpCtrlP: string
+  helpAltM: string
+  helpCtrlQ: string
   helpCommands: string
   helpPalette: string
   helpHelp: string
@@ -89,8 +99,15 @@ export type Messages = {
   noticeToolCards: string
   noticeReasoningShown: string
   noticeReasoningHidden: string
+  noticeDisplayReset: string
+  noticeInterjectionQueued: string
+  noticeInterjectionEdit: string
+  noticeInterjectionAlreadyEffective: string
+  noticeInterjectionFailed: string
+  noticeNoModels: string
   noticeModelFailed: string
   noticeUnknownCommand: string
+  noticeCommandFailed: string
   noticeReferenceFailed: string
   noticeModeSet: string
   noticeModeUnknown: string
@@ -259,9 +276,19 @@ export const MESSAGES: Record<Locale, Messages> = {
     headerTip: '提示：',
     headerTipBody: '输入 /help 查看命令与快捷键。',
     helpShortcuts: '键盘快捷键',
-    helpCtrlC: '中断当前回合',
-    helpCtrlO: '切换工具卡显示：折叠 → 展开 → 隐藏',
-    helpCtrlR: '显示 / 隐藏思考块',
+    helpCtrlC: '清屏 / 中断；双击退出',
+    helpCtrlO: '展开 / 折叠工具输出',
+    helpCtrlR: '历史搜索（暂未开放）',
+    helpEsc: '中断当前回合',
+    helpEnter: '生成中回车：插话并在下一步生效',
+    helpCtrlD: '编辑器为空时退出',
+    helpCtrlT: '显示 / 隐藏思考块',
+    helpCtrlShiftO: '显示 / 隐藏工具活动',
+    helpAltL: '重置终端显示',
+    helpAltUp: '编辑下一条未生效的插话',
+    helpCtrlP: '循环切换模型（Shift 反向）',
+    helpAltM: '打开模型选择器',
+    helpCtrlQ: '提交消息（生成中为插话）',
     helpCommands: '命令',
     helpPalette: '查看调色板角色表',
     helpHelp: '本帮助列表',
@@ -320,8 +347,15 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeToolCards: '工具卡：{visibility}。',
     noticeReasoningShown: '思考块已显示。',
     noticeReasoningHidden: '思考块已隐藏。',
+    noticeDisplayReset: '显示已重置。',
+    noticeInterjectionQueued: '插话已加入队列，将在下一步生效；Alt+Up 可编辑。',
+    noticeInterjectionEdit: '已取消该插话的排队状态，正在编辑。',
+    noticeInterjectionAlreadyEffective: '该插话已生效，无法再编辑。',
+    noticeInterjectionFailed: '插话发送失败：{error}',
+    noticeNoModels: '没有可循环的模型目录。',
     noticeModelFailed: '模型选择失败：{error}',
     noticeUnknownCommand: '未知命令：{name}',
+    noticeCommandFailed: '命令执行失败：{error}',
     noticeReferenceFailed: '会话引用失败：{error}',
     noticeModeSet: '已切换到「{mode}」。',
     noticeModeUnknown: '未知模式：{name}',
@@ -441,7 +475,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsLeftPrompt: '左侧状态栏模板',
     settingsRightPrompt: '底部状态栏模板',
     settingsPromptHint: '输入提示词模板；留空恢复默认模板',
-    settingsKeyTools: '工具卡切换快捷键',
+    settingsKeyTools: '工具输出展开快捷键',
     settingsKeyReasoning: '思考块开关快捷键',
     noticeKeybindingSet: '快捷键已更新：{name}',
     noticePromptSet: '提示词模板已更新：{name}',
@@ -486,9 +520,19 @@ export const MESSAGES: Record<Locale, Messages> = {
     headerTip: 'Tip:',
     headerTipBody: 'Use /help to discover the command surface.',
     helpShortcuts: 'Keyboard shortcuts',
-    helpCtrlC: 'interrupt the running turn',
-    helpCtrlO: 'cycle tool cards: collapsed → expanded → hidden',
-    helpCtrlR: 'toggle reasoning blocks',
+    helpCtrlC: 'clear / interrupt; press twice to exit',
+    helpCtrlO: 'expand / collapse tool output',
+    helpCtrlR: 'history search (not available yet)',
+    helpEsc: 'interrupt the running turn',
+    helpEnter: 'while generating, Enter queues an interjection for the next step',
+    helpCtrlD: 'exit when editor is empty',
+    helpCtrlT: 'toggle reasoning blocks',
+    helpCtrlShiftO: 'show / hide tool activity',
+    helpAltL: 'reset terminal display',
+    helpAltUp: 'edit the next queued interjection',
+    helpCtrlP: 'cycle models (Shift for reverse)',
+    helpAltM: 'open model picker',
+    helpCtrlQ: 'submit message (interjection while generating)',
     helpCommands: 'Commands',
     helpPalette: 'show the palette role table',
     helpHelp: 'this listing',
@@ -547,8 +591,15 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeToolCards: 'Tool cards {visibility}.',
     noticeReasoningShown: 'Reasoning blocks shown.',
     noticeReasoningHidden: 'Reasoning blocks hidden.',
+    noticeDisplayReset: 'Display reset.',
+    noticeInterjectionQueued: 'Interjection queued; it will take effect on the next step. Alt+Up to edit.',
+    noticeInterjectionEdit: 'Cancelled the queued interjection and opened it for editing.',
+    noticeInterjectionAlreadyEffective: 'That interjection already took effect and can no longer be edited.',
+    noticeInterjectionFailed: 'Interjection failed: {error}',
+    noticeNoModels: 'No model catalog available to cycle.',
     noticeModelFailed: 'Model selection failed: {error}',
     noticeUnknownCommand: 'Unknown command: {name}',
+    noticeCommandFailed: 'Command failed: {error}',
     noticeReferenceFailed: 'Session reference failed: {error}',
     noticeModeSet: 'Mode switched to {mode}.',
     noticeModeUnknown: 'Unknown mode: {name}',
@@ -668,7 +719,7 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsLeftPrompt: 'Left status template',
     settingsRightPrompt: 'Bottom status template',
     settingsPromptHint: 'Enter a prompt template; leave blank to restore the default',
-    settingsKeyTools: 'Tool card cycle key',
+    settingsKeyTools: 'Tool output expand key',
     settingsKeyReasoning: 'Reasoning toggle key',
     noticeKeybindingSet: 'Keybinding updated: {name}',
     noticePromptSet: 'Prompt template updated: {name}',
