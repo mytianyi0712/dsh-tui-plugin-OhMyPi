@@ -12,7 +12,7 @@
   disabled: true
 
 - id: agent-loop
-  inject: [tuiStartup, conversationPersistenceGate]
+  inject: [tuiStartup, sessionPersistence]
   config:
     agents:
       - id: main

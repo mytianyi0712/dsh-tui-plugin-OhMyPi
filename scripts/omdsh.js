@@ -88,9 +88,12 @@ function packageRoot() {
   return root.replace(/\\/g, '/').replace(/\/+$/, '')
 }
 
+function dshHome() {
+  return process.env.DSH_HOME?.trim() || path.join(os.homedir(), '.dsh')
+}
+
 function installedProfileVersion() {
-  const dshHome = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
-  const pkgPath = path.join(dshHome, 'profiles', PROFILE, 'node_modules', PACKAGE, 'package.json')
+  const pkgPath = path.join(dshHome(), 'profiles', PROFILE, 'node_modules', PACKAGE, 'package.json')
   try {
     return JSON.parse(fs.readFileSync(pkgPath, 'utf8')).version
   } catch {
@@ -108,6 +111,82 @@ function compareVersions(a, b) {
     if (av !== bv) return av - bv
   }
   return 0
+}
+
+/**
+ * 新版 dsh 的 credentials-local 只接受「凭据名 → 非空字符串」的扁平文档，
+ * 而更早版本写入的是 `version: 1` + `refs:` 两层结构；旧文件会让新版 dsh
+ * 在插件树加载阶段直接报错。启动前做一次只针对该旧形状的原地迁移。
+ */
+function migrateLegacyCredentials() {
+  const file = path.join(dshHome(), '.credentials.yaml')
+  let text
+  try {
+    text = fs.readFileSync(file, 'utf8')
+  } catch {
+    return
+  }
+
+  const lines = text.split(/\r?\n/)
+  if (!lines.some((line) => /^version:\s*\d+\s*$/.test(line))) return
+  if (!lines.some((line) => /^refs:\s*$/.test(line))) return
+
+  const migrated = lines
+    .filter((line) => !/^version:\s*\d+\s*$/.test(line) && !/^refs:\s*$/.test(line))
+    .map((line) => line.replace(/^\s{2}/, ''))
+    .join('\n')
+    .trimEnd() + '\n'
+
+  fs.writeFileSync(file, migrated, 'utf-8')
+  process.stderr.write('omdsh: 已把旧版 ~/.dsh/.credentials.yaml 迁移为新版扁平格式。\n')
+}
+
+/**
+ * 新版 dsh-session-persistence-jsonl 默认使用 zstd；同一会话目录里若同时存在
+ * `session.jsonl` 与 `session.jsonl.zstd`，会被新版后端判定为 encoding mismatch
+ * 并拒绝加载，agent-loop 也会因此一直等待 sessionPersistence。这里只处理会
+ * 直接阻断启动的两类旧布局，把旧文件重命名而不是删除。
+ */
+function migrateLegacySessionArtifacts() {
+  const sessionsRoot = path.join(dshHome(), 'sessions')
+  let projects
+  try {
+    projects = fs.readdirSync(sessionsRoot, { withFileTypes: true })
+  } catch {
+    return
+  }
+
+  for (const project of projects) {
+    if (!project.isDirectory()) continue
+    const projectDir = path.join(sessionsRoot, project.name)
+    let entries
+    try {
+      entries = fs.readdirSync(projectDir, { withFileTypes: true })
+    } catch {
+      continue
+    }
+
+    // 旧版扁平布局：session.jsonl / session.jsonl.zstd 直接放在 project 目录下。
+    for (const entry of entries) {
+      if (!entry.isFile()) continue
+      if (entry.name !== 'session.jsonl' && entry.name !== 'session.jsonl.zstd') continue
+      const legacy = `${entry.name}.omdsh-legacy-${Date.now()}`
+      fs.renameSync(path.join(projectDir, entry.name), path.join(projectDir, legacy))
+      process.stderr.write(`omdsh: 已将旧版扁平会话文件 ${path.join(projectDir, entry.name)} 重命名为 ${legacy}\n`)
+    }
+
+    // 新旧编码混存：默认 zstd 后端会因反向编码文件直接报错。
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const sessionDir = path.join(projectDir, entry.name)
+      const plain = path.join(sessionDir, 'session.jsonl')
+      const zstd = path.join(sessionDir, 'session.jsonl.zstd')
+      if (!fs.existsSync(plain) || !fs.existsSync(zstd)) continue
+      const legacy = `session.jsonl.omdsh-legacy-${Date.now()}`
+      fs.renameSync(plain, path.join(sessionDir, legacy))
+      process.stderr.write(`omdsh: 已将会话 ${entry.name} 的旧 plain 日志重命名为 ${legacy}，保留 zstd 版本。\n`)
+    }
+  }
 }
 
 /** 用 dsh plugin add 把当前启动器目录安装/更新到 tui profile。 */
@@ -174,6 +253,9 @@ function ensureProfile() {
   }
   process.stderr.write(`omdsh: profile 已更新为 v${installedProfileVersion() ?? ownVersion}。\n`)
 }
+
+migrateLegacyCredentials()
+migrateLegacySessionArtifacts()
 
 if (process.env.DSH_DEBUG === '1') {
   ensureProfile()
