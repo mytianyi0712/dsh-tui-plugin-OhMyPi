@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.5] - 2026-08-24
+
+- 适配新版 dsh 的 credentials-local：`omdsh` 启动前自动将旧版 `~/.dsh/.credentials.yaml`（`version: 1` + `refs:`）迁移为新版扁平凭据文档
+- 适配新版 dsh 的 agent-loop 启动契约：`agent-loop` 行注入 `sessionPersistence`，避免声明式 agent 因缺少该依赖而无法激活，修复 TUI 一直报 `session ... never became live (timed out)`
+- 适配新版 dsh session-persistence-jsonl 的 zstd 编码检查：`omdsh` 启动前自动把同目录混存的 `session.jsonl` 旧 plain 日志重命名为 `session.jsonl.omdsh-legacy-<ts>`，保留 zstd 版本，避免 `encoding mismatch` 阻断启动
+- 同步修复全局 npm 安装目录下实际生效的 `cordis.patch.yml` 与 `scripts/omdsh.js`
+- 微信远程 `@dsh` 命令不再注册为本地 `/dsh-*` 命令：这些命令仅由微信消息直接分发，不会出现在本地 `/help`、命令补全菜单中，也无法在本地 TUI 中调用
+
 ## [0.2.4] - 2026-08-21
 
 - 修复 TUI 手动 `/compact` 等命令执行器抛错时未捕获导致 TUI 崩溃：改为显示命令失败通知，并保留压缩失败原因与提示

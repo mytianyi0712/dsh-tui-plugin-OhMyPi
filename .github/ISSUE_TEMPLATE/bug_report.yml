@@ -11,7 +11,7 @@ body:
     attributes:
       label: Plugin version
       description: package.json 的 version 或 Git tag
-      placeholder: 0.2.4 / v0.2.4
+      placeholder: 0.2.5 / v0.2.5
     validations:
       required: true
   - type: input
