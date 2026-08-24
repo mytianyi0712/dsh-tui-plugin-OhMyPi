@@ -1,26 +1,35 @@
+<div align="center">
+
 # dsh-omp-tui
 
+**OMP 风格的 DeepSeek Harness（dsh）终端界面**
 
-## 变更记录
+[![License](https://img.shields.io/badge/License-BSD--3--Clause-blue)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.2.5-blue)](#变更记录)
+[![dsh](https://img.shields.io/badge/dsh-0.1.0--rc.8-4c8bf5)](#运行要求)
+[![Node](https://img.shields.io/badge/node-%5E22.19.0%20%7C%20%3E%3D24.0.0-brightgreen)](#运行要求)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
-完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。
-
-
-## 重要提示
-
-- 因为 DeepSeek 的大幅涨价，连带 opencode go 的可用额度也大幅减少，在找到合适的替代之前 DeepSeek 的性价比已经降低到一个相对较低的水准；本人已不打算继续大规模使用 DeepSeek，因此本项目开发将进入缓慢阶段，将在完成一些最后的收尾工作后暂时停止继续更新。如有 bug 可通过 issue 反馈，看到后会酌情考虑修复。
-- 本项目目前已可以作为一个 TUI 工具使用，必要功能均已测试正常。
-- wechat-claw 通道的远程控制能力已开发完成。
-- 更多开发约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+</div>
 
 ---
 
-OMP 风格的 DeepSeek Harness（dsh）终端界面。它是一个独立的 profile bundle（插件），负责终端呈现、输入交互与会话相关的 TUI 能力；agent、模型、工具、持久化和沙箱仍由 dsh harness 提供。
+## 简介
+
+**dsh-omp-tui** 是 DeepSeek Harness（dsh）的独立 profile bundle（插件），负责终端呈现、输入交互与会话相关的 TUI 能力；agent、模型、工具、持久化和沙箱仍由 dsh harness 提供。
+
+它内置了 OMP 风格的 Catppuccin 主题、会话与快捷键体系、`/model` 与 `/permission` 等斜杠命令，以及从 OMP 迁移来的微信桥插件（WeChat iLink），可直接通过 `dsh --profile tui` 启动使用。
+
+> [!IMPORTANT]
+> **维护状态说明**
+>
+> - 因为 DeepSeek 大幅涨价，连带 opencode go 的可用额度也大幅减少，在找到合适的替代之前 DeepSeek 的性价比已明显降低；本项目开发将进入缓慢阶段，完成最后收尾后会暂时停止更新。如有 bug 可通过 issue 反馈，看到后会酌情处理。
+> - 项目目前已经可以作为 TUI 工具正常使用，必要功能均已测试通过。
+> - wechat-claw 通道的远程控制能力已开发完成。
 
 ## 目录
 
-- [变更记录](#变更记录)
-- [重要提示](#重要提示)
+- [简介](#简介)
 - [界面预览](#界面预览)
 - [功能概览](#功能概览)
 - [安装](#安装)
@@ -28,6 +37,7 @@ OMP 风格的 DeepSeek Harness（dsh）终端界面。它是一个独立的 prof
 - [配置](#配置)
 - [开发](#开发)
 - [项目结构](#项目结构)
+- [变更记录](#变更记录)
 - [相关文档](#相关文档)
 - [许可](#许可)
 
@@ -37,27 +47,32 @@ OMP 风格的 DeepSeek Harness（dsh）终端界面。它是一个独立的 prof
 
 <p align="center">
   <img src="docs/assets/tui-welcome.png" alt="dsh-omp-tui 欢迎页" width="900">
+  <br>
+  <sup>欢迎页</sup>
 </p>
-
-欢迎页
 
 <p align="center">
   <img src="docs/assets/tui-help.png" alt="dsh-omp-tui 帮助面板" width="900">
+  <br>
+  <sup>输入 <code>/help</code> 可查看快捷键和命令</sup>
 </p>
 
-输入 `/help` 可查看快捷键和命令。工具卡支持折叠、展开和隐藏；助手正文、思考块、上下文卡和 `Output` 分隔栏使用独立的视觉层级。
+工具卡支持折叠、展开和隐藏；助手正文、思考块、上下文卡和 `Output` 分隔栏使用独立的视觉层级。
 
 ## 功能概览
 
-- **OMP 风格 TUI**：默认 Catppuccin 动态深浅主题、truecolor、Nerd Font 图标和 Powerline 状态栏。
-- **响应式布局**：窄终端优先保留模式、工作目录、Git 与 `ctx`，空间不足时逐级压缩或隐藏低优先级字段。
-- **会话管理**：支持新建、命名、恢复和进程内切换持久化会话。
-- **插话队列**：生成中按 Enter 会把消息加入插话队列，在下一步（通常在工具调用完成后）送达模型；`Alt+Up` 可编辑尚未生效的插话并取消其排队状态。
-- **模型与思考等级**：通过 `/model`、`/think` 选择 provider、model 和 reasoning effort。
-- **工作模式**：支持 dsh 官方 `standard`、`minimal`、`code`、`cordis` 预设，也能发现本地安装的 agent preset。
-- **权限模式**：通过 `/permission` 在 `read-only`、`workspace-write`、`full-access` 等部署可用预设间切换。
-- **主题与本地化**：移植本机 OMP 的全部 98 个具体主题（`dark-*` / `light-*` / 中性主题），支持“动态”（深色/浅色槽位独立选择）与“选定”（单一主题）两种模式；支持逐角色 RGB 覆盖；内置 `zh-CN` 与 `en`。
-- **命令与补全**：支持斜杠命令、`@` 会话/文件引用、路径补全和参数补全。
+| 功能 | 说明 |
+|---|---|
+| 🎨 OMP 风格 TUI | 默认 Catppuccin 动态深浅主题、truecolor、Nerd Font 图标和 Powerline 状态栏 |
+| 📐 响应式布局 | 窄终端优先保留模式、工作目录、Git 与 `ctx`，空间不足时逐级压缩或隐藏低优先级字段 |
+| 💬 会话管理 | 支持新建、命名、恢复和进程内切换持久化会话 |
+| ⏱️ 插话队列 | 生成中按 `Enter` 把消息加入插话队列，在下一步（通常在工具调用完成后）送达模型；`Alt+Up` 编辑未生效插话并取消排队 |
+| 🧠 模型与思考等级 | 通过 `/model`、`/think` 选择 provider、model 和 reasoning effort |
+| 🔀 工作模式 | 支持 dsh 官方 `standard`、`minimal`、`code`、`cordis` 预设，也能发现本地安装的 agent preset |
+| 🔐 权限模式 | 通过 `/permission` 在 `read-only`、`workspace-write`、`full-access` 等部署可用预设间切换 |
+| 🌗 主题与本地化 | 移植本机 OMP 全部 98 个具体主题（`dark-*` / `light-*` / 中性主题），支持动态（深浅色槽位独立）与选定（单一主题）两种模式；支持逐角色 RGB 覆盖；内置 `zh-CN` 与 `en` |
+| ⌨️ 命令与补全 | 支持斜杠命令、`@` 会话/文件引用、路径补全和参数补全 |
+| 💚 微信桥 | 扫码登录、白名单/配对码、`@dsh` 远程命令、进度/结果推送、`wechat_send` / `wechat_status` 工具 |
 
 ## 安装
 
@@ -68,11 +83,12 @@ OMP 风格的 DeepSeek Harness（dsh）终端界面。它是一个独立的 prof
 | Node.js | `^22.19.0` 或 `>=24.0.0` |
 | pnpm | `11.7.0` 或兼容的 pnpm 11 |
 | dsh | `0.1.0-rc.8` |
-| 终端 | 推荐支持 truecolor；Nerd Font 可获得完整图标显示 |
+| 终端 | 推荐支持 truecolor；使用 Nerd Font 可获得完整图标显示 |
 
-当前 dsh 仍处于 developer preview。首次安装建议固定 dsh 版本和插件 release tag。
+> [!NOTE]
+> 当前 dsh 仍处于 developer preview。首次安装建议固定 dsh 版本和插件 release tag。
 
-### 安装 GitHub Release
+### 从 GitHub Release 安装
 
 没有 pnpm 时先安装固定版本：
 
@@ -84,7 +100,7 @@ npm install --global pnpm@11.7.0
 
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add \
-  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.4/dsh-omp-tui-0.2.4.tgz
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.5/dsh-omp-tui-0.2.5.tgz
 ```
 
 tarball 已包含构建后的 `lib/`，用户机器无需编译本项目。
@@ -96,20 +112,23 @@ Git 安装会执行本项目的 `prepare` 构建。pnpm 11 默认阻止依赖构
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add \
   --allow-build=dsh-omp-tui \
-  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.2.4
+  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.2.5
 ```
 
 固定 tag 比直接使用 `#main` 更容易复现。完整的升级、卸载和安装排障说明见 [`docs/INSTALL.md`](docs/INSTALL.md)。
 
+### 全局安装启动器
+
 如果希望直接使用 `omdsh` 启动器，也可以全局安装本地 tarball；包内的 dsh 宿主 peer 依赖为 optional，npm 11 不会因 peer 图触发 Arborist 的 `null.children` 崩溃：
 
 ```sh
-npm install --global ./dsh-omp-tui-0.2.4.tgz
+npm install --global ./dsh-omp-tui-0.2.5.tgz
 npm install --global @deepseek-ai/dsh@0.1.0-rc.8
 omdsh
 ```
 
-`omdsh` 只负责调用 PATH 中的官方 `dsh`；若未安装官方 dsh，会显示 `dsh is not recognized`。
+> [!NOTE]
+> `omdsh` 只负责调用 PATH 中的官方 `dsh`；若未安装官方 dsh，会显示 `dsh is not recognized`。
 
 ## 启动与日常使用
 
@@ -170,9 +189,7 @@ dsh --profile tui --resume <session-id>
 
 ### 微信远程桥接（WeChat iLink）
 
-本 bundle 内置了从 OMP 迁移来的微信桥插件：通过腾讯官方 ClawBot / iLink 通道，
-把 dsh 会话连接到微信，支持扫码登录、白名单/配对码、远程 `@dsh` 命令、自动进度
-汇报与结果推送、`wechat_send` / `wechat_status` 工具，以及 ask 提问同步推送到微信。
+本 bundle 内置了从 OMP 迁移来的微信桥插件：通过腾讯官方 ClawBot / iLink 通道，把 dsh 会话连接到微信，支持扫码登录、白名单/配对码、远程 `@dsh` 命令、自动进度汇报与结果推送、`wechat_send` / `wechat_status` 工具，以及 ask 提问同步推送到微信。
 
 ```sh
 # 在 dsh TUI 中扫码登录
@@ -185,12 +202,9 @@ dsh --profile tui --resume <session-id>
 /wechat-status
 ```
 
-微信里以 `@dsh` 开头的消息会被当作远程命令，不会进入会话（例如 `@dsh status`、
-`@dsh models`、`@dsh think max`、`@dsh notify on`）。普通微信消息会直接注入当前
-dsh 会话；模型可用 `wechat_send` 工具回复。
+微信里以 `@dsh` 开头的消息会被当作远程命令，不会进入会话（例如 `@dsh status`、`@dsh models`、`@dsh think max`、`@dsh notify on`）。这些 `@dsh` 远程命令仅限微信侧调用，不会出现在本地 `/help`、命令补全菜单中，也无法在本地以 `/dsh-*` 形式执行。普通微信消息会直接注入当前 dsh 会话；模型可用 `wechat_send` 工具回复。
 
-状态目录：`~/.dsh/wechat-ilink/`（可用环境变量 `DSH_WECHAT_ILINK_STATE` 覆盖）。
-登录二维码同时写入 `~/.dsh/wechat-ilink/login-qr.txt`，方便无界面场景查看。
+状态目录：`~/.dsh/wechat-ilink/`（可用环境变量 `DSH_WECHAT_ILINK_STATE` 覆盖）。登录二维码同时写入 `~/.dsh/wechat-ilink/login-qr.txt`，方便无界面场景查看。
 
 #### 微信推送
 
@@ -299,7 +313,10 @@ node --experimental-transform-types scripts/perf-probe.ts
 npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add link:.
 ```
 
-dsh 仍处于 rc 阶段。上游接口变更时，先更新 [`docs/contracts.md`](docs/contracts.md)，再同步代码、依赖版本，并运行测试与 `dsh --profile tui` 实机 smoke。
+> [!NOTE]
+> dsh 仍处于 rc 阶段。上游接口变更时，先更新 [`docs/contracts.md`](docs/contracts.md)，再同步代码、依赖版本，并运行测试与 `dsh --profile tui` 实机 smoke。
+>
+> 更多开发约定见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
 
 ## 项目结构
 
@@ -316,17 +333,21 @@ docs/assets/            README 使用的实机截图
 
 架构边界保持简单：dsh harness 负责 agent、模型、工具、持久化与沙箱；本仓库负责终端呈现和输入。渲染层使用 `@earendil-works/pi-tui@0.80.7`，并通过 vendored patch 打入发布包，消费者无需单独安装 pi-tui。
 
+## 变更记录
+
+完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。当前版本：`0.2.5`。
+
 ## 相关文档
 
-- [`docs/INSTALL.md`](docs/INSTALL.md)：安装、升级、卸载、本地开发和常见问题
-- [`docs/contracts.md`](docs/contracts.md)：dsh harness 合约唯一真相源
-- [`docs/PUBLISHING.md`](docs/PUBLISHING.md)：GitHub release、tarball 和 CI 发布流程
-- [`CHANGELOG.md`](CHANGELOG.md)：版本变更记录
-- [`CONTRIBUTING.md`](CONTRIBUTING.md)：开发与 PR 约定
-- [`SECURITY.md`](SECURITY.md)：安全策略与漏洞上报
+| 文档 | 说明 |
+|---|---|
+| [`docs/INSTALL.md`](docs/INSTALL.md) | 安装、升级、卸载、本地开发和常见问题 |
+| [`docs/contracts.md`](docs/contracts.md) | dsh harness 合约唯一真相源 |
+| [`docs/PUBLISHING.md`](docs/PUBLISHING.md) | GitHub release、tarball 和 CI 发布流程 |
+| [`CHANGELOG.md`](CHANGELOG.md) | 版本变更记录 |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 开发与 PR 约定 |
+| [`SECURITY.md`](SECURITY.md) | 安全策略与漏洞上报 |
 
 ## 许可
 
 BSD-3-Clause。`patches/@earendil-works__pi-tui@0.80.7.patch` vendored from `turtle1999/turtle-ui`（BSD-3），完整声明见 [`patches/NOTICE.md`](patches/NOTICE.md)。
-
-
