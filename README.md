@@ -6,7 +6,7 @@
 
 [![License](https://img.shields.io/badge/License-BSD--3--Clause-blue)](LICENSE)
 [![Version](https://img.shields.io/badge/version-0.2.5-blue)](#变更记录)
-[![dsh](https://img.shields.io/badge/dsh-0.1.0--rc.8-4c8bf5)](#运行要求)
+[![dsh](https://img.shields.io/badge/dsh-0.1.1--rc.2-4c8bf5)](#运行要求)
 [![Node](https://img.shields.io/badge/node-%5E22.19.0%20%7C%20%3E%3D24.0.0-brightgreen)](#运行要求)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
@@ -82,7 +82,7 @@
 |---|---|
 | Node.js | `^22.19.0` 或 `>=24.0.0` |
 | pnpm | `11.7.0` 或兼容的 pnpm 11 |
-| dsh | `0.1.0-rc.8` |
+| dsh | `0.1.1-rc.2` |
 | 终端 | 推荐支持 truecolor；使用 Nerd Font 可获得完整图标显示 |
 
 > [!NOTE]
@@ -99,7 +99,7 @@ npm install --global pnpm@11.7.0
 然后安装当前 release tarball：
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add \
+npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
   https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.5/dsh-omp-tui-0.2.5.tgz
 ```
 
@@ -110,7 +110,7 @@ tarball 已包含构建后的 `lib/`，用户机器无需编译本项目。
 Git 安装会执行本项目的 `prepare` 构建。pnpm 11 默认阻止依赖构建脚本，因此必须显式允许本包：
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add \
+npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
   --allow-build=dsh-omp-tui \
   github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.2.5
 ```
@@ -123,7 +123,7 @@ npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add \
 
 ```sh
 npm install --global ./dsh-omp-tui-0.2.5.tgz
-npm install --global @deepseek-ai/dsh@0.1.0-rc.8
+npm install --global @deepseek-ai/dsh@0.1.1-rc.2
 omdsh
 ```
 
@@ -136,9 +136,9 @@ omdsh
 
 ```sh
 # 使用 npx
-npx --yes @deepseek-ai/dsh@0.1.0-rc.8 --profile tui
-npx --yes @deepseek-ai/dsh@0.1.0-rc.8 --profile tui --session my-id
-npx --yes @deepseek-ai/dsh@0.1.0-rc.8 --profile tui --resume <session-id>
+npx --yes @deepseek-ai/dsh@0.1.1-rc.2 --profile tui
+npx --yes @deepseek-ai/dsh@0.1.1-rc.2 --profile tui --session my-id
+npx --yes @deepseek-ai/dsh@0.1.1-rc.2 --profile tui --resume <session-id>
 
 # 已安装 dsh launcher 后
 dsh --profile tui
@@ -310,7 +310,7 @@ node --experimental-transform-types scripts/perf-probe.ts
 测试使用 Node 原生 `node:test` 运行 `.ts` 文件，不依赖兄弟 harness checkout。修改源码后重新运行 `pnpm run prepare`，再使用 `link:` profile 验证：
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.0-rc.8 plugin --profile tui add link:.
+npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add link:.
 ```
 
 > [!NOTE]
