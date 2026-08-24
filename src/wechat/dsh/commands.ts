@@ -1,17 +1,18 @@
 // dsh/commands.ts — @dsh 微信快捷命令与微信侧分发器。
 //
-// 命令注册为 `dsh-*` 扩展命令（TUI 里 `/dsh-*` 也可用）。微信消息以
-// `@dsh` 开头时被 core/monitors 拦截，经 handleDshMessage 解析后调用
-// ctx.commands.execute(agent, '/dsh-...') 执行 —— 命令处理器拥有完整
-// agent 上下文，回复文本会由微信侧分发器回推。
+// 这些命令只供微信消息调用：它们不再注册进 dsh 命令注册表，因此不会出现
+// 在本地命令菜单（/help、命令补全）里，也无法在本地用 `/dsh-*` 执行。
+// 微信消息以 `@dsh` 开头时被 core/monitors 拦截，经 handleDshMessage
+// 解析后直接调用对应的 CommandSpec.run —— 命令处理器拥有完整 agent
+// 上下文，回复文本会由微信侧分发器回推。
 
 import { randomUUID } from 'node:crypto'
 import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import os from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
-import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
-import type { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { CommandId, CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import type { ImageBlock, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Account } from '../core/state.ts'
@@ -115,26 +116,6 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
 }
 
-/** Register all dsh-* commands with the dsh command registry. */
-export function registerDshCommands(ctx: Context): void {
-  for (const [name, spec] of Object.entries(COMMANDS)) {
-    ctx.commands.register({
-      name: `dsh-${name}`,
-      description: spec.desc,
-      handler: async (inv) => {
-        try {
-          return await spec.run(inv.rawInput.trim(), inv, ctx)
-        } catch (err) {
-          return {
-            kind: 'error',
-            text: `❌ ${name} 执行失败: ${err instanceof Error ? err.message : String(err)}`,
-          }
-        }
-      },
-    })
-  }
-}
-
 /**
  * Handle a WeChat message that starts with `@dsh`. Returns true when the
  * message was consumed as a command (never injected into the session).
@@ -177,10 +158,27 @@ export async function handleDshMessage(
   return true
 }
 
-/** Dispatch a command through the active agent's command runner. */
+/** Build a synthetic CommandInvocation for the WeChat-only @dsh command path.
+ *  Commands are intentionally not registered with ctx.commands, so no local
+ *  slash-command surface (help, completion, or direct execution) sees them. */
+function buildInvocation(agent: Agent, rawInput: string): CommandInvocation {
+  const attachments: readonly ImageBlock[] = []
+  return {
+    commandId: `wechat-${randomUUID()}` as CommandId,
+    agent,
+    rawInput,
+    attachments,
+    signal: new AbortController().signal,
+  }
+}
+
+/** Dispatch a @dsh command directly to its implementation. WeChat-only path:
+ *  it must not go through ctx.commands.execute, which would require the command
+ *  to be registered (and therefore visible/callable locally). */
 async function runCommand(ctx: Context, account: Account, userId: string, line: string): Promise<void> {
   const name = line.split(/\s+/)[0] ?? ''
-  if (!COMMANDS[name]) {
+  const spec = COMMANDS[name]
+  if (!spec) {
     await safeSend(account, userId, `❌ 未知命令: ${name}\n\n发送 @dsh help 查看全部命令。`)
     return
   }
@@ -189,10 +187,12 @@ async function runCommand(ctx: Context, account: Account, userId: string, line: 
     await safeSend(account, userId, '❌ 未找到活动会话（dsh agent 尚未就绪）')
     return
   }
+  const rawInput = line.slice(name.length)
+  const args = rawInput.trim()
   try {
-    const execution = await executeCommand(ctx, agent, `/dsh-${line}`, new AbortController().signal)
-    if (execution?.result.text) {
-      await safeSend(account, userId, execution.result.text)
+    const result = await spec.run(args, buildInvocation(agent, rawInput), ctx)
+    if (result.text) {
+      await safeSend(account, userId, result.text)
     }
   } catch (err) {
     await safeSend(account, userId, `❌ 执行失败: ${err instanceof Error ? err.message : String(err)}`)

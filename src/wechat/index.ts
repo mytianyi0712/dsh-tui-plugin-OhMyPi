@@ -1,7 +1,7 @@
 // dsh-wechat-ilink 插件入口：把 OMP 的微信桥迁移到 DeepSeek Harness (dsh)。
 //
 // 装配：
-//   1) 注册 /wechat-* 斜杠命令与 @dsh 快捷命令；
+//   1) 注册 /wechat-* 斜杠命令；@dsh 快捷命令仅由微信消息直接分发；
 //   2) 注册模型工具 wechat_send / wechat_status；
 //   3) 注册进度汇报与结果推送钩子；
 //   4) 管理 getUpdates 接收锁与账号 Monitor；
@@ -33,7 +33,7 @@ import {
   receiverHolderPid,
 } from './core/receiver-lock.ts'
 import { startMonitor, stopMonitors, type MonitorHooks } from './core/monitors.ts'
-import { registerDshCommands, handleDshMessage } from './dsh/commands.ts'
+import { handleDshMessage } from './dsh/commands.ts'
 import { registerWechatCommands } from './dsh/wechat-commands.ts'
 import { registerWechatTools } from './dsh/tools.ts'
 import { registerProgressHooks } from './dsh/progress.ts'
@@ -69,7 +69,8 @@ export class WechatBridge extends Service {
     log(`receiver lock: ${isReceiverHeld() ? 'acquired' : `held by pid ${receiverHolderPid()}`}`)
 
     // 命令 / 工具 / 进度钩子。
-    registerDshCommands(ctx)
+    // 注意：@dsh 微信快捷命令不在此注册为本地命令；它们仅由微信消息在
+    // handleDshMessage 中直接分发，因此不会出现在本地命令菜单/补全里。
     registerWechatCommands(ctx, {
       onLoginSuccess: (account) => {
         startMonitor(account, this.buildMonitorHooks(ctx))

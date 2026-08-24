@@ -35,11 +35,11 @@ describe('wechat chunkText', () => {
 })
 
 describe('wechat @dsh command parsing', () => {
-  it('dispatches @dsh commands to the active agent and ignores normal messages', async () => {
+  it('dispatches @dsh commands without the local command registry and ignores normal messages', async () => {
     const { handleDshMessage } = await import('../src/wechat/dsh/commands.ts')
     const { setActiveAgent } = await import('../src/wechat/dsh/session.ts')
 
-    const executed: string[] = []
+    const localExecutions: string[] = []
     const agent = {
       id: 'agent-1',
       options: { provider: 'p', model: 'm' },
@@ -50,24 +50,23 @@ describe('wechat @dsh command parsing', () => {
     const ctx = {
       commands: {
         execute: async (_agent: unknown, line: string) => {
-          executed.push(line)
-          return { result: { text: 'ok' } }
+          localExecutions.push(line)
+          return { result: { text: 'local' } }
         },
       },
       get: () => undefined,
     } as never
     const account = { id: 'acct-1', token: 't', baseUrl: 'http://example.invalid' } as never
 
+    // @dsh 命令不应再通过本地命令注册表执行（发送失败被 safeSend 吞掉）。
     assert.equal(await handleDshMessage(ctx, account, 'user-1', '@dsh status'), true)
-    assert.deepEqual(executed, ['/dsh-status'])
+    assert.deepEqual(localExecutions, [])
 
-    executed.length = 0
     assert.equal(await handleDshMessage(ctx, account, 'user-1', '@dsh help think'), true)
-    assert.deepEqual(executed, ['/dsh-help think'])
+    assert.deepEqual(localExecutions, [])
 
-    executed.length = 0
     assert.equal(await handleDshMessage(ctx, account, 'user-1', '普通消息'), false)
-    assert.deepEqual(executed, [])
+    assert.deepEqual(localExecutions, [])
 
     setActiveAgent(undefined)
   })
