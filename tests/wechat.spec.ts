@@ -70,6 +70,38 @@ describe('wechat @dsh command parsing', () => {
 
     setActiveAgent(undefined)
   })
+
+  it('passes an empty image batch through the @dsh compress command path', async () => {
+    const { handleDshMessage } = await import('../src/wechat/dsh/commands.ts')
+    const { setActiveAgent } = await import('../src/wechat/dsh/session.ts')
+
+    const calls: Array<{ line: string; images: unknown[]; signal: AbortSignal }> = []
+    const agent = {
+      id: 'agent-1',
+      options: { provider: 'p', model: 'm' },
+      session: { id: 's1', header: { cwd: '/' }, events: [], requestContext: () => undefined },
+    } as never
+    setActiveAgent(agent)
+
+    const ctx = {
+      commands: {
+        execute: async (_agent: unknown, line: string, images: unknown[], signal: AbortSignal) => {
+          calls.push({ line, images, signal })
+          return { result: { kind: 'success' as const, text: 'compacted' } }
+        },
+      },
+      get: () => undefined,
+    } as never
+    const account = { id: 'acct-1', token: 't', baseUrl: 'http://example.invalid' } as never
+
+    assert.equal(await handleDshMessage(ctx, account, 'user-1', '@dsh compress'), true)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0]?.line, '/compact')
+    assert.deepEqual(calls[0]?.images, [])
+    assert.ok(calls[0]?.signal instanceof AbortSignal)
+
+    setActiveAgent(undefined)
+  })
 })
 
 describe('wechat notify switch persistence', () => {
