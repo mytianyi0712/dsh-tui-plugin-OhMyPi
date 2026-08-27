@@ -2,9 +2,9 @@
 //
 // 这些命令只供微信消息调用：它们不再注册进 dsh 命令注册表，因此不会出现
 // 在本地命令菜单（/help、命令补全）里，也无法在本地用 `/dsh-*` 执行。
-// 微信消息以 `@dsh` 开头时被 core/monitors 拦截，经 handleDshMessage
-// 解析后直接调用对应的 CommandSpec.run —— 命令处理器拥有完整 agent
-// 上下文，回复文本会由微信侧分发器回推。
+// 微信消息以 `@dsh` 开头时被 core/monitors 拦截。@dsh chat/work 只切换
+// 后续普通微信消息的回传模式；其余命令在此直接执行并回推结果。
+
 
 import { randomUUID } from 'node:crypto'
 import { readdir } from 'node:fs/promises'
@@ -12,14 +12,14 @@ import { join } from 'node:path'
 import os from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
 import type { CommandId, CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
-import type { ImageBlock, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { type ImageBlock, type ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Account } from '../core/state.ts'
 import { loadAccount } from '../core/state.ts'
 import { sendTextToPeer } from '../core/send.ts'
 import { getContextToken } from '../core/bridge.ts'
-import { getConfig, setConfig, log } from '../core/runtime.ts'
+import { getConfig, setConfig, setWechatMode, log } from '../core/runtime.ts'
 import { getActiveAgent, setActiveAgent } from './session.ts'
 import { getTuiForegroundControl, type TuiForegroundControl } from './tui-control.ts'
 
@@ -52,10 +52,26 @@ function getTuiForeground(ctx: Context): TuiForegroundControl | undefined {
   }
 }
 
-interface CommandSpec {
+interface CommandDescription {
   usage: string
   desc: string
+}
+
+interface CommandSpec extends CommandDescription {
   run: (args: string, inv: CommandInvocation, ctx: Context) => Promise<CommandResult>
+}
+
+type RemoteTaskMode = 'chat' | 'work'
+
+const REMOTE_TASK_COMMANDS: Record<RemoteTaskMode, CommandDescription> = {
+  chat: {
+    usage: '@dsh chat',
+    desc: '切换为实时分段回传模式；不发送进度汇报',
+  },
+  work: {
+    usage: '@dsh work',
+    desc: '切换为任务结束后回传结果模式，并按配置发送进度汇报',
+  },
 }
 
 const COMMANDS: Record<string, CommandSpec> = {
@@ -116,6 +132,11 @@ const COMMANDS: Record<string, CommandSpec> = {
   },
 }
 
+const HELP_COMMANDS: Record<string, CommandDescription> = {
+  ...REMOTE_TASK_COMMANDS,
+  ...COMMANDS,
+}
+
 /**
  * Handle a WeChat message that starts with `@dsh`. Returns true when the
  * message was consumed as a command (never injected into the session).
@@ -172,11 +193,42 @@ function buildInvocation(agent: Agent, rawInput: string): CommandInvocation {
   }
 }
 
+function isRemoteTaskMode(name: string): name is RemoteTaskMode {
+  return name === 'chat' || name === 'work'
+}
+
+async function switchRemoteTaskMode(
+  account: Account,
+  userId: string,
+  mode: RemoteTaskMode,
+  args: string,
+): Promise<void> {
+  if (args) {
+    await safeSend(account, userId, `用法: ${REMOTE_TASK_COMMANDS[mode].usage}`)
+    return
+  }
+  setWechatMode(mode)
+  await safeSend(
+    account,
+    userId,
+    mode === 'chat'
+      ? '✅ 已切换到 chat 模式。后续普通微信消息将实时分段返回内容，不发送进度汇报。'
+      : '✅ 已切换到 work 模式。后续普通微信消息将在任务结束后返回结果，并按配置汇报进度。',
+  )
+}
+
 /** Dispatch a @dsh command directly to its implementation. WeChat-only path:
  *  it must not go through ctx.commands.execute, which would require the command
  *  to be registered (and therefore visible/callable locally). */
 async function runCommand(ctx: Context, account: Account, userId: string, line: string): Promise<void> {
   const name = line.split(/\s+/)[0] ?? ''
+  const rawInput = line.slice(name.length)
+  const args = rawInput.trim()
+  if (isRemoteTaskMode(name)) {
+    await switchRemoteTaskMode(account, userId, name, args)
+    return
+  }
+
   const spec = COMMANDS[name]
   if (!spec) {
     await safeSend(account, userId, `❌ 未知命令: ${name}\n\n发送 @dsh help 查看全部命令。`)
@@ -187,8 +239,6 @@ async function runCommand(ctx: Context, account: Account, userId: string, line: 
     await safeSend(account, userId, '❌ 未找到活动会话（dsh agent 尚未就绪）')
     return
   }
-  const rawInput = line.slice(name.length)
-  const args = rawInput.trim()
   try {
     const result = await spec.run(args, buildInvocation(agent, rawInput), ctx)
     if (result.text) {
@@ -533,14 +583,14 @@ async function cmdSkills(_args: string, inv: CommandInvocation, ctx: Context): P
 async function cmdHelp(args: string, _inv: CommandInvocation, _ctx: Context): Promise<CommandResult> {
   const topic = args.trim().toLowerCase()
   if (topic) {
-    const spec = COMMANDS[topic]
+    const spec = HELP_COMMANDS[topic]
     if (!spec) {
       return { kind: 'error', text: `❌ 未知命令: ${topic}\n\n@dsh help 查看全部命令` }
     }
     return { kind: 'success', text: `用法: ${spec.usage}\n${spec.desc}` }
   }
-  const lines = ['🛠 @dsh 快捷命令:', ...Object.entries(COMMANDS).map(([name, spec]) => `• ${spec.usage} — ${spec.desc}`)]
-  lines.push('', '消息以 @dsh 开头即命令；其他消息正常发给会话。')
+  const lines = ['🛠 @dsh 快捷命令:', ...Object.entries(HELP_COMMANDS).map(([, spec]) => `• ${spec.usage} — ${spec.desc}`)]
+  lines.push('', '用 @dsh chat 切换实时回传模式；用 @dsh work 切换任务完成后回传模式。后续普通微信消息持续使用所选模式。')
   return { kind: 'success', text: lines.join('\n') }
 }
 

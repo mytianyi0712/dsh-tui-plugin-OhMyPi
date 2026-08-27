@@ -11,7 +11,7 @@ import type { WeixinMessage } from './api.ts'
 import type { Account } from './state.ts'
 import { restoreContextTokensFor, extractText } from './bridge.ts'
 import { handleInbound } from './bridge.ts'
-import { isReceiverHeld, log } from './runtime.ts'
+import { isReceiverHeld, log, type WechatTaskMode } from './runtime.ts'
 
 /** index 注入的运行时钩子：把上层逻辑（ask/@dsh）与微信轮询解耦。 */
 export interface MonitorHooks {
@@ -19,8 +19,10 @@ export interface MonitorHooks {
   policy: () => 'pairing' | 'allowlist' | 'open'
   /** 日志。 */
   log: (msg: string) => void
-  /** 把文本注入 dsh 会话（index 负责标记 run 归属）；返回 true 表示已成功排队。 */
-  sendUserMessage: (text: string) => Promise<boolean>
+  /** Monitor 状态变化（用于刷新微信桥持久状态行）。 */
+  onStatus?: (id: string, status: MonitorStatus) => void
+  /** 把文本注入 dsh 会话并返回实际使用的回传模式；undefined 表示未排队。 */
+  sendUserMessage: (account: Account, userId: string, text: string) => Promise<WechatTaskMode | undefined>
   /** 尝试把消息消费为挂起 ask 的回答；返回 true 表示已消费。 */
   consumeAskAnswer?: (acc: Account, msg: WeixinMessage) => Promise<boolean>
   /** 尝试把消息消费为 @dsh 命令；返回 true 表示已消费。 */
@@ -64,6 +66,7 @@ export function startMonitor(account: Account, hooks: MonitorHooks): void {
       )
     },
     log: hooks.log,
+    onStatus: hooks.onStatus,
   })
   monitors.set(account.id, monitor)
   monitor.start()

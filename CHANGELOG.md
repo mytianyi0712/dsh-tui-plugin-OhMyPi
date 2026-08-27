@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.6] - 2026-08-26
+
+- 新增微信远程模式切换命令：`@dsh chat` 使后续普通微信消息实时分段回传且不汇报进度；`@dsh work` 使后续消息完成后回传结果，并保留周期性进度汇报。
+- 启动/重开会话时历史记录先置顶显示，首个实时 transcript 事件到达后再自动跟随最新，避免打开即跳底。
+- 临时通知改为固定占位行：通知只在行内刷新，不再通过增删行改变 chrome 高度，避免启动和通知出现/消失时界面上下抽动。
+- 微信桥普通运行日志不再进入 TUI 通知或 transcript；固定占位行改为持久显示“微信连接状态 + 接收锁归属”，只有 error/失败类日志才走临时通知。
+- 修复 `llm/stream` 消毒层对 tool-call 身份的破坏：不再把缺失 `name` 的 delta 续片替换成 `unknown`，并在续片/`block-end` 缺失 `id`/`name` 时沿用同块首次出现的非空值，避免合法工具调用被误判为 unknown tool（`unknown tool ""`）。
+
 ## [0.2.5] - 2026-08-24
 
 - 适配新版 dsh 的 credentials-local：`omdsh` 启动前自动将旧版 `~/.dsh/.credentials.yaml`（`version: 1` + `refs:`）迁移为新版扁平凭据文档

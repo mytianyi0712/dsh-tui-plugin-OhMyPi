@@ -29,6 +29,7 @@ import type { Account } from '../core/state.ts'
 import { receiverHolderPid } from '../core/receiver-lock.ts'
 import { showQr } from './renderer.ts'
 import { sendToPeer, activePeerOf } from './push.ts'
+import { publishWechatStatus } from './status.ts'
 
 /** 注册全部 /wechat-* 斜杠命令（WechatBridge 构造时调用一次）。
  *  @param deps.onLoginSuccess 登录成功后的回调（index 注入：启动该账号 Monitor）。 */
@@ -64,7 +65,10 @@ export function registerWechatCommands(
             savedAt: new Date().toISOString(),
           })
           const account = loadAccount(result.accountId)
-          if (account) onLoginSuccess(account)
+          if (account) {
+            onLoginSuccess(account)
+            publishWechatStatus()
+          }
           log(`✅ ${result.message}（账号 ${result.accountId}）`)
         } else if (result.alreadyConnected) {
           log(`ℹ️ ${result.message}`)
@@ -177,6 +181,7 @@ export function registerWechatCommands(
       stopMonitor(target)
       removeAccount(target)
       removeAccountFiles(target)
+      publishWechatStatus()
       return { kind: 'success', text: `已断开账号 ${target}。` }
     },
   })

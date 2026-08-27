@@ -16,6 +16,7 @@ import {
   TUI,
   Text,
   matchesKey,
+  truncateToWidth,
   visibleWidth,
   type Component,
   type EditorTheme,
@@ -435,14 +436,24 @@ export class Tui extends Service {
     let statusLine = new StatusLineComponent(leftTemplate, promptValue, palette)
     const todoPanel = new TodoPanelComponent(palette)
     const subagentPanel = new SubagentPanelComponent(palette)
-    const noticeSlot = new Container()
-    const notice = new Text('', 1, 0)
+    // 固定占位一行：通知只在行内刷新文字，不改变 chrome 高度，
+    // 避免每次临时通知出现/消失时 transcript 视口上下抽动。
+    // 无临时通知时回落到微信桥持久状态（连接情况 + 接收锁归属）。
+    let noticeText = ''
+    let wechatStatusText = ''
+    const noticeSlot: Component = {
+      invalidate() {},
+      render(width: number): string[] {
+        const line = noticeText !== '' ? noticeText : wechatStatusText
+        if (line === '') return ['']
+        return [truncateToWidth(line, Math.max(1, width), '')]
+      },
+    }
     const askSlot = new Container()
     let commandHintText: string | undefined
     const commandHint = new CommandHintComponent(() => commandHintText, palette)
     const inputBorder = new InputBorderComponent(palette)
     let footer = new ComposerFooterComponent(rightTemplate, promptValue, palette)
-    let noticeMounted = false
     let noticeTimer: NodeJS.Timeout | undefined
 
     /** Lines consumed by every root child below the transcript viewport. */
@@ -502,17 +513,10 @@ export class Tui extends Service {
       const color = kind === 'error'
         ? palette.error
         : kind === 'warning' ? palette.warning : palette.dim
-      notice.setText(color(displayInlineText(text)))
-      if (!noticeMounted) {
-        noticeSlot.addChild(notice)
-        noticeMounted = true
-      }
+      noticeText = color(displayInlineText(text))
       clearTimeout(noticeTimer)
       noticeTimer = setTimeout(() => {
-        if (noticeMounted) {
-          noticeSlot.removeChild(notice)
-          noticeMounted = false
-        }
+        noticeText = ''
         ui.requestRender()
       }, 5000)
       ui.requestRender()
@@ -526,6 +530,8 @@ export class Tui extends Service {
 
     // 微信桥输出不直接写 stderr：日志/二维码作为持久化文本进入 transcript，
     // 与 `/help` 的静态卡片一样保留在终端中，且不会越过差分渲染器覆盖输入框。
+    // 普通运行日志不展示；error 类走临时通知，status 更新到固定占位行。
+    const wechatErrorLog = /(?:error|failed|crash|refused|timed?\s*out|失败|错误|异常|❌)/i
     const subscribeWechatOutput = (): void => {
       if (offWechatOutput !== undefined) return
       let bridge: WechatBridge | undefined
@@ -536,16 +542,21 @@ export class Tui extends Service {
       }
       if (bridge?.subscribeOutput === undefined) return
       offWechatOutput = bridge.subscribeOutput((message) => {
+        if (message.kind === 'status') {
+          wechatStatusText = displayInlineText(message.text)
+          ui.requestRender()
+          return
+        }
+        if (message.kind === 'error' || (message.kind === 'log' && wechatErrorLog.test(message.text))) {
+          appendNotice(message.text, 'error')
+          return
+        }
         if (message.kind === 'qr') {
           // 二维码保持无边框等宽文本，避免卡片边框影响扫码。
           chat.addChild(new Spacer(1))
           chat.addChild(new Text(displayText(message.text), 1, 0))
-        } else {
-          const rows = displayText(message.text)
-            .split('\n')
-            .map(line => palette.muted(`[dsh-wechat-ilink] ${line}`))
-          chat.addChild(new StaticCardComponent(rows, palette))
         }
+        // 普通日志不进入 transcript，也不发通知。
         ui.requestRender()
       })
     }
@@ -762,6 +773,16 @@ export class Tui extends Service {
     const contextCards = new Set<ContextCardComponent>()
     let toolsVisibility: ToolCardVisibility = 'collapsed'
     let live = false
+    /** 启动时先置顶展示历史内容；首个实时事件到达后恢复跟随最新。 */
+    let followLatestAfterStartup = false
+    const TRANSCRIPT_EVENT_TYPES = new Set<string>([
+      'user/message',
+      'assistant/chunk',
+      'assistant/message',
+      'tool/call',
+      'tool/result',
+      'subagent/descriptor',
+    ])
     let header: HeaderComponent | undefined
     const TRANSCRIPT_RECENT_LIMIT = 200
     const TRANSCRIPT_LOAD_STEP = 200
@@ -911,7 +932,8 @@ export class Tui extends Service {
       renderChunk()
     }
 
-    const rebuildTranscript = (): void => {
+    const rebuildTranscript = (anchor: 'bottom' | 'top' = 'bottom', followLive = false): void => {
+      followLatestAfterStartup = followLive
       subagentPanel.clear()
       tokenTotals = { inputTokens: 0, outputTokens: 0 }
       contextUsageCache.measuredAt = 0
@@ -924,7 +946,7 @@ export class Tui extends Service {
       }
       refreshCompacting()
       transcriptStart = Math.max(0, events.length - TRANSCRIPT_RECENT_LIMIT)
-      renderTranscriptWindow(transcriptStart, 'bottom')
+      renderTranscriptWindow(transcriptStart, anchor)
     }
 
     const loadOlderTranscript = (): void => {
@@ -3173,6 +3195,13 @@ export class Tui extends Service {
       const handleSessionEvent = (targetId: SessionId, session: Session, event: SessionEvent): void => {
         if (session.id !== targetId) return
         try {
+          // 启动置顶视图只在无实时 transcript 事件时保持；首个会向
+          // transcript 追加/更新内容的实时事件到达后回到跟随最新。
+          if (followLatestAfterStartup && TRANSCRIPT_EVENT_TYPES.has(event.type)) {
+            followLatestAfterStartup = false
+            chat.followLatest = true
+            chat.lineOffset = 0
+          }
           if (event.type === 'session/title') updateTitle()
           renderEvent(event)
           updateStatusValues()
@@ -3411,8 +3440,9 @@ export class Tui extends Service {
       refreshContextEstimate(liveAgent, initialSelection)
 
       // Replay the durable log first (constructor seeds never publish), then
-      // go live so turn-end notices only surface for fresh work.
-      rebuildTranscript()
+      // go live so turn-end notices only surface for fresh work. 启动重放先
+      // 置顶展示；首个实时事件到达后恢复跟随最新，避免打开即跳底。
+      rebuildTranscript('top', true)
       // Attach after the transcript rebuild so buffered startup output is not
       // cleared by the replay and stays visible as persistent cards.
       subscribeWechatOutput()

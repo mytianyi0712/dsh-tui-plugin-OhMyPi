@@ -10,20 +10,35 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  getConfig,
-  isWechatTurnActive,
-  markTurnStarted,
   clearWechatPending,
   consumeWechatTurn,
-  getModelRoundCount,
+  getConfig,
   getAndResetModelRoundCount,
+  getModelRoundCount,
+  getWechatTurn,
   incrementModelRoundCount,
+  isWechatWorkTurnActive,
   log,
+  markTurnStarted,
+  type WechatTask,
 } from '../core/runtime.ts'
-import { loadAccounts } from '../core/state.ts'
+import { loadAccount, loadAccounts } from '../core/state.ts'
 import { activePeers, cancelTyping } from '../core/bridge.ts'
 import { getActiveAgent } from './session.ts'
+import { chunkText, readyChunkText } from '../core/send.ts'
 import { sendToPeer } from './push.ts'
+const CHAT_FLUSH_INTERVAL_MS = 500
+
+interface ChatStream {
+  task: WechatTask
+  turn: number
+  text: string
+  timer: NodeJS.Timeout | undefined
+  sends: Promise<void>
+}
+
+let chatStream: ChatStream | undefined
+
 
 /** 注册进度汇报与结果推送钩子（WechatBridge 构造时调用一次）。 */
 export function registerProgressHooks(ctx: Context): void {
@@ -33,18 +48,26 @@ export function registerProgressHooks(ctx: Context): void {
     if (!agent || session.id !== agent.session.id) return
     if (event.type === 'turn/start') {
       markTurnStarted()
-    } else if (event.type === 'turn/end') {
-      void handleTurnEnd(agent, event)
+      return
     }
+    if (event.type === 'assistant/chunk') {
+      const task = getWechatTurn()
+      if (task?.mode === 'chat' && event.data.chunk.type === 'text-delta') {
+        queueChatText(task, event.data.turn, event.data.chunk.text)
+      }
+      return
+    }
+    if (event.type === 'turn/end') void handleTurnEnd(agent, event)
   })
 
-  // 进度注入：agent/request 瀑布事件，在每次模型请求前检查是否需要汇报。
+  // 进度注入：只对微信 work 任务（及显式开启通知的终端任务）生效。
   ctx.on('agent/request', async (payload, next) => {
     const agent = getActiveAgent()
     if (agent && payload.agent.id === agent.id) {
       const cfg = getConfig()
       const interval = cfg.progress.interval
-      if (cfg.progress.enabled && interval > 0 && (isWechatTurnActive() || cfg.notify)) {
+      const terminalNotifications = getWechatTurn() === undefined && cfg.notify
+      if (cfg.progress.enabled && interval > 0 && (isWechatWorkTurnActive() || terminalNotifications)) {
         incrementModelRoundCount()
         if (getModelRoundCount() >= interval) {
           getAndResetModelRoundCount()
@@ -72,61 +95,116 @@ export function registerProgressHooks(ctx: Context): void {
   })
 }
 
+/** Queue visible chat text and preserve order across asynchronous WeChat sends. */
+function queueChatText(task: WechatTask, turn: number, text: string) {
+  if (!text) return
+  let stream = chatStream
+  if (stream === undefined || stream.task !== task || stream.turn !== turn) {
+    if (stream !== undefined) flushChatStream(stream, false)
+    stream = { task, turn, text: '', timer: undefined, sends: Promise.resolve() }
+    chatStream = stream
+  }
+  stream.text += text
+  if (stream.timer === undefined) {
+    stream.timer = setTimeout(() => flushChatStream(stream, false), CHAT_FLUSH_INTERVAL_MS)
+  }
+}
+
+/** Send only complete sentence/Markdown segments; retain the unfinished tail. */
+function flushChatStream(stream: ChatStream, force: boolean) {
+  if (stream.timer !== undefined) {
+    clearTimeout(stream.timer)
+    stream.timer = undefined
+  }
+  const ready = force
+    ? { chunks: stream.text ? chunkText(stream.text) : [], remainder: '' }
+    : readyChunkText(stream.text)
+  stream.text = ready.remainder
+  for (const text of ready.chunks) {
+    stream.sends = stream.sends.then(async () => {
+      const { accountId, userId } = stream.task
+      if (!accountId || !userId) {
+        log('wechat: chat stream has no reply target')
+        return
+      }
+      try {
+        const result = await sendToPeer(accountId, userId, text)
+        if (!result.ok) log(`wechat: chat stream send failed: ${result.error ?? 'unknown error'}`)
+      } catch (err) {
+        log(`wechat: chat stream send failed: ${String(err)}`)
+      }
+    })
+  }
+}
+
+/** Flush and await the active chat stream that belongs to a completed turn. */
+async function finishChatStream(task: WechatTask, turn: number) {
+  const stream = chatStream
+  if (stream === undefined || stream.task !== task || stream.turn !== turn) return false
+  flushChatStream(stream, true)
+  chatStream = undefined
+  await stream.sends
+  return true
+}
+
 async function handleTurnEnd(agent: Agent, event: SessionEvent & { type: 'turn/end' }): Promise<void> {
   try {
-  // 回合中途到达的微信消息（作为 steer 加入）不拥有本 turn：清掉 pending，
-  // 避免下一个 turn 被误标记。
-  clearWechatPending()
-  const cfg = getConfig()
-  if (!isWechatTurnActive() && !cfg.notify) return
+    // 回合中途到达的微信消息（作为 steer 加入）不拥有本 turn：清掉 pending，
+    // 避免下一个 turn 被误标记。
+    clearWechatPending()
+    const task = consumeWechatTurn()
+    const cfg = getConfig()
+    if (!task && !cfg.notify) return
 
-  const reason = event.data.reason
-  // 真正终局：消费归属，然后报告结果。
-  consumeWechatTurn()
-  getAndResetModelRoundCount()
-  const accounts = loadAccounts()
-  if (accounts.length === 0) return
-  const account = accounts[0]
-  if (!account) return
-  const peer =
-    activePeers.get(account.id) ??
-    (account.userId ? { accountId: account.id, userId: account.userId } : undefined)
-  if (!peer) return
-  void cancelTyping(account, peer.userId).catch(() => {})
+    const reason = event.data.reason
+    getAndResetModelRoundCount()
+    const account = task?.accountId ? loadAccount(task.accountId) : loadAccounts()[0]
+    if (!account) return
+    const userId = task?.userId ?? activePeers.get(account.id)?.userId ?? account.userId
+    if (!userId) return
+    void cancelTyping(account, userId).catch(() => {})
 
-  // 结果/错误推送不归“进度汇报”管：progress.enabled 只控制周期性的
-  // 进度注入，任务开始回执和最终结果仍然要推送给用户。
-  if (reason.kind === 'aborted' || reason.kind === 'error' || reason.kind === 'interrupted') {
-    const errorText = reason.kind === 'error' && 'error' in reason && reason.error
-      ? typeof reason.error.message === 'string' ? reason.error.message : ''
-      : ''
-    const text = `❌ 任务执行${reason.kind === 'aborted' ? '中断' : '失败'}${
-      errorText ? `：${errorText.slice(0, 300)}` : ''
-    }`
-    void sendToPeer(account.id, undefined, text).catch((err) => {
-      log(`wechat: error push failed: ${String(err)}`)
+    if (task?.mode === 'chat') {
+      const streamed = await finishChatStream(task, event.data.turn)
+      if (reason.kind === 'completed') {
+        if (!streamed) {
+          const summary = extractFinalText(agent, event.data.turn)
+          if (summary) void sendToPeer(account.id, userId, summary)
+        }
+        return
+      }
+    }
+
+    if (reason.kind === 'aborted' || reason.kind === 'error' || reason.kind === 'interrupted') {
+      const errorText = reason.kind === 'error' && 'error' in reason && reason.error
+        ? typeof reason.error.message === 'string' ? reason.error.message : ''
+        : ''
+      const text = `❌ 任务执行${reason.kind === 'aborted' ? '中断' : '失败'}${
+        errorText ? `：${errorText.slice(0, 300)}` : ''
+      }`
+      void sendToPeer(account.id, userId, text).catch((err) => {
+        log(`wechat: error push failed: ${String(err)}`)
+      })
+      return
+    }
+    if (reason.kind === 'max-tokens') {
+      const partial = task?.mode === 'chat' ? '' : extractFinalText(agent, event.data.turn)
+      void sendToPeer(
+        account.id,
+        userId,
+        `⚠️ 任务输出被截断${partial ? `（已发送部分内容）\n\n${partial.slice(0, 300)}` : ''}`,
+      ).catch((err) => {
+        log(`wechat: truncation push failed: ${String(err)}`)
+      })
+      return
+    }
+    if (reason.kind !== 'completed') return
+
+    const summary = extractFinalText(agent, event.data.turn)
+    if (!summary) return
+    void sendToPeer(account.id, userId, `✅ 任务完成\n\n${summary}`).catch((err) => {
+      log(`wechat: result push failed: ${String(err)}`)
     })
-    return
-  }
-  if (reason.kind === 'max-tokens') {
-    const partial = extractFinalText(agent, event.data.turn)
-    void sendToPeer(
-      account.id,
-      undefined,
-      `⚠️ 任务输出被截断${partial ? `（已发送部分内容）\n\n${partial.slice(0, 300)}` : ''}`,
-    ).catch((err) => {
-      log(`wechat: truncation push failed: ${String(err)}`)
-    })
-    return
-  }
-  if (reason.kind !== 'completed') return
-
-  const summary = extractFinalText(agent, event.data.turn)
-  if (!summary) return // 空输出：无可报告，保持沉默
-  const text = `✅ 任务完成\n\n${summary}`
-  void sendToPeer(account.id, undefined, text).catch((err) => {
-    log(`wechat: result push failed: ${String(err)}`)
-  })
   } catch (err) {
     log(`wechat: turn end handling failed: ${String(err)}`)
   }

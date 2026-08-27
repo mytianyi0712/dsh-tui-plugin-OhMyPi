@@ -18,6 +18,7 @@ import {
   getConfig,
   setConfig,
   markWechatPending,
+  getWechatMode,
   clearWechatPending,
   setReceiverHeld,
   isReceiverHeld,
@@ -35,6 +36,7 @@ import {
 import { startMonitor, stopMonitors, type MonitorHooks } from './core/monitors.ts'
 import { handleDshMessage } from './dsh/commands.ts'
 import { registerWechatCommands } from './dsh/wechat-commands.ts'
+import { publishWechatStatus } from './dsh/status.ts'
 import { registerWechatTools } from './dsh/tools.ts'
 import { registerProgressHooks } from './dsh/progress.ts'
 import { bridgeAsk, consumeAskAnswer } from './dsh/ask.ts'
@@ -68,6 +70,7 @@ export class WechatBridge extends Service {
     setReceiverHeld(tryAcquireReceiverLock())
     log(`receiver lock: ${isReceiverHeld() ? 'acquired' : `held by pid ${receiverHolderPid()}`}`)
 
+publishWechatStatus()
     // 命令 / 工具 / 进度钩子。
     // 注意：@dsh 微信快捷命令不在此注册为本地命令；它们仅由微信消息在
     // handleDshMessage 中直接分发，因此不会出现在本地命令菜单/补全里。
@@ -211,28 +214,31 @@ export class WechatBridge extends Service {
     return {
       policy: () => getConfig().policy,
       log,
-      sendUserMessage: async (text: string) => {
+      onStatus: () => publishWechatStatus(),
+      sendUserMessage: async (account: Account, userId: string, text: string) => {
         const agent = this.resolveLiveAgent(ctx)
         if (!agent) {
           clearWechatPending()
           log('wechat: no active agent, inbound message dropped')
-          return false
+          return undefined
         }
+        const mode = getWechatMode()
         try {
-          markWechatPending()
+          markWechatPending({ mode, accountId: account.id, userId })
           agent.steer(createUserMessage({
             content: [{ type: 'text', text }],
             source: { kind: 'user' },
           }))
-          return true
+          return mode
         } catch (err) {
           clearWechatPending()
           log(`wechat: steer inbound message failed: ${String(err)}`)
-          return false
+          return undefined
         }
       },
       consumeAskAnswer: async (acc: Account, msg: WeixinMessage) => consumeAskAnswer(acc, msg),
       handleOmpCommand: async (acc: Account, msg: WeixinMessage, text: string) => {
+        this.resolveLiveAgent(ctx)
         await handleDshMessage(ctx, acc, msg.from_user_id ?? '', text)
         return true
       },

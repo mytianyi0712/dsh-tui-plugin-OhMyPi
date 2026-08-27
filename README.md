@@ -5,9 +5,8 @@
 **OMP 风格的 DeepSeek Harness（dsh）终端界面**
 
 [![License](https://img.shields.io/badge/License-BSD--3--Clause-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.5-blue)](#变更记录)
+[![Version](https://img.shields.io/badge/version-0.2.6-blue)](#变更记录)
 [![dsh](https://img.shields.io/badge/dsh-0.1.1--rc.2-4c8bf5)](#运行要求)
-[![Node](https://img.shields.io/badge/node-%5E22.19.0%20%7C%20%3E%3D24.0.0-brightgreen)](#运行要求)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
 </div>
@@ -100,7 +99,7 @@ npm install --global pnpm@11.7.0
 
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
-  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.5/dsh-omp-tui-0.2.5.tgz
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.6/dsh-omp-tui-0.2.6.tgz
 ```
 
 tarball 已包含构建后的 `lib/`，用户机器无需编译本项目。
@@ -112,7 +111,7 @@ Git 安装会执行本项目的 `prepare` 构建。pnpm 11 默认阻止依赖构
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
   --allow-build=dsh-omp-tui \
-  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.2.5
+  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.2.6
 ```
 
 固定 tag 比直接使用 `#main` 更容易复现。完整的升级、卸载和安装排障说明见 [`docs/INSTALL.md`](docs/INSTALL.md)。
@@ -122,7 +121,7 @@ npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
 如果希望直接使用 `omdsh` 启动器，也可以全局安装本地 tarball；包内的 dsh 宿主 peer 依赖为 optional，npm 11 不会因 peer 图触发 Arborist 的 `null.children` 崩溃：
 
 ```sh
-npm install --global ./dsh-omp-tui-0.2.5.tgz
+npm install --global ./dsh-omp-tui-0.2.6.tgz
 npm install --global @deepseek-ai/dsh@0.1.1-rc.2
 omdsh
 ```
@@ -202,7 +201,7 @@ dsh --profile tui --resume <session-id>
 /wechat-status
 ```
 
-微信里以 `@dsh` 开头的消息会被当作远程命令，不会进入会话（例如 `@dsh status`、`@dsh models`、`@dsh think max`、`@dsh notify on`）。这些 `@dsh` 远程命令仅限微信侧调用，不会出现在本地 `/help`、命令补全菜单中，也无法在本地以 `/dsh-*` 形式执行。普通微信消息会直接注入当前 dsh 会话；模型可用 `wechat_send` 工具回复。
+微信里以 `@dsh` 开头的消息会被当作远程命令，不会进入会话（例如 `@dsh status`、`@dsh models`、`@dsh think max`、`@dsh notify on`）。`@dsh chat` 会切换到 chat 模式：之后的所有普通微信消息都实时分段回传模型文本，且不会注入进度汇报。`@dsh work` 会切换回 work 模式：之后的所有普通微信消息都在任务结束后回传完整结果，并按进度配置汇报。所有 `@dsh` 远程命令仅限微信侧调用，不会出现在本地 `/help`、命令补全菜单中，也无法在本地以 `/dsh-*` 形式执行。模型可用 `wechat_send` 工具回复。
 
 状态目录：`~/.dsh/wechat-ilink/`（可用环境变量 `DSH_WECHAT_ILINK_STATE` 覆盖）。登录二维码同时写入 `~/.dsh/wechat-ilink/login-qr.txt`，方便无界面场景查看。
 
@@ -210,7 +209,8 @@ dsh --profile tui --resume <session-id>
 
 微信桥支持把任务进度与结果自动推送到微信：
 
-- **微信消息触发的任务**：默认开启进度汇报。模型回合每达到配置的间隔轮数时，会向微信推送一次进度；任务完成后自动推送结果。
+- **微信 work 模式**：`@dsh work` 切换后，所有普通微信消息都会在任务结束后发送结果。模型回合每达到配置的间隔轮数时，会向微信推送一次进度。
+- **微信 chat 模式**：`@dsh chat` 切换后，所有普通微信消息在生成期间实时回传可见文本，不推送周期进度，也不会在结束时重复发送完整结果。
 - **终端任务也推送**：默认关闭。使用 `/wechat-notify on` 开启后，终端发起的任务也会在进度/完成时推送到微信；`/wechat-notify off` 关闭。
 - **可视化配置**：在 `/settings` 的 `微信claw` 标签页中可配置：
   - 进度汇报：开 / 关
@@ -335,7 +335,7 @@ docs/assets/            README 使用的实机截图
 
 ## 变更记录
 
-完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。当前版本：`0.2.5`。
+完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。当前版本：`0.2.6`。
 
 ## 相关文档
 
