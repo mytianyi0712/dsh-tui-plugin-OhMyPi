@@ -181,31 +181,74 @@ export function repairLegacyToolEvents(events: readonly SessionEvent[]): readonl
   return (changed ? secondPass : events) as readonly SessionEvent[]
 }
 
-/** Make empty tool-call delta ids/names harmless before the LLM assembler sees them. */
-function sanitizeToolCallChunk(chunk: StreamChunk): StreamChunk {
+/**
+ * Make empty tool-call delta/block ids harmless before the LLM assembler sees
+ * them. Names are deliberately left untouched: DeepSeek/OpenAI-compatible
+ * adapters may omit `name` on continuation deltas, and the assembler keeps the
+ * first non-empty name it saw. Replacing an absent name with `unknown` here
+ * would overwrite that remembered name and make valid calls fail as unknown
+ * tools, so only the call identity is synthesized.
+ */
+export function sanitizeToolCallChunk(chunk: StreamChunk): StreamChunk {
   if (chunk.type === 'tool-call-delta') {
     const id = nonEmptyString(chunk.id, `call-${chunk.index}`)
-    const name = nonEmptyString(chunk.name, 'unknown')
-    if (id === chunk.id && name === chunk.name) return chunk
-    return { ...chunk, id: CallId(id), name } as StreamChunk
+    if (id === chunk.id) return chunk
+    return { ...chunk, id: CallId(id) } as StreamChunk
   }
 
   if (chunk.type === 'block-end' && chunk.block.type === 'tool-call') {
     const block = chunk.block
     const id = nonEmptyString(block.id, `call-${chunk.index}`)
-    const name = nonEmptyString(block.name, 'unknown')
-    if (id === block.id && name === block.name) return chunk
+    if (id === block.id) return chunk
     return {
       ...chunk,
-      block: { ...block, id: CallId(id), name },
+      block: { ...block, id: CallId(id) },
     } as StreamChunk
   }
 
   return chunk
 }
 
-async function* sanitizeToolCallDeltaStream(source: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
-  for await (const chunk of source) yield sanitizeToolCallChunk(chunk)
+export async function* sanitizeToolCallDeltaStream(source: AsyncIterable<StreamChunk>): AsyncIterable<StreamChunk> {
+  // Continuation deltas may omit `name`/`id` after the first delta, and some
+  // adapters close blocks with an empty name/id. Keep the first non-empty
+  // identity per block index and fall back to it so the assembler never
+  // overwrites a valid tool identity with an empty or synthesized one.
+  const toolIds = new Map<number, CallId>()
+  const toolNames = new Map<number, string>()
+  for await (const chunk of source) {
+    if (chunk.type === 'tool-call-delta') {
+      if (typeof chunk.name === 'string' && chunk.name.trim() !== '') toolNames.set(chunk.index, chunk.name)
+      if (typeof chunk.id === 'string' && chunk.id.trim() !== '') toolIds.set(chunk.index, chunk.id)
+      const id = nonEmptyString(chunk.id, toolIds.get(chunk.index) ?? `call-${chunk.index}`)
+      if (!toolIds.has(chunk.index)) toolIds.set(chunk.index, CallId(id))
+      if (id === chunk.id) {
+        yield chunk
+      } else {
+        yield { ...chunk, id: CallId(id) } as StreamChunk
+      }
+      continue
+    }
+
+    if (chunk.type === 'block-end' && chunk.block.type === 'tool-call') {
+      const block = chunk.block
+      const id = nonEmptyString(block.id, toolIds.get(chunk.index) ?? `call-${chunk.index}`)
+      const name = typeof block.name === 'string' && block.name.trim() !== ''
+        ? block.name
+        : toolNames.get(chunk.index) ?? ''
+      if (id === block.id && name === block.name) {
+        yield chunk
+      } else {
+        yield {
+          ...chunk,
+          block: { ...block, id: CallId(id), name },
+        } as StreamChunk
+      }
+      continue
+    }
+
+    yield chunk
+  }
 }
 
 /**
@@ -245,9 +288,9 @@ export class ConversationPersistenceGate extends Service {
       }
     }
 
-    // DeepSeek V4 Flash occasionally emits tool-call deltas with empty id/name.
-    // Sanitize those chunks at the stream seam so the assembled assistant
-    // message and its tool/call + tool/result events never carry empty ids.
+    // DeepSeek V4 Flash occasionally emits tool-call deltas with empty ids.
+    // Synthesize only the id at the stream seam so the assembler keeps any
+    // later/earlier name it observed and can still correlate call/result pairs.
     ctx.on('llm/stream', (_options, next) => sanitizeToolCallDeltaStream(next()), { global: true })
 
     ctx.on('session/disposed', session => gate.drop(session.id))
