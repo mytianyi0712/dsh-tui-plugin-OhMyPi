@@ -388,4 +388,6 @@ docs/assets/            README 使用的实机截图
 
 ## 许可
 
-BSD-3-Clause。`patches/@earendil-works__pi-tui@0.80.7.patch` vendored from `turtle1999/turtle-ui`（BSD-3），完整声明见 [`patches/NOTICE.md`](patches/NOTICE.md)。
+BSD-3-Clause，版权所有 © 2026 mytianyi0712 和 dsh-omp-tui contributors。允许自由分发、修改与商业使用，但需保留原项目署名；完整条款见 [`LICENSE`](LICENSE)。
+
+本项目打包了 MIT 许可的 [`@earendil-works/pi-tui`](https://github.com/earendil-works/pi)（Copyright © 2025 Mario Zechner），并应用了来自 `turtle1999/turtle-ui` 的 vendored patch（BSD-3-Clause，Copyright © 2026 DeepSeek）。上述第三方版权声明与完整许可文本见 [`patches/NOTICE.md`](patches/NOTICE.md)。
