@@ -7,9 +7,9 @@
  */
 
 import { Input, SelectList, wrapTextWithAnsi, type Component, type Container, type Focusable, type OverlayHandle, type OverlayOptions, type TUI } from '@earendil-works/pi-tui'
-import type { LlmRuntime } from '@deepseek-ai/dsh-llm'
-import type { ModelSelection } from '@deepseek-ai/dsh-agent'
-import type { AskUserQuestionAnswerItem, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions'
+import type { LlmRuntime } from '../dsh-host/index.ts'
+import type { ModelSelection } from '../dsh-host/index.ts'
+import type { AskUserQuestionAnswerItem, AskUserQuestionItem } from '../dsh-host/index.ts'
 import { frameBlock, selectTheme, type ColorRole, type Palette } from '../theme.ts'
 import type { Translator } from '../i18n.ts'
 import { displayText } from './text.ts'

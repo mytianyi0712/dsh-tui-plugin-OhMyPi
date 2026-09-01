@@ -1,0 +1,171 @@
+{
+  "overrides": [
+    {
+      "id": "session-title-llm",
+      "keys": [
+        "name",
+        "disabled"
+      ]
+    },
+    {
+      "id": "agent-loop",
+      "keys": [
+        "inject",
+        "config",
+        "agents"
+      ]
+    },
+    {
+      "id": "system-prompt",
+      "keys": [
+        "config",
+        "persona"
+      ]
+    },
+    {
+      "id": "llm-deepseek",
+      "keys": [
+        "config",
+        "apiKeyEnv",
+        "baseURL",
+        "thinking",
+        "reasoningEffort"
+      ]
+    },
+    {
+      "id": "compaction-basic",
+      "keys": [
+        "config",
+        "summarizationProvider",
+        "summarizationModel"
+      ]
+    },
+    {
+      "id": "fs-sandbox",
+      "keys": [
+        "config",
+        "cwd"
+      ]
+    },
+    {
+      "id": "tools",
+      "keys": [
+        "config",
+        "mode"
+      ]
+    }
+  ],
+  "inserts": [
+    {
+      "id": "main",
+      "keys": [
+        "sessionId",
+        "resumeSessionId",
+        "provider",
+        "model",
+        "cwd"
+      ]
+    },
+    {
+      "id": "session-persistence-conversation-gate",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "session-reference",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tmux-context",
+      "keys": [
+        "name",
+        "config",
+        "refreshIntervalMs"
+      ]
+    },
+    {
+      "id": "agent-presets",
+      "keys": [
+        "name",
+        "config",
+        "default"
+      ]
+    },
+    {
+      "id": "session-title-llm-tui",
+      "keys": [
+        "name",
+        "config",
+        "targetWords",
+        "targetCjkCharacters",
+        "maxInputBytes",
+        "maxOutputTokens",
+        "timeoutMs"
+      ]
+    },
+    {
+      "id": "tui-prompt",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tui-startup",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "wechat-ilink",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "plugin-host",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "plugin-storage",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "message-observer",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "effect-ledger",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tui",
+      "keys": [
+        "name",
+        "inject",
+        "config",
+        "sessionId",
+        "showReasoning",
+        "maxToolOutputLines",
+        "defaultReasoningEffort",
+        "title"
+      ]
+    },
+    {
+      "id": "tool-ask-user",
+      "keys": [
+        "name"
+      ]
+    }
+  ]
+}

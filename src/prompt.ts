@@ -5,7 +5,7 @@
  * the values are registered already styled.
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Service, type Context } from './dsh-host/index.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -70,8 +70,9 @@ export interface TuiPromptValueHandle {
 
 /**
  * Built-ins register full and compact composer status values for cwd, Git,
- * mode, model, reasoning effort, context, and permission, plus token usage,
- * queue state, symbol, and indicator; plugins may register their own
+ * mode, model, reasoning effort, context, and permission. Permission is
+ * rendered only in the directory row; queued state, token usage, symbol, and
+ * indicator are available to templates. Plugins may register custom
  * `${custom}` fragments and subscribe to any change.
  */
 export class TuiPrompt extends Service {

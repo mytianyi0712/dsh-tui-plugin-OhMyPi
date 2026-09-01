@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.3.0] - 2026-09-01
+
+### 社区 std 适配器（dsh-ecosystem-spec v0.15）
+
+- 插件准入改为官方 Community v0.15 体系：`dsh-plugin.json` 由 `@dsh-std/manifest` 解析，`src/plugin-spec/` 提供五态协商（`compatible / compatible_degraded / waiting_authorization / rejected / unknown`，优先级 `unknown > rejected > waiting_authorization > compatible_degraded > compatible`）。
+- `src/plugin-spec/registry.ts` 改为从 vendored 上游资产加载：`registry-0.15.json`、`permissions-0.1.json`、`extensions-0.15.json`（`SettingsSection` / `Scene` 私有扩展）全部打包进 lib。
+- 新增 `src/plugin-spec/catalog.ts`：用 `@dsh-std/core` 的 `ProtocolCatalog` 注册 `command` / `storage` / `messages` / `presentation` 公共协议与 `tui.dsh/*` 私有定义；`parseManifest` 接入 `projectManifest` + `ManifestDefinitionCatalog.validate`。
+- `verify:plugin-spec` 增加 dsh-ecosystem-spec conformance fixtures 正反例（8 个 fixture）并构建 Host Descriptor。
+- 上游版本兼容由 `@dsh-std/adapter-dsh` 吸收，同时新增 harness 包完整版本校验与运行时漂移 boot notice（`src/std-contract.ts`）。
+- `dsh-host` 按域拆分：`framework` / `agent` / `llm` / `session` / `product` / `declarations`，`index.ts` 仅做 facade re-export。
+- 依赖归一化：`@deepseek-ai/dsh-*` 全部改为 optional peer + pinned devDep；`@dsh-std/{command,storage,messages,presentation}` 进入运行时依赖；`dependencies` 只保留 dsh-std 协议包、commander、qrcode-terminal。
+
+### 宿主平面（src/host）
+
+- `tuiPluginStorage` 改为 `open(pluginCtx)` 派生 namespace，`get` 每次现查 `storage.local.read`、`set/delete` 每次现查 `storage.local.write`，拒绝时抛 `PERMISSION_NOT_GRANTED`。
+- `tuiMessageObserver` envelope 对齐 `@dsh-std/messages` 0.1.1-rc.1 的 `MessageEvent`，投递前过 `validateMessageEvent`；订阅时校验 manifest 中 `MessageObserver` 声明的 scope 精确匹配；activationInstance 从 admission registry 读取。
+- `tuiEffectLedger` 写入前过 `effect-ledger-record.schema.json`（`additionalProperties:false`），结构性禁止夹带 payload。
+- `tuiPluginHost.admit()` 成功后记录 activation 与 manifest 到 process-wide registry，供 storage / message observer / 诊断面查询。
+
+### 诊断与门禁
+
+- 新增 `/plugins`：trust disclosure、Host Descriptor 摘要、self-check、admissions、grants 规则数、ledger 尾 5 条，以及 `/plugins check <path>`。
+- 新增 `/doctor`：self-check、advertised contracts、generation。
+- 新增 `verify:patch-surface` 门禁 + `patch-surface.snapshot.json`（7 overrides / 15 inserts），并挂入 `pnpm run check` / `pnpm run build`。
+- `verify:boundary` 保持双边界：`@deepseek-ai/*` 仅 `src/dsh-host/`，`@dsh-std/adapter-dsh` 仅 `src/dsh-adapter/`。
+
+### 底部信息栏重排
+
+- 第一行（目录/状态行）左侧显示工作目录与 git 分支，右侧固定显示「当前编辑模式 · 权限预设」；空间不足时优先折叠模式，权限始终可见。
+- 第二行（底部信息栏）改为左右分区：左侧对齐显示模型与思考强度（队列指示跟随左侧），右侧对齐显示上下文用量与缓存命中率；折叠顺序为队列 → 模型 → 思考强度 → 上下文前缀 → 缓存命中。
+- 新增缓存命中统计：累计 `cacheReadTokens`，按 `cacheRead / (cacheRead + inputTokens)` 显示命中率，仅在存在请求活动后出现。
+- 微信状态行增加图标前缀并弱化为灰色（dim），与主对话文本区分；错误/警告通知仍保持彩色。
+
+### 打包与启动
+
+- 统一使用 pnpm 安装（`package-lock.json` 移除，`pnpm-lock.yaml` 生成），pi-tui patch 随 `patchedDependencies` 生效；`tsdown` 开启 `clean: true`，消除 lib 残留旧 chunk。
+- `omdsh` 正常启动不自动升级、不迁移凭据/会话、不安装 std adapter，也不打印启动日志；首次尚无 tui profile 时仍静默安装当前启动器包。
+- 新增 `omdsh update`：从 GitHub Release 安装最新 tarball，并在此时做新版本适配（凭据扁平化、旧会话编码、社区 std adapter）。
+- 已知问题：`@dsh-std/adapter-dsh@0.1.1-rc.2` 作为 dsh bundle 安装时，其自带 `dsh-std-adapter` 行依赖 `sessionController`，当前 dsh `0.1.2-alpha.3` profile 无此服务会阻断启动；重复 id 冲突已修复，完整激活需等 adapter 更新或改为非 bundle 依赖安装。
+
 ## [0.2.6] - 2026-08-26
 
 - 新增微信远程模式切换命令：`@dsh chat` 使后续普通微信消息实时分段回传且不汇报进度；`@dsh work` 使后续消息完成后回传结果，并保留周期性进度汇报。

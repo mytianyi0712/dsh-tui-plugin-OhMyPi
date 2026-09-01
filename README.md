@@ -5,8 +5,8 @@
 **OMP 风格的 DeepSeek Harness（dsh）终端界面**
 
 [![License](https://img.shields.io/badge/License-BSD--3--Clause-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.6-blue)](#变更记录)
-[![dsh](https://img.shields.io/badge/dsh-0.1.1--rc.2-4c8bf5)](#运行要求)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue)](#变更记录)
+[![dsh](https://img.shields.io/badge/dsh-0.1.1--rc.2%20%2F%200.1.2--alpha.3-4c8bf5)](#运行要求)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
 </div>
@@ -62,8 +62,8 @@
 
 | 功能 | 说明 |
 |---|---|
-| 🎨 OMP 风格 TUI | 默认 Catppuccin 动态深浅主题、truecolor、Nerd Font 图标和 Powerline 状态栏 |
-| 📐 响应式布局 | 窄终端优先保留模式、工作目录、Git 与 `ctx`，空间不足时逐级压缩或隐藏低优先级字段 |
+| 🎨 OMP 风格 TUI | 默认 Catppuccin 动态深浅主题、truecolor、Nerd Font 图标和简洁双横线编辑区 |
+| 📐 响应式布局 | 工作目录固定在编辑器下方左侧，权限模式右对齐；模型、思考强度与 `ctx` 独立成行，窄终端优先保留权限与上下文 |
 | 💬 会话管理 | 支持新建、命名、恢复和进程内切换持久化会话 |
 | ⏱️ 插话队列 | 生成中按 `Enter` 把消息加入插话队列，在下一步（通常在工具调用完成后）送达模型；`Alt+Up` 编辑未生效插话并取消排队 |
 | 🧠 模型与思考等级 | 通过 `/model`、`/think` 选择 provider、model 和 reasoning effort |
@@ -81,7 +81,7 @@
 |---|---|
 | Node.js | `^22.19.0` 或 `>=24.0.0` |
 | pnpm | `11.7.0` 或兼容的 pnpm 11 |
-| dsh | `0.1.1-rc.2` |
+| dsh | `0.1.1-rc.2`（开发钉死）或 `0.1.2-alpha.2/3`（std adapter 覆盖线） |
 | 终端 | 推荐支持 truecolor；使用 Nerd Font 可获得完整图标显示 |
 
 > [!NOTE]
@@ -99,7 +99,7 @@ npm install --global pnpm@11.7.0
 
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
-  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.2.6/dsh-omp-tui-0.2.6.tgz
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.3.0/dsh-omp-tui-0.3.0.tgz
 ```
 
 tarball 已包含构建后的 `lib/`，用户机器无需编译本项目。
@@ -111,7 +111,7 @@ Git 安装会执行本项目的 `prepare` 构建。pnpm 11 默认阻止依赖构
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
   --allow-build=dsh-omp-tui \
-  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.2.6
+  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.3.0
 ```
 
 固定 tag 比直接使用 `#main` 更容易复现。完整的升级、卸载和安装排障说明见 [`docs/INSTALL.md`](docs/INSTALL.md)。
@@ -121,7 +121,7 @@ npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
 如果希望直接使用 `omdsh` 启动器，也可以全局安装本地 tarball；包内的 dsh 宿主 peer 依赖为 optional，npm 11 不会因 peer 图触发 Arborist 的 `null.children` 崩溃：
 
 ```sh
-npm install --global ./dsh-omp-tui-0.2.6.tgz
+npm install --global ./dsh-omp-tui-0.3.0.tgz
 npm install --global @deepseek-ai/dsh@0.1.1-rc.2
 omdsh
 ```
@@ -221,13 +221,14 @@ dsh --profile tui --resume <session-id>
 
 ### 使用 `omdsh` 启动 TUI
 
-项目提供 `omdsh` 启动器（`scripts/omdsh.js` 为跨平台 bin，另有 `scripts/omdsh` 与 `scripts/omdsh.cmd`）。`omdsh` 会调用系统 PATH 中的官方 `dsh` 并启动 `--profile tui`；本项目不下载、不缓存 dsh。首次运行时，`omdsh` 会自动把 `dsh-omp-tui` 安装到 tui profile；之后若 profile 内版本低于启动器版本，也会自动更新（可用 `OMDSH_NO_BOOTSTRAP=1` 跳过）。官方 dsh 命令（`web`、`plugin`、显式 `--profile` 等）请直接使用 `dsh`。
+项目提供 `omdsh` 启动器（`scripts/omdsh.js` 为跨平台 bin，另有 `scripts/omdsh` 与 `scripts/omdsh.cmd`）。`omdsh` 会调用系统 PATH 中的官方 `dsh` 并启动 `--profile tui`；本项目不下载、不缓存 dsh。正常启动不打印日志、不迁移配置、不自动升级；首次尚无 tui profile 时会静默安装当前启动器包（可用 `OMDSH_NO_BOOTSTRAP=1` 跳过）。从 GitHub 获取新版本并做适配请使用 `omdsh update`。官方 dsh 命令（`web`、`plugin`、显式 `--profile` 等）请直接使用 `dsh`。
 
 ```sh
 # 开发环境：把仓库 scripts 目录加入 PATH
 export PATH="$HOME/dsh-omp-tui/scripts:$PATH"   # Git Bash / zsh
 omdsh                         # 等价于 dsh --profile tui
 omdsh --resume <session-id>   # 透传给 tui profile
+omdsh update                  # 从 GitHub Release 安装最新包并适配
 
 # Windows cmd / PowerShell
 # 将 <仓库>\scripts 加入 PATH，或直接运行 <仓库>\scripts\omdsh.cmd
@@ -295,15 +296,21 @@ $env:DEEPSEEK_BASE_URL = 'http://localhost:3000/v1'
 
 ```sh
 pnpm install
-pnpm run typecheck
-pnpm run test
+pnpm run check        # verify:boundary + verify:contract + verify:plugin-spec + typecheck + test
 pnpm run prepare
 ```
+
+门禁说明（dsh-ecosystem-spec v0.15 / `@dsh-std/adapter-dsh` 动态链接）：
+
+| 命令 | 作用 |
+|---|---|
+| `pnpm run verify:boundary` | `@dsh-std/adapter-dsh` 只允许在 `src/dsh-adapter/` 内 import；`@deepseek-ai/*` 只允许在 `src/dsh-host/`（宿主渲染接缝）内 import |
+| `pnpm run verify:contract` | 校验 `@dsh-std/{core,manifest}` 与框架 major；DSH harness 版本由 std adapter 吸收 |
+| `pnpm run verify:plugin-spec` | 用官方 `@dsh-std/manifest` 校验 `dsh-plugin.json` 并构建 Host Descriptor |
 
 常用辅助命令：
 
 ```sh
-pnpm run check
 node --experimental-transform-types scripts/perf-probe.ts
 ```
 
@@ -312,6 +319,14 @@ node --experimental-transform-types scripts/perf-probe.ts
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add link:.
 ```
+
+社区 std adapter（`@dsh-std/adapter-dsh`）由 profile 动态链接，不打进本包。`omdsh update` 会在升级时尝试把它装进 tui profile；也可以手工安装：
+
+```sh
+dsh plugin --profile tui add @dsh-std/adapter-dsh
+```
+
+装上后本 TUI 会通过 `dsh-omp-tui/std-adapter` 行以 `discover:false` 启动 adapter core，再在 TUI 发布宿主能力之后由 `dsh-omp-tui/std-profile-loader` 激活 profile 里的 Community v0.15 插件。adapter 缺失或当前 dsh 缺少 `sessionController` 时 TUI 仍可启动，只是不会自动装载 std 插件。更新 adapter 只需在 profile 里升级该包，或再次执行 `omdsh update`。
 
 > [!NOTE]
 > dsh 仍处于 rc 阶段。上游接口变更时，先更新 [`docs/contracts.md`](docs/contracts.md)，再同步代码、依赖版本，并运行测试与 `dsh --profile tui` 实机 smoke。
@@ -322,6 +337,10 @@ npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add link:.
 
 ```text
 src/                    TUI、主题、提示、会话和设置实现
+src/dsh-adapter/        上游投影 + 社区 std adapter 动态链接（std-link / std-adapter / std-profile-loader）
+src/plugin-spec/        Community v0.15：`@dsh-std/manifest` 解析 + 本宿主 registry / negotiation
+src/host/               grants、effect ledger、plugin storage、message observer、plugin host
+src/extensions/         tuiDialogs / tuiStatus / tuiShortcuts / tuiRenderers / tuiSettingsSections / tuiScenes
 src/components/         状态栏、消息、工具卡和转录组件
 tests/                  node:test 行为测试
 cordis.patch.yml        将本 bundle 组合进 dsh profile 的配置
@@ -333,9 +352,11 @@ docs/assets/            README 使用的实机截图
 
 架构边界保持简单：dsh harness 负责 agent、模型、工具、持久化与沙箱；本仓库负责终端呈现和输入。渲染层使用 `@earendil-works/pi-tui@0.80.7`，并通过 vendored patch 打入发布包，消费者无需单独安装 pi-tui。
 
+社区互操作走 [dsh-ecosystem-spec v0.15](https://github.com/T-Auto/dsh-ecosystem-spec) 与 [`@dsh-std/adapter-dsh`](https://www.npmjs.com/package/@dsh-std/adapter-dsh)：adapter 动态链接、可独立升级；`dsh-plugin.json` 由官方 `@dsh-std/manifest` 解析；`src/host/` 提供授权与台账等宿主平面；`src/extensions/` 提供社区扩展接缝。已知偏差：`tuiScenes` 场景使用 pi-tui 组件而非 React 场景（详见 `docs/contracts.md`）。
+
 ## 变更记录
 
-完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。当前版本：`0.2.6`。
+完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。当前版本：`0.3.0`。
 
 ## 相关文档
 

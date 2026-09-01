@@ -5,8 +5,8 @@
 // 终端里输入触发（拥有完整命令上下文，可弹输入框、显示命令结果）；@dsh
 // 命令由微信消息触发。两者共享 core（微信通信）与 runtime（配置）。
 
-import type { Context } from '@deepseek-ai/cordis'
-import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
+import type { Context } from '../../dsh-host/index.ts'
+import type { CommandInvocation, CommandResult } from '../../dsh-host/index.ts'
 import { ILINK_BASE_URL } from '../core/api.ts'
 import { startLogin, waitLogin } from '../core/login.ts'
 import {

@@ -7,10 +7,10 @@
 //   4) 管理 getUpdates 接收锁与账号 Monitor；
 //   5) 向 TUI 暴露 askWithFallback，使 ask_user_question 可同步推送到微信。
 
-import { Service, type Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { AskUserQuestionAnswer, AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
+import { Service, type Context } from '../dsh-host/index.ts'
+import type { Agent } from '../dsh-host/index.ts'
+import { createUserMessage } from '../dsh-host/index.ts'
+import type { AskUserQuestionAnswer, AskUserQuestionRequest } from '../dsh-host/index.ts'
 import type { WeixinMessage } from './core/api.ts'
 import { loadAccounts, type Account, type BridgeConfig } from './core/state.ts'
 import {
@@ -24,7 +24,6 @@ import {
   isReceiverHeld,
   log,
   setOutputSink,
-  writeOutputToStderr,
   type WechatOutputMessage,
   type WechatOutputListener,
 } from './core/runtime.ts'
@@ -61,16 +60,14 @@ export class WechatBridge extends Service {
 
   constructor(ctx: Context) {
     super(ctx, 'wechat')
-    // 后续所有 log/二维码都走输出通道：TUI 未就绪时回退 stderr，
-    // TUI 就绪后只进缓冲等待订阅，避免 stderr 覆盖输入框。
+    // 后续所有 log/二维码都走输出通道：TUI 未就绪时只缓冲，界面起来后再回放。
     setOutputSink(message => this.publishOutput(message))
     reloadConfig()
 
     // 多进程接收互斥：只有持有锁的进程长轮询，其他进程仅发送。
     setReceiverHeld(tryAcquireReceiverLock())
     log(`receiver lock: ${isReceiverHeld() ? 'acquired' : `held by pid ${receiverHolderPid()}`}`)
-
-publishWechatStatus()
+    publishWechatStatus()
     // 命令 / 工具 / 进度钩子。
     // 注意：@dsh 微信快捷命令不在此注册为本地命令；它们仅由微信消息在
     // handleDshMessage 中直接分发，因此不会出现在本地命令菜单/补全里。
@@ -133,8 +130,8 @@ publishWechatStatus()
   }
 
   /**
-   * 输出发布策略：有订阅者直接推送；没有订阅者时先进缓冲。只有 TUI 尚未
-   * 就绪时才同步回退 stderr —— 此时终端还没有差分渲染器，不会覆盖输入框。
+   * 输出发布策略：有订阅者直接推送；没有订阅者时先进缓冲。启动期不写
+   * stderr，避免污染 TUI 首帧；无 TUI 的错误仍由订阅回放或丢弃。
    */
   private publishOutput(message: WechatOutputMessage): void {
     if (this.outputListeners.size > 0) {
@@ -149,15 +146,6 @@ publishWechatStatus()
     }
     this.outputBuffer.push(message)
     if (this.outputBuffer.length > OUTPUT_BUFFER_LIMIT) this.outputBuffer.shift()
-    if (!this.hasTui()) writeOutputToStderr(message)
-  }
-
-  private hasTui(): boolean {
-    try {
-      return this.ctx.get('tui') !== undefined
-    } catch {
-      return false
-    }
   }
 
   /**

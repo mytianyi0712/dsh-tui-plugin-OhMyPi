@@ -4,7 +4,7 @@
 // 双通道谁先回答谁生效。微信侧的回答由 core/monitors 在入站时调用
 // consumeAskAnswer 消费（优先级高于 @dsh 命令）。
 
-import type { AskUserQuestionAnswer, AskUserQuestionItem, AskUserQuestionRequest } from '@deepseek-ai/dsh-user-questions'
+import type { AskUserQuestionAnswer, AskUserQuestionItem, AskUserQuestionRequest } from '../../dsh-host/index.ts'
 import type { WeixinMessage } from '../core/api.ts'
 import type { Account } from '../core/state.ts'
 import { loadAccounts } from '../core/state.ts'

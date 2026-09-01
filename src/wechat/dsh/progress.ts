@@ -5,10 +5,10 @@
 // - agent/request：每模型请求触发一次，按 interval 注入一条 steer 让模型自查进度；
 // - session/event turn/end：回合真正结束时向微信推送结果/失败/截断。
 
-import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { Context } from '../../dsh-host/index.ts'
+import type { Agent } from '../../dsh-host/index.ts'
+import { createUserMessage } from '../../dsh-host/index.ts'
+import type { SessionEvent } from '../../dsh-host/index.ts'
 import {
   clearWechatPending,
   consumeWechatTurn,

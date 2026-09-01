@@ -1,9 +1,8 @@
 /** Conversation-aware write gate and legacy session repair installed over the profile's JSONL backend. */
 
-import { Service, type Context } from '@deepseek-ai/cordis'
-import { CallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-session-persistence'
+import { Service, type Context } from './dsh-host/index.ts'
+import { ToolCallId, type StreamChunk } from './dsh-host/index.ts'
+import type { SessionEvent, SessionHeader, SessionId } from './dsh-host/index.ts'
 import { hasConversationData } from './session-lifecycle.ts'
 
 export const name = 'session-persistence-conversation-gate'
@@ -193,7 +192,7 @@ export function sanitizeToolCallChunk(chunk: StreamChunk): StreamChunk {
   if (chunk.type === 'tool-call-delta') {
     const id = nonEmptyString(chunk.id, `call-${chunk.index}`)
     if (id === chunk.id) return chunk
-    return { ...chunk, id: CallId(id) } as StreamChunk
+    return { ...chunk, id: ToolCallId(id) } as StreamChunk
   }
 
   if (chunk.type === 'block-end' && chunk.block.type === 'tool-call') {
@@ -202,7 +201,7 @@ export function sanitizeToolCallChunk(chunk: StreamChunk): StreamChunk {
     if (id === block.id) return chunk
     return {
       ...chunk,
-      block: { ...block, id: CallId(id) },
+      block: { ...block, id: ToolCallId(id) },
     } as StreamChunk
   }
 
@@ -214,18 +213,18 @@ export async function* sanitizeToolCallDeltaStream(source: AsyncIterable<StreamC
   // adapters close blocks with an empty name/id. Keep the first non-empty
   // identity per block index and fall back to it so the assembler never
   // overwrites a valid tool identity with an empty or synthesized one.
-  const toolIds = new Map<number, CallId>()
+  const toolIds = new Map<number, ToolCallId>()
   const toolNames = new Map<number, string>()
   for await (const chunk of source) {
     if (chunk.type === 'tool-call-delta') {
       if (typeof chunk.name === 'string' && chunk.name.trim() !== '') toolNames.set(chunk.index, chunk.name)
       if (typeof chunk.id === 'string' && chunk.id.trim() !== '') toolIds.set(chunk.index, chunk.id)
       const id = nonEmptyString(chunk.id, toolIds.get(chunk.index) ?? `call-${chunk.index}`)
-      if (!toolIds.has(chunk.index)) toolIds.set(chunk.index, CallId(id))
+      if (!toolIds.has(chunk.index)) toolIds.set(chunk.index, ToolCallId(id))
       if (id === chunk.id) {
         yield chunk
       } else {
-        yield { ...chunk, id: CallId(id) } as StreamChunk
+        yield { ...chunk, id: ToolCallId(id) } as StreamChunk
       }
       continue
     }
@@ -241,7 +240,7 @@ export async function* sanitizeToolCallDeltaStream(source: AsyncIterable<StreamC
       } else {
         yield {
           ...chunk,
-          block: { ...block, id: CallId(id), name },
+          block: { ...block, id: ToolCallId(id), name },
         } as StreamChunk
       }
       continue

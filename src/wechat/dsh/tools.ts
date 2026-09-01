@@ -4,8 +4,8 @@
 // 本插件通过 WechatBridge.askWithFallback 让 TUI 的 userQuestions provider
 // 把提问同步推送到微信，因此这里不再注册 ask 工具。
 
-import type { Context } from '@deepseek-ai/cordis'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { Context } from '../../dsh-host/index.ts'
+import { defineTool } from '../../dsh-host/index.ts'
 import { loadAccounts } from '../core/state.ts'
 import { activePeers } from '../core/bridge.ts'
 import { getConfig, log } from '../core/runtime.ts'

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://raw.githubusercontent.com/T-Auto/dsh-ecosystem-spec/main/vendor/dsh-std/packages/manifest/schema/dsh-plugin-0.15.schema.json",
+  "manifestVersion": "0.15",
+  "id": "dsh-omp-tui",
+  "name": "dsh-omp-tui",
+  "version": "0.3.0",
+  "license": "BSD-3-Clause",
+  "source": {
+    "repository": "https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi"
+  },
+  "facets": {
+    "host": {
+      "entry": "./lib/index.js",
+      "apiVersion": "v1alpha1"
+    }
+  },
+  "requires": {
+    "contracts": [
+      { "apiVersion": "commands.dsh/v1alpha1", "kind": "Command", "optional": true, "fallback": "commands are unavailable; plugin-contributed commands are disabled" },
+      { "apiVersion": "storage.dsh/v1alpha1", "kind": "LocalStorage", "optional": true, "fallback": "plugin storage is unavailable" },
+      { "apiVersion": "messages.dsh/v1alpha1", "kind": "MessageObserver", "optional": true, "fallback": "message observation is unavailable" },
+      { "apiVersion": "tui.dsh/v1alpha1", "kind": "DecisionEvents", "optional": true, "fallback": "decision interception is unavailable" },
+      { "apiVersion": "tui.dsh/v1alpha1", "kind": "SettingsSection", "optional": true, "fallback": "settings sections are unavailable" },
+      { "apiVersion": "tui.dsh/v1alpha1", "kind": "Scene", "optional": true, "fallback": "plugin scenes are unavailable" }
+    ]
+  }
+}

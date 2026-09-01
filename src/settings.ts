@@ -1,7 +1,6 @@
 /** Shared persistent settings namespaces used by the TUI and title provider. */
 
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import z from '@deepseek-ai/schemastery'
+import { settingsNamespace, z } from './dsh-host/index.ts'
 
 export const TUI_SETTINGS_NAMESPACE = settingsNamespace('tui')
 
@@ -20,9 +19,9 @@ export interface TuiSettings {
   themeSelected?: string
   /** Per-role truecolor overrides, e.g. `{ accent: [250, 179, 135] }`. */
   themeCustom?: Record<string, number[]>
-  /** Template rendered in the status-line top rail. */
+  /** Template rendered left-aligned beside the permission state below the editor. */
   leftPrompt?: string
-  /** Template rendered below the editor's bottom rail. */
+  /** Template rendered below the directory and permission row. */
   rightPrompt?: string
   /** Keybinding for cycling tool cards. */
   keyTools?: string

@@ -1,7 +1,7 @@
 {
   "name": "dsh-omp-tui",
   "description": "OMP-styled interactive terminal profile bundle for DeepSeek Harness",
-  "version": "0.2.6",
+  "version": "0.3.0",
   "publishConfig": {
     "access": "public"
   },
@@ -30,10 +30,14 @@
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --test --experimental-transform-types \"tests/*.spec.ts\"",
-    "check": "pnpm run typecheck && pnpm run test",
+    "check": "npm run verify:boundary && npm run verify:contract && npm run verify:patch-surface && npm run verify:plugin-spec && npm run typecheck && npm run test",
     "generate:themes": "node scripts/generate-omp-themes.mjs",
-    "build": "tsc -b && tsdown",
-    "prepare": "tsdown --config tsdown.prepare.config.ts"
+    "build": "npm run verify:boundary && npm run verify:contract && npm run verify:patch-surface && npm run verify:plugin-spec && tsc -b && tsdown",
+    "prepare": "tsdown --config tsdown.prepare.config.ts",
+    "verify:boundary": "node scripts/verify-boundary.ts",
+    "verify:contract": "node scripts/verify-contract.ts",
+    "verify:plugin-spec": "node scripts/verify-plugin-spec.ts",
+    "verify:patch-surface": "node scripts/verify-patch-surface.ts"
   },
   "main": "lib/index.js",
   "bin": {
@@ -48,47 +52,63 @@
     "./wechat": "./lib/wechat/index.js",
     "./cordis.patch.yml": "./cordis.patch.yml",
     "./src/*": "./src/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./plugin-host": "./lib/host/plugin-host.js",
+    "./plugin-storage": "./lib/host/plugin-storage.js",
+    "./message-observer": "./lib/host/message-observer.js",
+    "./effect-ledger": "./lib/host/effect-ledger.js",
+    "./std-adapter": "./lib/dsh-adapter/std-adapter.js",
+    "./std-profile-loader": "./lib/dsh-adapter/std-profile-loader.js"
   },
   "files": [
     "CHANGELOG.md",
     "docs/INSTALL.md",
     "lib/*.js",
     "lib/wechat",
+    "lib/host",
+    "lib/dsh-adapter",
     "patches",
     "scripts/omdsh",
     "scripts/omdsh.cmd",
     "scripts/omdsh.js",
     "src",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "dsh-plugin.json"
   ],
   "license": "BSD-3-Clause",
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-agent": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-agent-default-model": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-agent-loop": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-agent-presets": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-cmdline": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-commands": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-compaction": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-goal": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-llm": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-permission-presets": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-session": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-persistence": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-projection": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-query": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-reference": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-title": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-skill": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-token-meter": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-tools": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-user-questions": "^0.1.1-rc.2",
-    "@deepseek-ai/schemastery": "^3.18.1"
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-agent": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-agent-default-model": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-agent-loop": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-agent-presets": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-cmdline": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-commands": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-compaction": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-goal": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-llm": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-permission-presets": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-session": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-session-persistence": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-session-projection": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-session-query": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-session-reference": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-session-title": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-skill": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-system-prompt": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-token-meter": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-tools": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-user-questions": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/schemastery": "^3.18.1",
+    "@dsh-std/adapter-dsh": "^0.1.1-rc.2",
+    "@deepseek-ai/dsh-session-title-llm": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-settings": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2",
+    "@deepseek-ai/dsh-tool-todo": "^0.1.0-rc.6 || ^0.1.1-rc.1 || ^0.1.2-alpha.2"
   },
   "peerDependenciesMeta": {
+    "@dsh-std/adapter-dsh": {
+      "optional": true
+    },
     "@deepseek-ai/cordis": {
       "optional": true
     },
@@ -157,46 +177,61 @@
     },
     "@deepseek-ai/schemastery": {
       "optional": true
+    },
+    "@deepseek-ai/dsh-session-title-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-settings": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tool-todo": {
+      "optional": true
     }
   },
   "dependencies": {
-    "@deepseek-ai/dsh-agent-presets": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-title-llm": "^0.1.1-rc.2",
-    "@deepseek-ai/dsh-settings": "^0.1.1-rc.2",
-    "@deepseek-ai/schemastery": "3.18.1",
+    "@dsh-std/core": "^0.1.1-rc.1",
+    "@dsh-std/manifest": "^0.1.1-rc.2",
     "commander": "^15.0.0",
-    "qrcode-terminal": "0.12.0"
+    "qrcode-terminal": "0.12.0",
+    "@dsh-std/messages": "^0.1.1-rc.1",
+    "@dsh-std/command": "0.1.1-rc.1",
+    "@dsh-std/storage": "0.1.1-rc.1",
+    "@dsh-std/presentation": "0.1.1-rc.1"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "4.0.1",
-    "@deepseek-ai/dsh-agent": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-agent-default-model": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-agent-loop": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-cmdline": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-commands": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-compaction": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-goal": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-llm": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-permission-presets": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-session": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-persistence": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-projection": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-query": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-reference": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-title": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-session-title-llm": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-settings": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-skill": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-system-prompt": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-token-meter": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-tools": "0.1.1-rc.2",
-    "@deepseek-ai/dsh-user-questions": "0.1.1-rc.2",
+    "@deepseek-ai/cordis": "^4.0.2",
+    "@deepseek-ai/dsh-agent": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-agent-default-model": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-agent-loop": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-cmdline": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-commands": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-compaction": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-goal": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-llm": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-permission-presets": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session-persistence": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session-projection": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session-query": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session-reference": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session-title": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-session-title-llm": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-settings": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-skill": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-system-prompt": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-token-meter": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-tool-todo": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-tools": "0.1.2-alpha.3",
+    "@deepseek-ai/dsh-user-questions": "0.1.2-alpha.3",
     "@deepseek-ai/schemastery": "3.18.1",
+    "@dsh-std/adapter-dsh": "0.1.1-rc.2",
     "@earendil-works/pi-tui": "0.80.7",
     "@types/node": "^22.20.0",
     "commander": "^15.0.0",
     "tsdown": "^0.22.2",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "@deepseek-ai/dsh-agent-presets": "0.1.2-alpha.3",
+    "@dsh-std/messages": "0.1.1-rc.1"
   },
   "dsh": {
     "bundle": {

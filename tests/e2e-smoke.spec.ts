@@ -66,7 +66,6 @@ describe('e2e smoke', () => {
     })
 
     try {
-      // omdsh prints bootstrap messages before the TUI welcome screen.
       const ready = await collectUntil(
         child,
         text => text.includes('/help') || text.includes('欢迎回来') || text.includes('Welcome back'),

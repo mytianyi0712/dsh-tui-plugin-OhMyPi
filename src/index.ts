@@ -7,7 +7,7 @@
 
 import { readFile } from 'node:fs/promises'
 import { basename, isAbsolute, join, resolve } from 'node:path'
-import { Service, type Context } from '@deepseek-ai/cordis'
+import { Service, type Context } from './dsh-host/index.ts'
 import {
   Container,
   Editor,
@@ -23,35 +23,24 @@ import {
   type SelectItem,
   type TerminalColorScheme,
 } from '@earendil-works/pi-tui'
-import type { Agent, AgentHandle, AgentStatus, ModelSelection, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
-import { installModelSelection } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentHandle, AgentStatus, ModelSelection, ModelSelectionRef } from './dsh-host/index.ts'
+import { installModelSelection } from './dsh-host/index.ts'
 import { CombinedAutocompleteProvider, type AutocompleteItem, type SlashCommand } from '@earendil-works/pi-tui'
-import { createUserMessage, errorChain, type CallId, type LlmConfigurableProvider, type LlmReasoningEffortInfo } from '@deepseek-ai/dsh-llm'
-import { SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { foldSessionTitle } from '@deepseek-ai/dsh-session-title'
-import { parseSessionReferenceText } from '@deepseek-ai/dsh-session-reference'
-import { renderSkillContent } from '@deepseek-ai/dsh-skill'
+import { createUserMessage, errorChain, type ToolCallId, type LlmConfigurableProvider, type LlmReasoningEffortInfo } from './dsh-host/index.ts'
+import { SessionId, type Session, type SessionEvent } from './dsh-host/index.ts'
+import { foldSessionTitle } from './dsh-host/index.ts'
+import { parseSessionReferenceText } from './dsh-host/index.ts'
+import { renderSkillContent } from './dsh-host/index.ts'
 // Type-only imports pull in the declaration merges that expose `ctx.commands`,
 // `ctx.tokenMeter`, `ctx.llm`, `ctx.userQuestions`, `ctx.sessionQuery`,
 // `ctx.agentDefaultModel`, `ctx.skills`, `ctx.sessionReferenceResolver`, and
 // `ctx.permissionPresets` on the cordis Context, plus the goal/compaction/skill
 // session-event extensions.
-import type {} from '@deepseek-ai/dsh-commands'
-import type {} from '@deepseek-ai/dsh-token-meter'
-import type {} from '@deepseek-ai/dsh-user-questions'
-import type {} from '@deepseek-ai/dsh-session-query'
-import type {} from '@deepseek-ai/dsh-agent-default-model'
-import type {} from '@deepseek-ai/dsh-skill'
-import type {} from '@deepseek-ai/dsh-session-reference'
-import { settingsNamespace, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
-import type {} from '@deepseek-ai/dsh-settings'
-import { PERMISSION_SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-permission-presets'
-import type {} from '@deepseek-ai/dsh-permission-presets'
-import type {} from '@deepseek-ai/dsh-goal'
-import type {} from '@deepseek-ai/dsh-compaction'
+import { settingsNamespace, type SettingsNamespace } from './dsh-host/index.ts'
+import { PERMISSION_SETTINGS_NAMESPACE } from './dsh-host/index.ts'
 // Declaration merges: `ctx.agentPresets` and the `agent-preset/selected`
 // session event, plus the runtime preset resolver for resumed sessions.
-import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
+import { resolveSessionPreset } from './dsh-host/index.ts'
 import {
   DEFAULT_LEFT_PROMPT,
   DEFAULT_RIGHT_PROMPT,
@@ -106,9 +95,9 @@ import {
 } from './components/transcript.ts'
 import {
   CommandHintComponent,
+  ComposerDirectoryComponent,
   ComposerFooterComponent,
   InputBorderComponent,
-  StatusLineComponent,
   formatContextTokens,
   chooseReasoningEffort,
   resolveSessionModelSelection,
@@ -136,6 +125,11 @@ import { hasConversationData, recordConversationPreset } from './session-lifecyc
 import type { BridgeConfig, WechatBridge } from './wechat/index.ts'
 import { setActiveAgent } from './wechat/dsh/session.ts'
 import { setTuiForegroundControl } from './wechat/dsh/tui-control.ts'
+import { createExtensionServices, type ExtensionServices, type SettingsField, type SettingsSection } from './extensions/index.ts'
+import type { TuiPluginHost } from './host/index.ts'
+import { enqueueBootNotice, drainBootNotices } from './boot-notices.ts'
+import { upstreamDriftWarnings } from './std-contract.ts'
+import { negotiate, parseManifest } from './plugin-spec/index.ts'
 
 export const name = 'tui'
 
@@ -391,12 +385,30 @@ export class Tui extends Service {
     const ui = new TUI(terminal, true)
     ui.setClearOnShrink(true)
 
+    // Community extension seams (dsh-ecosystem-spec v0.15): the TUI row
+    // provides the renderer-coupled services and installs pi-tui backends
+    // below once `appendNotice`/`palette` are available.
+    const extensions: ExtensionServices = createExtensionServices()
+    ctx.provide('tuiDialogs', extensions.dialogs)
+    ctx.provide('tuiStatus', extensions.status)
+    ctx.provide('tuiShortcuts', extensions.shortcuts)
+    ctx.provide('tuiRenderers', extensions.renderers)
+    ctx.provide('tuiSettingsSections', extensions.settingsSections)
+    ctx.provide('tuiScenes', extensions.scenes)
+    const pluginHost = ctx.get('tuiPluginHost', false) as TuiPluginHost | undefined
+
+    // Warn once when the profile's harness tree drifts from the validated
+    // upstream line. The check is best-effort and never blocks startup.
+    void upstreamDriftWarnings(join(import.meta.dirname, '..', '..', '..')).then(warnings => {
+      for (const warning of warnings) enqueueBootNotice(warning, 'warning')
+    })
+
     // The agent is published asynchronously on the resume path (persistence
     // load), so agent-dependent setup runs in mount() once it is live.
     let agent: Agent | undefined
     let gitBranch: string | undefined
     /** Running token usage for the active session; kept incrementally to avoid rescanning the whole log on every status update. */
-    let tokenTotals = { inputTokens: 0, outputTokens: 0 }
+    let tokenTotals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
     // Agent-scoped helpers handed to the command surface by mount().
     const handles: {
       newAgent: (() => Promise<SessionId | undefined>) | undefined
@@ -433,7 +445,7 @@ export class Tui extends Service {
     let leftTemplate = parseTuiPromptTemplate(displayInlineText(persistedTheme?.leftPrompt ?? resolved.theme.leftPrompt))
     let rightTemplate = parseTuiPromptTemplate(displayInlineText(persistedTheme?.rightPrompt ?? resolved.theme.rightPrompt))
     const promptValue = (valueName: string): string | undefined => ctx.tuiPrompt.get(valueName)
-    let statusLine = new StatusLineComponent(leftTemplate, promptValue, palette)
+    let directoryStatus = new ComposerDirectoryComponent(leftTemplate, promptValue, palette)
     const todoPanel = new TodoPanelComponent(palette)
     const subagentPanel = new SubagentPanelComponent(palette)
     // 固定占位一行：通知只在行内刷新文字，不改变 chrome 高度，
@@ -441,17 +453,29 @@ export class Tui extends Service {
     // 无临时通知时回落到微信桥持久状态（连接情况 + 接收锁归属）。
     let noticeText = ''
     let wechatStatusText = ''
+    let uiStarted = false
+    const pendingNotices: Array<{ text: string; kind: 'info' | 'warning' | 'error' }> = []
     const noticeSlot: Component = {
       invalidate() {},
       render(width: number): string[] {
-        const line = noticeText !== '' ? noticeText : wechatStatusText
-        if (line === '') return ['']
-        return [truncateToWidth(line, Math.max(1, width), '')]
+        const pluginLines = extensions.status.snapshot()
+        const lines: string[] = []
+        if (pluginLines.length > 0) {
+          lines.push(truncateToWidth(pluginLines.join(' · '), Math.max(1, width), ''))
+        }
+        if (noticeText !== '') {
+          lines.push(truncateToWidth(noticeText, Math.max(1, width), ''))
+        } else if (wechatStatusText !== '') {
+          lines.push(truncateToWidth(palette.dim(`\uf1d7 ${wechatStatusText}`), Math.max(1, width), ''))
+        }
+        if (lines.length === 0) return ['']
+        return lines
       },
     }
     const askSlot = new Container()
     let commandHintText: string | undefined
     const commandHint = new CommandHintComponent(() => commandHintText, palette)
+    const inputTopBorder = new InputBorderComponent(palette)
     const inputBorder = new InputBorderComponent(palette)
     let footer = new ComposerFooterComponent(rightTemplate, promptValue, palette)
     let noticeTimer: NodeJS.Timeout | undefined
@@ -459,7 +483,7 @@ export class Tui extends Service {
     /** Lines consumed by every root child below the transcript viewport. */
     const computeTranscriptHeight = (width: number): number => {
       let used = 0
-      for (const child of [todoPanel, subagentPanel, noticeSlot, statusLine, askSlot, editor, commandHint, inputBorder, footer]) {
+      for (const child of [todoPanel, subagentPanel, noticeSlot, askSlot, inputTopBorder, editor, commandHint, inputBorder, directoryStatus, footer]) {
         used += child.render(width).length
       }
       return Math.max(1, ui.terminal.rows - used)
@@ -472,11 +496,12 @@ export class Tui extends Service {
       ui.addChild(todoPanel)
       ui.addChild(subagentPanel)
       ui.addChild(noticeSlot)
-      ui.addChild(statusLine)
       ui.addChild(askSlot)
+      ui.addChild(inputTopBorder)
       ui.addChild(editor)
       ui.addChild(commandHint)
       ui.addChild(inputBorder)
+      ui.addChild(directoryStatus)
       ui.addChild(footer)
       ui.setFocus(editor)
     }
@@ -497,7 +522,8 @@ export class Tui extends Service {
     const tokensValue = ctx.tuiPrompt.register('tokens')
     const contextValue = ctx.tuiPrompt.register('context')
     const contextCompactValue = ctx.tuiPrompt.register('context/compact')
-    const permissionValue = ctx.tuiPrompt.register('permission')
+    const cacheValue = ctx.tuiPrompt.register('cache')
+    const cacheCompactValue = ctx.tuiPrompt.register('cache/compact')
     const permissionCompactValue = ctx.tuiPrompt.register('permission/compact')
     const queuedValue = ctx.tuiPrompt.register('queued')
     const symbolValue = ctx.tuiPrompt.register('symbol')
@@ -509,7 +535,7 @@ export class Tui extends Service {
       editor.setPrompt({ first, continuation: ' '.repeat(visibleWidth(first)) })
     }
 
-    const appendNotice = (text: string, kind: 'info' | 'warning' | 'error'): void => {
+    const showNotice = (text: string, kind: 'info' | 'warning' | 'error'): void => {
       const color = kind === 'error'
         ? palette.error
         : kind === 'warning' ? palette.warning : palette.dim
@@ -522,8 +548,75 @@ export class Tui extends Service {
       ui.requestRender()
     }
 
+    const appendNotice = (text: string, kind: 'info' | 'warning' | 'error'): void => {
+      if (!uiStarted) {
+        pendingNotices.push({ text, kind })
+        return
+      }
+      showNotice(text, kind)
+    }
+
+    const flushDeferredNotices = (): void => {
+      uiStarted = true
+      for (const notice of drainBootNotices()) pendingNotices.push(notice)
+      const deferred = pendingNotices.splice(0)
+      const last = deferred.at(-1)
+      if (last !== undefined) showNotice(last.text, last.kind)
+    }
+
+    // Managed dialog backend: FIFO queue lives in DialogsService; pi-tui
+    // renders one modal at a time through the existing overlay helpers.
+    extensions.dialogs.installBackend({
+      select: request => showOverlay<string>(ui, done => new SelectDialog(
+        request.title,
+        request.options.map(option => ({
+          value: option.id,
+          label: option.label,
+          ...option.description === undefined ? {} : { description: option.description },
+        })),
+        palette,
+        done,
+      )),
+      confirm: request => showOverlay<boolean>(ui, done => new SelectDialog(
+        request.title,
+        [
+          { value: 'yes', label: request.confirmLabel ?? t('confirmYes') },
+          { value: 'no', label: request.cancelLabel ?? t('confirmNo') },
+        ],
+        palette,
+        value => done(value === 'yes'),
+      )).then(value => value ?? false),
+      input: request => showOverlay<string>(ui, done => new InputDialog(
+        request.title,
+        palette,
+        done,
+        t,
+        request.initial ?? '',
+      )),
+    })
+
+    // Scene backend: pi-tui scene components (deviation from the React scene
+    // contract documented in docs/contracts.md).
+    extensions.scenes.installBackend({
+      open: registration => {
+        if (typeof registration.component !== 'object' && typeof registration.component !== 'function') return false
+        void showOverlay<unknown>(ui, done => {
+          if (typeof registration.component === 'function') {
+            return (registration.component as (props: { close: () => void; palette: Palette; t: Translator }) => Component)({
+              close: () => done(undefined),
+              palette,
+              t,
+            })
+          }
+          return registration.component as Component
+        })
+        return true
+      },
+      close: () => undefined,
+    })
+
     const warnIfFullAccess = (target: Agent): void => {
-      if (ctx.permissionPresets.current(target.session.events) === FULL_ACCESS_REGISTRY_NAME) {
+      if (ctx.permissionPresets.current(target.session) === FULL_ACCESS_REGISTRY_NAME) {
         appendNotice(t('noticeFullAccessWarning'), 'warning')
       }
     }
@@ -702,18 +795,23 @@ export class Tui extends Service {
         contextUsageCache = {
           measuredAt: now,
           totalTokens,
-          permission: ctx.permissionPresets.current(current.session.events),
+          permission: ctx.permissionPresets.current(current.session),
         }
       }
       const contextText = `ctx ${formatContextTokens(contextUsageCache.totalTokens)}/${formatContextTokens(contextWindow)}`
       contextValue.set(` ${palette.muted('·')} ${palette.context(contextText)}`)
       contextCompactValue.set(palette.context(contextText))
+      const cacheDenominator = tokenTotals.cacheReadTokens + tokenTotals.inputTokens
+      const cacheText = cacheDenominator > 0
+        ? `cache ${Math.round(tokenTotals.cacheReadTokens / cacheDenominator * 100)}%`
+        : undefined
+      cacheValue.set(cacheText === undefined ? undefined : ` ${palette.muted('·')} ${palette.context(cacheText)}`)
+      cacheCompactValue.set(cacheText === undefined ? undefined : palette.context(cacheText))
       const permission = contextUsageCache.permission
       const permissionRole = permission === FULL_ACCESS_REGISTRY_NAME
         ? (text: string) => palette.bold(palette.accent(text))
         : permission === 'read-only' ? palette.muted : palette.accent
       const permissionText = permissionRole(displayText(displayPermissionName(permission)))
-      permissionValue.set(` ${palette.muted('·')} ${permissionText}`)
       permissionCompactValue.set(permissionText)
       refreshInterjectionIndicator()
       symbolValue.set(undefined)
@@ -768,7 +866,7 @@ export class Tui extends Service {
 
     // --- transcript ---------------------------------------------------------
     const assistantStream = new AssistantStreamController(chat, palette, mdTheme)
-    const toolCards = new Map<CallId, ToolCardComponent>()
+    const toolCards = new Map<ToolCallId, ToolCardComponent>()
     const allToolCards = new Set<ToolCardComponent>()
     const contextCards = new Set<ContextCardComponent>()
     let toolsVisibility: ToolCardVisibility = 'collapsed'
@@ -822,6 +920,8 @@ export class Tui extends Service {
           if (event.data.usage !== undefined) {
             tokenTotals.inputTokens += event.data.usage.inputTokens
             tokenTotals.outputTokens += event.data.usage.outputTokens
+            tokenTotals.cacheReadTokens += event.data.usage.cacheReadTokens ?? 0
+            tokenTotals.cacheWriteTokens += event.data.usage.cacheWriteTokens ?? 0
           }
           break
         case 'step/end':
@@ -883,8 +983,14 @@ export class Tui extends Service {
           }
           break
         }
-        default:
+        default: {
+          const rendered = extensions.renderers.render(event.type, event.data)
+          if (rendered !== undefined) {
+            const rows = rendered.title === undefined ? rendered.lines : [rendered.title, ...rendered.lines]
+            chat.addChild(new StaticCardComponent(rows, palette))
+          }
           break
+        }
       }
       if ((event as { type: string }).type === 'subagent/descriptor') {
         const data = (event as { data: { label?: string; provider?: string; mode?: 'one-shot' | 'continuable' } }).data
@@ -935,7 +1041,7 @@ export class Tui extends Service {
     const rebuildTranscript = (anchor: 'bottom' | 'top' = 'bottom', followLive = false): void => {
       followLatestAfterStartup = followLive
       subagentPanel.clear()
-      tokenTotals = { inputTokens: 0, outputTokens: 0 }
+      tokenTotals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
       contextUsageCache.measuredAt = 0
       const events = agent!.session.events
       // Re-derive persistent compacting flag when rebuilding a truncated window.
@@ -1069,8 +1175,104 @@ export class Tui extends Service {
     const runCommand = async (line: string): Promise<void> => {
       const current = agent
       if (current === undefined) return
+
+      const runSessionSwitchDecision = async (kind: 'new' | 'resume', targetSessionId?: string): Promise<boolean> => {
+        if (pluginHost === undefined) return true
+        const payload: Record<string, unknown> = {
+          kind,
+          sessionId: String(current.id),
+          cwd: current.session.header.cwd ?? process.cwd(),
+        }
+        if (targetSessionId !== undefined) payload.targetSessionId = targetSessionId
+        const decision = await pluginHost.runDecision('tui/session-switch', payload)
+        if (decision !== null && typeof decision === 'object' && (decision as { cancel?: unknown }).cancel === true) {
+          const reason = (decision as { reason?: unknown }).reason
+          appendNotice(typeof reason === 'string' && reason !== '' ? reason : 'Session switch cancelled by a plugin', 'warning')
+          return false
+        }
+        return true
+      }
+      const notifySessionSwitched = (kind: 'new' | 'resume', sessionId: string): void => {
+        if (pluginHost === undefined) return
+        void pluginHost.runDecision('tui/session-switched', {
+          kind,
+          sessionId,
+          previousSessionId: String(current.id),
+        })
+      }
       if (line === '/palette' || line.startsWith('/palette ')) {
         const rows = renderPalette(palette, currentScheme, resolved.theme.color, truecolor, themeOverride())
+        chat.addChild(new StaticCardComponent(rows, palette))
+        ui.requestRender()
+        return
+      }
+      if (line === '/plugins' || line.startsWith('/plugins ')) {
+        const rows: string[] = []
+        rows.push('trust: plugins run trusted-in-process; grants are behaviour, not a security boundary')
+        const hostDescriptor = pluginHost?.buildHostDescriptor({ commandsMounted: true })
+        rows.push(`host: ${hostDescriptor?.hostId ?? 'dsh-omp-tui'} ${hostDescriptor?.hostVersion ?? ''} · generation ${pluginHost?.generationId ?? 'unavailable'}`)
+        const checkTarget = line.slice('/plugins'.length).trim()
+        if (checkTarget.startsWith('check ')) {
+          const target = checkTarget.slice('check '.length).trim()
+          if (target === '') {
+            rows.push('usage: /plugins check <path>')
+          } else {
+            try {
+              const raw = await readFile(target, 'utf8')
+              const manifest = parseManifest(JSON.parse(raw))
+              const granted = pluginHost?.grants.grantedPermissions(manifest.id) ?? new Set<string>()
+              const result = negotiate(manifest, { grantedPermissions: granted })
+              rows.push(`check ${target}: ${result.status}`)
+              for (const decision of result.contractDecisions) {
+                rows.push(`- ${decision.coordinate}: ${decision.status}${decision.reason === undefined ? '' : ` (${decision.reason})`}`)
+              }
+            } catch (error: unknown) {
+              rows.push(`check failed: ${error instanceof Error ? error.message : String(error)}`)
+            }
+          }
+        } else if (checkTarget !== '') {
+          rows.push('usage: /plugins [check <path>]')
+        }
+        if (pluginHost === undefined) {
+          rows.push('plugin host unavailable')
+        } else {
+          const selfCheck = pluginHost.selfCheck()
+          if (selfCheck.length > 0) {
+            rows.push(`self-check: ${selfCheck.join('; ')}`)
+          } else {
+            rows.push('self-check: ok')
+          }
+          const admissions = pluginHost.activeAdmissions()
+          rows.push(`admissions: ${admissions.length}`)
+          for (const admission of admissions) {
+            rows.push(`- ${admission.componentId} ${admission.activationInstance} ${admission.negotiation.status}`)
+          }
+          const ledger = await pluginHost.ledger.tail(5)
+          rows.push('ledger (last 5):')
+          for (const entry of ledger) {
+            rows.push(`- ${entry.operation} ${entry.scope} ${entry.resource} ${entry.pluginId}`)
+          }
+          const snapshot = pluginHost.grants.snapshot()
+          const grantRules = Object.keys(snapshot.grants).length
+          const denyRules = Object.keys(snapshot.denies).length
+          rows.push(`grants: ${grantRules} grant rules, ${denyRules} deny rules${snapshot.failedClosed ? ', FAILED CLOSED' : ''}`)
+        }
+        chat.addChild(new StaticCardComponent(rows, palette))
+        ui.requestRender()
+        return
+      }
+      if (line === '/doctor') {
+        const rows: string[] = ['doctor:']
+        if (pluginHost === undefined) {
+          rows.push('plugin host unavailable')
+        } else {
+          const selfCheck = pluginHost.selfCheck()
+          rows.push(selfCheck.length > 0 ? `self-check: ${selfCheck.join('; ')}` : 'self-check: ok')
+          const descriptor = pluginHost.buildHostDescriptor({ commandsMounted: true })
+          rows.push(`contracts advertised: ${descriptor.contracts.length}`)
+          rows.push(`generation: ${pluginHost.generationId}`)
+        }
+        rows.push('verified dsh line: 0.1.2-alpha.3 (see verify:contract)')
         chat.addChild(new StaticCardComponent(rows, palette))
         ui.requestRender()
         return
@@ -1128,9 +1330,11 @@ export class Tui extends Service {
       if (line === '/new' || line.startsWith('/new ')) {
         const creator = handles.newAgent
         if (creator === undefined) return
+        if (!(await runSessionSwitchDecision('new'))) return
         appendNotice(t('noticeCreatingSession'), 'info')
         try {
-          await creator()
+          const id = await creator()
+          if (id !== undefined) notifySessionSwitched('new', String(id))
         } catch (error: unknown) {
           appendNotice(t('noticeSessionCreateFailed', { error: errorChain(error) }), 'error')
         }
@@ -1141,9 +1345,12 @@ export class Tui extends Service {
         if (switcher === undefined) return
         const explicit = line.slice('/resume'.length).trim()
         if (explicit !== '') {
+          if (!(await runSessionSwitchDecision('resume', explicit))) return
           await switcher(SessionId(explicit))
+          notifySessionSwitched('resume', explicit)
           return
         }
+        if (!(await runSessionSwitchDecision('resume'))) return
         try {
           const records = await ctx.sessionQuery.listSessions()
           const workspace = current.session.header.cwd ?? process.cwd()
@@ -1181,7 +1388,10 @@ export class Tui extends Service {
             palette,
             done,
           ))
-          if (picked !== undefined) await switcher(SessionId(picked))
+          if (picked !== undefined) {
+            await switcher(SessionId(picked))
+            notifySessionSwitched('resume', picked)
+          }
         } catch (error: unknown) {
           appendNotice(t('noticeSessionListFailed', { error: errorChain(error) }), 'error')
         }
@@ -1506,6 +1716,13 @@ export class Tui extends Service {
             } | undefined)?.default
             const defaultMode = defaultPreset ?? ctx.agentPresets?.defaultId ?? resolved.mode
             const wechatConfig = getWechatConfig()
+            const pluginFieldValue = (section: SettingsSection, field: SettingsField): string => {
+              const value = settings?.get(settingsNamespace(section.ns))
+              const current = readPath(value, field.path)
+              if (current === undefined) return '—'
+              if (typeof current === 'boolean') return current ? t('settingsOn') : t('settingsOff')
+              return String(current)
+            }
             return [
               {
                 id: 'general',
@@ -1563,6 +1780,15 @@ export class Tui extends Service {
                     { value: 'wechat-notify', label: t('settingsWechatNotify'), currentValue: wechatConfig.notify ? t('settingsOn') : t('settingsOff') },
                   ],
               },
+              ...extensions.settingsSections.snapshot().map(section => ({
+                id: `plugin:${section.ns}`,
+                label: section.title,
+                items: section.fields.map(field => ({
+                  value: `plugin-field:${section.ns}:${field.path.join('.')}`,
+                  label: field.label,
+                  currentValue: pluginFieldValue(section, field),
+                })),
+              })),
             ]
           }
           const themeItems: SelectItem[] = BUILTIN_THEMES.map(theme => ({
@@ -2007,7 +2233,7 @@ export class Tui extends Service {
                   if (editLeft) {
                     leftPrompt = next
                     leftTemplate = parseTuiPromptTemplate(displayInlineText(next))
-                    statusLine = new StatusLineComponent(leftTemplate, promptValue, palette)
+                    directoryStatus = new ComposerDirectoryComponent(leftTemplate, promptValue, palette)
                   } else {
                     rightPrompt = next
                     rightTemplate = parseTuiPromptTemplate(displayInlineText(next))
@@ -2077,6 +2303,8 @@ export class Tui extends Service {
                   )
                 } else if (item.value === 'wechat-unavailable') {
                   appendNotice(t('settingsWechatUnavailable'), 'warning')
+                } else if (item.value.startsWith('plugin-field:')) {
+                  appendNotice('Plugin settings editing is read-only in this host preview', 'info')
                 } else if (item.value === 'permission') {
                   showItems(
                     'default-permission',
@@ -2655,6 +2883,19 @@ export class Tui extends Service {
         ui.requestRender()
         return
       }
+      if (line.trim() === '/compact' || line.startsWith('/compact ')) {
+        if (pluginHost !== undefined) {
+          const decision = await pluginHost.runDecision('tui/compact', {
+            sessionId: String(current.id),
+            cwd: current.session.header.cwd ?? process.cwd(),
+          })
+          if (decision !== null && typeof decision === 'object' && (decision as { cancel?: unknown }).cancel === true) {
+            const reason = (decision as { reason?: unknown }).reason
+            appendNotice(typeof reason === 'string' && reason !== '' ? reason : 'Compaction cancelled by a plugin', 'warning')
+            return
+          }
+        }
+      }
       // dsh rc8 added an `images` parameter to commands.execute. Pass an empty
       // image batch so the same source compiles and runs against rc6 and rc8.
       // Keep the method bound: CommandRuntime.execute reads `this.view(agent)`.
@@ -2702,7 +2943,7 @@ export class Tui extends Service {
       }
     }
 
-    editor.onSubmit = (text: string): void => {
+    const submitText = (text: string): void => {
       const current = agent
       if (current === undefined) return
       const trimmed = text.trim()
@@ -2778,6 +3019,41 @@ export class Tui extends Service {
         source: { kind: 'user' },
       }))
       refreshTitle()
+    }
+
+    editor.onSubmit = (text: string): void => {
+      const current = agent
+      if (current === undefined) return
+      if (text.trim() === '') return
+      const hasInputInterceptors = pluginHost?.activeDecisionSubscriptions().some(subscription => subscription.event === 'tui/input') ?? false
+      if (!hasInputInterceptors) {
+        submitText(text)
+        return
+      }
+      void (async () => {
+        const decision = await pluginHost!.runDecision('tui/input', {
+          text,
+          delivery: current.status === 'running' ? 'steer' : 'followup',
+          sessionId: String(current.id),
+          cwd: current.session.header.cwd ?? process.cwd(),
+        })
+        if (decision !== null && typeof decision === 'object') {
+          const record = decision as { cancel?: unknown; handled?: unknown; text?: unknown; reason?: unknown; notice?: unknown }
+          if (record.cancel === true) {
+            appendNotice(typeof record.reason === 'string' && record.reason !== '' ? record.reason : 'Input cancelled by a plugin', 'warning')
+            return
+          }
+          if (record.handled === true) {
+            appendNotice(typeof record.notice === 'string' && record.notice !== '' ? record.notice : 'Input handled by a plugin', 'info')
+            return
+          }
+          if (typeof record.text === 'string' && record.text.trim() !== '') {
+            submitText(record.text.trim())
+            return
+          }
+        }
+        submitText(text)
+      })()
     }
 
     // First Ctrl+C clears the display (or interrupts a running turn); a second
@@ -2928,6 +3204,13 @@ export class Tui extends Service {
           chat.lineOffset = Math.max(0, chat.lastTotalLines - chat.lastViewportLines)
           ui.requestRender()
           return { consume: true }
+        }
+        // Community plugin shortcuts (tuiShortcuts): built-ins above always win.
+        for (const registration of extensions.shortcuts.snapshot()) {
+          if (matchesKey(data, registration.combo as Parameters<typeof matchesKey>[1])) {
+            extensions.shortcuts.dispatch(registration.combo)
+            return { consume: true }
+          }
         }
       }
 
@@ -3162,34 +3445,32 @@ export class Tui extends Service {
         ui.requestRender()
       }
 
-      const offQuestions = ctx.userQuestions.registerProvider({
-        ask: async (request) => {
-          const bridge = ctx.get('wechat') as WechatBridge | undefined
-          if (bridge?.askWithFallback !== undefined) {
-            return bridge.askWithFallback(request, async (r) => ({
-              answers: await runInlineQuestionFlow(
-                ui,
-                askSlot,
-                palette,
-                t,
-                r.questions,
-                r.signal,
-                () => ui.setFocus(editor),
-              ),
-            }))
-          }
-          return {
+      const offQuestions = ctx.on('user-questions/request', async (request) => {
+        const bridge = ctx.get('wechat') as WechatBridge | undefined
+        if (bridge?.askWithFallback !== undefined) {
+          return bridge.askWithFallback(request, async (r) => ({
             answers: await runInlineQuestionFlow(
               ui,
               askSlot,
               palette,
               t,
-              request.questions,
-              request.signal,
+              r.questions,
+              r.signal,
               () => ui.setFocus(editor),
             ),
-          }
-        },
+          }))
+        }
+        return {
+          answers: await runInlineQuestionFlow(
+            ui,
+            askSlot,
+            palette,
+            t,
+            request.questions,
+            request.signal,
+            () => ui.setFocus(editor),
+          ),
+        }
       })
 
       const handleSessionEvent = (targetId: SessionId, session: Session, event: SessionEvent): void => {
@@ -3277,7 +3558,7 @@ export class Tui extends Service {
         agent = next
         activeHandle = handle
         setActiveAgent(next)
-        tokenTotals = { inputTokens: 0, outputTokens: 0 }
+        tokenTotals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
       contextUsageCache.measuredAt = 0
         // Pending interjections belong to the previous foreground session;
         // switching sessions drops them from the TUI queue.
@@ -3341,7 +3622,7 @@ export class Tui extends Service {
         })
         // `/new` should continue the current session's permission instead of
         // falling back to the global startup default.
-        const currentPermission = ctx.permissionPresets.current(current.session.events)
+        const currentPermission = ctx.permissionPresets.current(current.session)
         if (currentPermission !== 'custom') {
           try {
             ctx.permissionPresets.set(handle.agent.session, currentPermission)
@@ -3467,6 +3748,7 @@ export class Tui extends Service {
       // Report mouse wheel events (normal tracking + SGR encoding) so the
       // transcript can page on scroll without sending legacy X10 sequences.
       terminal.write('\x1b[?1000h\x1b[?1006h')
+      flushDeferredNotices()
       warnIfFullAccess(liveAgent)
 
     }

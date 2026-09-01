@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:omp-tui:effect-ledger-record:0.15",
+  "title": "EffectLedgerRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "seq",
+    "ts",
+    "operation",
+    "scope",
+    "resource",
+    "pluginId",
+    "activationInstance",
+    "runtimeGenerationId"
+  ],
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "ts": {
+      "type": "integer"
+    },
+    "operation": {
+      "type": "string",
+      "enum": ["create", "bind", "replace", "release", "cleanup-failed"]
+    },
+    "scope": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "resource": {
+      "type": "string",
+      "maxLength": 256
+    },
+    "pluginId": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "activationInstance": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "runtimeGenerationId": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "note": {
+      "type": "string",
+      "maxLength": 200
+    }
+  }
+}

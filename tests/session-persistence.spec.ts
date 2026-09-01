@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { Session, SessionId, SESSION_FORMAT_VERSION, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { BlockAssembler, CallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { BlockAssembler, ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { ConversationWriteGate, repairLegacyToolEvents, sanitizeToolCallChunk, sanitizeToolCallDeltaStream } from '../src/session-persistence.ts'
 
 function event(seq: number, type: string): SessionEvent {
@@ -95,7 +95,7 @@ describe('tool-call stream sanitizer', () => {
     const delta = sanitizeToolCallChunk({
       type: 'tool-call-delta',
       index: 0,
-      id: CallId(''),
+      id: ToolCallId(''),
       name: undefined,
       argumentsDelta: '{}',
     } as StreamChunk)
@@ -109,7 +109,7 @@ describe('tool-call stream sanitizer', () => {
     const end = sanitizeToolCallChunk({
       type: 'block-end',
       index: 0,
-      block: { type: 'tool-call', id: CallId(''), name: 'bash', arguments: '{}' },
+      block: { type: 'tool-call', id: ToolCallId(''), name: 'bash', arguments: '{}' },
     } as StreamChunk)
 
     assert.equal(end.type, 'block-end')
@@ -126,14 +126,14 @@ describe('tool-call stream sanitizer', () => {
       {
         type: 'tool-call-delta',
         index: 0,
-        id: CallId('call_1'),
+        id: ToolCallId('call_1'),
         name: 'bash',
         argumentsDelta: '{"command":"',
       },
       {
         type: 'tool-call-delta',
         index: 0,
-        id: CallId('call_1'),
+        id: ToolCallId('call_1'),
         name: undefined,
         argumentsDelta: 'ls"}',
       },
@@ -156,21 +156,21 @@ describe('tool-call stream sanitizer', () => {
       {
         type: 'tool-call-delta',
         index: 1,
-        id: CallId('call_a3badaf0132c4e3e82b87e1f'),
+        id: ToolCallId('call_a3badaf0132c4e3e82b87e1f'),
         name: 'pwsh',
         argumentsDelta: '',
       },
       {
         type: 'tool-call-delta',
         index: 1,
-        id: CallId(''),
+        id: ToolCallId(''),
         name: null,
         argumentsDelta: '{"command":"Get-Command dsh"}',
       } as StreamChunk,
       {
         type: 'block-end',
         index: 1,
-        block: { type: 'tool-call', id: CallId(''), name: '', arguments: '{"command":"Get-Command dsh"}' },
+        block: { type: 'tool-call', id: ToolCallId(''), name: '', arguments: '{"command":"Get-Command dsh"}' },
       },
     ]
 

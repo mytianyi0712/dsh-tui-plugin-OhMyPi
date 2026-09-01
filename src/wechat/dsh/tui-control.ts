@@ -4,8 +4,8 @@
 // 到这里，微信命令直接读取。这样即使命令执行上下文与 TUI 服务不在
 // 同一个 Cordis scope，也能稳定拿到“创建并切换前台会话”的能力。
 
-import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { Agent, ModelSelection } from '../../dsh-host/index.ts'
+import type { SessionId } from '../../dsh-host/index.ts'
 
 export interface TuiForegroundControl {
   /** 当前前台 agent；TUI 未挂载时为 undefined。 */

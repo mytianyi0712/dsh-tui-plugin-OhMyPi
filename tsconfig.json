@@ -11,6 +11,7 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
     "noEmit": true
   },
   "include": ["src/**/*.ts", "tsdown.config.ts", "tsdown.prepare.config.ts"]

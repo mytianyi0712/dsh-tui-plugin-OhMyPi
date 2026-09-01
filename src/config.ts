@@ -3,7 +3,7 @@
  * The bundle's `tui` row carries these; schemastery validates the shape.
  */
 
-import z from '@deepseek-ai/schemastery'
+import { z } from './dsh-host/index.ts'
 import type { Locale } from './i18n.ts'
 import type { ThemeMode } from './theme.ts'
 import { THEME_DATA } from './theme-data.ts'
@@ -35,9 +35,9 @@ export interface TuiThemeConfig {
   name?: string
   /** Per-role truecolor overrides on top of the selected theme, e.g. `{ accent: [250, 179, 135] }`. */
   custom?: Record<string, number[]>
-  /** Template embedded in the rail above the editor. */
+  /** Template rendered left-aligned beside the permission state below the editor. */
   leftPrompt?: string
-  /** Template rendered below the editor's bottom rail. */
+  /** Template rendered below the directory and permission row. */
   rightPrompt?: string
   /** Template used as the editor's first-line prefix. */
   inputPrompt?: string
@@ -62,8 +62,8 @@ export interface TuiConfig {
   title?: string
 }
 
-export const DEFAULT_LEFT_PROMPT = '${mode}${cwd}${git/worktree}'
-export const DEFAULT_RIGHT_PROMPT = '${model}${effort}${context}${permission}${queued}'
+export const DEFAULT_LEFT_PROMPT = '${cwd}'
+export const DEFAULT_RIGHT_PROMPT = '${model}${effort}${context}${queued}'
 export const DEFAULT_INPUT_PROMPT = '${indicator}'
 export const DEFAULT_INPUT_PLACEHOLDER = ''
 

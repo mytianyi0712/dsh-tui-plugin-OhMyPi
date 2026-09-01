@@ -5,9 +5,7 @@
  * verbatim through `ctx.cmdlineArgs`.
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
-import { parseCmdline } from '@deepseek-ai/dsh-cmdline'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { Service, type Context, parseCmdline, SessionId } from './dsh-host/index.ts'
 import { Command } from 'commander'
 
 declare module '@deepseek-ai/cordis' {

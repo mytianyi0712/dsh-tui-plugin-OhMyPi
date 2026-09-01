@@ -1,20 +1,24 @@
 /** OMP-style composer chrome: status segments embedded in a horizontal top rail. */
 
 import { truncateToWidth, visibleWidth, type Component } from '@earendil-works/pi-tui'
-import { ReasoningEffortId, type LlmReasoningEffortInfo } from '@deepseek-ai/dsh-llm'
-import type { ModelSelection } from '@deepseek-ai/dsh-agent'
-import type { EpochHeader } from '@deepseek-ai/dsh-session'
+import { ReasoningEffortId, type LlmReasoningEffortInfo } from '../dsh-host/index.ts'
+import type { ModelSelection } from '../dsh-host/index.ts'
+import type { EpochHeader } from '../dsh-host/index.ts'
 import { renderTuiPromptTemplate, type TuiPromptToken } from '../prompt.ts'
 import type { Palette } from '../theme.ts'
-
-/** Cap the mode segment to 4 CJK / 8 ASCII columns so long preset ids stay compact. */
-const MODE_MAX_VISIBLE_WIDTH = 8
 
 const ANSI_SGR_PATTERN = /\x1b\[[0-9;]*m/g
 
 /** Strip SGR color codes so we can re-wrap a segment with a different budget. */
 function stripAnsi(text: string): string {
   return text.replace(ANSI_SGR_PATTERN, '')
+}
+
+/** Remove a leading separator carried by full (non-compact) prompt values. */
+function cleanSegment(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const cleaned = value.replace(/^\s*·\s*/u, '')
+  return cleaned === '' ? undefined : cleaned
 }
 
 /** Keep the start and end of a long value, with an ellipsis in the middle. */
@@ -104,13 +108,12 @@ function compactUnit(value: number): string {
 }
 
 /**
- * The composer's inset top rail. Wide terminals keep the configured
- * mode/path/Git prompt. When that surface no longer fits, the built-in
- * segments switch to compact values and drop the directory before truncating
- * mode or branch; separators are rebuilt between complete segments, so a
- * narrow sidebar never shows a dangling Powerline fragment.
+ * The row below the editor: directory/status content on the left and, pinned
+ * to the right, the selected edit mode followed by the current permission
+ * preset. The right group always keeps permission visible; when width is
+ * scarce the mode is collapsed before the left content gives way.
  */
-export class StatusLineComponent implements Component {
+export class ComposerDirectoryComponent implements Component {
   constructor(
     private readonly leftTemplate: readonly TuiPromptToken[],
     private readonly resolve: (name: string) => string | undefined,
@@ -121,28 +124,38 @@ export class StatusLineComponent implements Component {
 
   render(width: number): string[] {
     const safeWidth = Math.max(1, width)
-    if (safeWidth <= 2) return [this.palette.border('─'.repeat(safeWidth))]
+    const inset = safeWidth > 4 ? '  ' : ''
+    const contentWidth = Math.max(1, safeWidth - visibleWidth(inset) * 2)
+    const right = this.renderRight(contentWidth)
+    const rightWidth = visibleWidth(right)
+    if (rightWidth >= contentWidth) return [`${inset}${right}${inset}`]
 
-    const innerWidth = safeWidth - 2
-    const capWidth = Math.min(3, innerWidth)
-    const segmentOverhead = 3 // leading/trailing padding plus the Powerline tail
-    const promptBudget = Math.max(0, innerWidth - capWidth - segmentOverhead)
-    const left = this.renderLeft(promptBudget)
-    const segment = left === ''
-      ? ''
-      : `${this.palette.statusLineBg(` ${left} `)}${this.palette.statusLineTail('')}`
-    const fillWidth = Math.max(0, innerWidth - capWidth - visibleWidth(segment))
-    return [` ${this.palette.border('─'.repeat(capWidth))}${segment}${this.palette.border('─'.repeat(fillWidth))} `]
+    const leftBudget = right === '' ? contentWidth : Math.max(0, contentWidth - rightWidth - 1)
+    const left = leftBudget === 0 ? '' : this.renderLeft(leftBudget)
+    const gapWidth = Math.max(0, contentWidth - visibleWidth(left) - rightWidth)
+    return [`${inset}${left}${' '.repeat(gapWidth)}${right}${inset}`]
   }
 
-  private capMode(value: string | undefined): string | undefined {
-    return value === undefined ? undefined : truncateToWidth(value, MODE_MAX_VISIBLE_WIDTH, '…')
+  private renderRight(width: number): string {
+    const mode = this.resolve('mode/compact') ?? this.resolve('mode')
+    const permission = this.resolve('permission/compact')
+    const separator = ` ${this.palette.muted('·')} `
+    if (mode === undefined && permission === undefined) return ''
+    if (mode === undefined) return truncateToWidth(permission ?? '', width, '')
+    if (permission === undefined) return truncateToWidth(mode, width, '…')
+    const full = `${mode}${separator}${permission}`
+    if (visibleWidth(full) <= width) return full
+    const permissionWidth = visibleWidth(permission)
+    if (permissionWidth >= width) return truncateToWidth(permission, width, '')
+    const modeBudget = width - permissionWidth - visibleWidth(separator)
+    if (modeBudget >= 4) return `${truncateToWidth(mode, modeBudget, '…')}${separator}${permission}`
+    return truncateToWidth(permission, width, '')
   }
 
   private resolveForRender(name: string): string | undefined {
-    return name === 'mode/compact'
-      ? this.capMode(this.resolve(name))
-      : this.resolve(name)
+    // Mode lives on the right next to permission; permission is right-only.
+    if (name === 'permission' || name === 'permission/compact' || name === 'mode' || name === 'mode/compact') return undefined
+    return this.resolve(name)
   }
 
   private renderLeft(width: number): string {
@@ -166,38 +179,27 @@ export class StatusLineComponent implements Component {
     return truncateToWidth(rendered, width, '')
   }
 
-  /** Compact only the built-in default three-segment status prompt. */
+  /** Compact only the built-in default status segments left of the mode. */
   private renderCompact(width: number): string | undefined {
     const values = this.leftTemplate.filter(token => token.type === 'value')
-    if (this.leftTemplate.length !== values.length || values.length !== 3) return undefined
-    if (values[0]?.name !== 'mode' || values[1]?.name !== 'cwd' || values[2]?.name !== 'git/worktree') {
-      return undefined
-    }
+    if (this.leftTemplate.length !== values.length || values.length !== 2) return undefined
+    if (values[0]?.name !== 'cwd' || values[1]?.name !== 'git/worktree') return undefined
 
     const segments = [
-      this.resolveForRender('mode/compact'),
       this.resolveForRender('cwd/compact'),
       this.resolveForRender('git/worktree/compact'),
     ]
     const separator = ` ${this.palette.statusSep('')} `
     const join = (items: readonly (string | undefined)[]): string =>
       items.filter((item): item is string => item !== undefined && item !== '').join(separator)
-    if (segments[0] === undefined || segments[1] === undefined) return undefined
+    if (segments[0] === undefined) return segments[1] === undefined ? undefined : truncateToWidth(segments[1], width, '…')
     const all = join(segments)
     if (visibleWidth(all) <= width) return all
-
-    const withoutCwd = join([segments[0], segments[2]])
-    if (visibleWidth(withoutCwd) <= width) return withoutCwd
-
-    const mode = segments[0]
-    const git = segments[2]
-    if (mode !== undefined && git !== undefined) {
-      const modeBudget = width - visibleWidth(separator) - visibleWidth(git)
-      if (modeBudget >= 4) return `${truncateToWidth(mode, modeBudget, '…')}${separator}${git}`
-      return truncateToWidth(mode, width, '…')
-    }
-
-    return truncateToWidth(mode ?? git ?? segments[1] ?? '', width, '…')
+    if (segments[1] === undefined) return truncateToWidth(segments[0], width, '…')
+    const gitWidth = visibleWidth(segments[1])
+    const cwdBudget = width - gitWidth - visibleWidth(separator)
+    if (cwdBudget >= 4) return `${truncateToWidth(segments[0], cwdBudget, '…')}${separator}${segments[1]}`
+    return truncateToWidth(segments[0], width, '…')
   }
 }
 
@@ -230,7 +232,7 @@ export class InputBorderComponent implements Component {
   }
 }
 
-/** Model, reasoning effort, context, and permission below the bottom rail. */
+/** Model + effort left, context + cache-hit right, below the directory row. */
 export class ComposerFooterComponent implements Component {
   constructor(
     private readonly rightTemplate: readonly TuiPromptToken[],
@@ -242,66 +244,84 @@ export class ComposerFooterComponent implements Component {
 
   render(width: number): string[] {
     const safeWidth = Math.max(1, width)
-    const contentWidth = safeWidth <= 2 ? safeWidth : safeWidth - 2
-    const full = renderTuiPromptTemplate(this.rightTemplate, this.resolve)
-    const text = visibleWidth(full) <= contentWidth
-      ? full
-      : this.renderCompact(contentWidth) ?? truncateToWidth(full, contentWidth, '')
-    return safeWidth <= 2 ? [text] : [`  ${text}`]
+    const inset = safeWidth > 4 ? '  ' : ''
+    const contentWidth = Math.max(1, safeWidth - visibleWidth(inset) * 2)
+    const tokenNames = new Set(
+      this.rightTemplate.filter(token => token.type === 'value').map(token => token.name),
+    )
+    const shows = (name: string): boolean => tokenNames.has(name) || tokenNames.has(`${name}/compact`)
+    const leftItems = [
+      ...shows('model') ? [cleanSegment(this.resolve('model/compact') ?? this.resolve('model'))] : [],
+      ...shows('effort') ? [cleanSegment(this.resolve('effort/compact') ?? this.resolve('effort'))] : [],
+      ...tokenNames.has('queued') ? [cleanSegment(this.resolve('queued'))] : [],
+    ].filter((item): item is string => item !== undefined && item !== '')
+    // Cache-hit is paired with the context segment; it never renders alone.
+    const rightItems = [
+      ...shows('context') ? [cleanSegment(this.resolve('context/compact') ?? this.resolve('context'))] : [],
+      ...shows('context') ? [cleanSegment(this.resolve('cache/compact') ?? this.resolve('cache'))] : [],
+    ].filter((item): item is string => item !== undefined && item !== '')
+
+    if (leftItems.length === 0 && rightItems.length === 0) return ['']
+
+    const right = this.renderRight(rightItems, contentWidth)
+    const rightWidth = visibleWidth(right)
+    const leftBudget = right === '' ? contentWidth : Math.max(0, contentWidth - rightWidth - 1)
+    const left = leftItems.length === 0 || leftBudget === 0 ? '' : this.renderLeft(leftItems, leftBudget)
+    const gapWidth = Math.max(0, contentWidth - visibleWidth(left) - rightWidth)
+    return [`${inset}${left}${' '.repeat(gapWidth)}${right}${inset}`]
   }
 
-  /** Compress the footer in stages: model, then ctx prefix, then dropping segments. */
-  private renderCompact(width: number): string | undefined {
-    const values = this.rightTemplate.filter(token => token.type === 'value')
-    if (this.rightTemplate.length !== values.length || values.length !== 4) return undefined
-    if (values[0]?.name !== 'model' || values[1]?.name !== 'effort'
-      || values[2]?.name !== 'context' || values[3]?.name !== 'permission') {
-      return undefined
-    }
+  private join(items: readonly string[]): string {
+    return items.join(` ${this.palette.muted('·')} `)
+  }
 
-    const segments = [
-      this.resolve('model/compact'),
-      this.resolve('effort/compact'),
-      this.resolve('context/compact'),
-      this.resolve('permission/compact'),
-    ]
-    if (segments.every(segment => segment === undefined)) return undefined
-    const separator = ` ${this.palette.muted('·')} `
-    const join = (items: readonly (string | undefined)[]): string =>
-      items.filter((item): item is string => item !== undefined && item !== '').join(separator)
-    const tryJoin = (items: readonly (string | undefined)[]): string | undefined => {
-      const text = join(items)
+  private renderRight(items: readonly string[], width: number): string {
+    if (items.length === 0) return ''
+    const full = this.join(items)
+    if (visibleWidth(full) <= width) return full
+    const context = items[0]
+    const cache = items[1]
+    if (cache !== undefined) {
+      const contextNoCtx = stripAnsi(context ?? '').replace(/^ctx\s+/, '')
+      const withoutCtxPrefix = this.palette.context(contextNoCtx)
+      const joined = cache === '' ? withoutCtxPrefix : this.join([withoutCtxPrefix, cache])
+      if (visibleWidth(joined) <= width) return joined
+    }
+    if (context !== undefined) return truncateToWidth(context, width, '')
+    return truncateToWidth(cache ?? '', width, '')
+  }
+
+  private renderLeft(items: readonly string[], width: number): string {
+    const full = this.join(items)
+    if (visibleWidth(full) <= width) return full
+
+    const [model, effort, queued] = [items[0], items[1], items[2]]
+    const tryJoin = (candidate: readonly (string | undefined)[]): string | undefined => {
+      const text = this.join(candidate.filter((item): item is string => item !== undefined && item !== ''))
       return text !== '' && visibleWidth(text) <= width ? text : undefined
     }
 
-    const original = tryJoin(segments)
-    if (original !== undefined) return original
+    if (queued !== undefined) {
+      const withoutQueued = tryJoin([model, effort])
+      if (withoutQueued !== undefined) return withoutQueued
+    }
 
-    // Stage 1: compress the model with a middle ellipsis (deep…flash).
-    const other = join([segments[1], segments[2], segments[3]])
-    const hasOther = segments[1] !== undefined || segments[2] !== undefined || segments[3] !== undefined
-    const modelBudget = width - (hasOther ? visibleWidth(separator) : 0) - visibleWidth(other)
-    const modelPlain = segments[0] === undefined ? undefined : stripAnsi(segments[0])
+    const modelPlain = model === undefined ? undefined : stripAnsi(model)
+    const other = this.join([effort, queued].filter((item): item is string => item !== undefined && item !== ''))
+    const hasOther = other !== ''
+    const modelBudget = modelPlain === undefined
+      ? 0
+      : width - (hasOther ? visibleWidth(` ${this.palette.muted('·')} `) : 0) - visibleWidth(other)
     const compressedModel = modelPlain === undefined
       ? undefined
       : this.palette.model(middleEllipsize(modelPlain, Math.max(1, modelBudget), '…'))
-    const withCompressedModel = tryJoin([compressedModel, segments[1], segments[2], segments[3]])
+    const withCompressedModel = tryJoin([compressedModel, effort, queued])
     if (withCompressedModel !== undefined) return withCompressedModel
 
-    // Stage 2: drop the "ctx " prefix from the context segment.
-    const contextPlain = segments[2] === undefined ? undefined : stripAnsi(segments[2]).replace(/^ctx\s+/, '')
-    const contextNoCtx = contextPlain === undefined
-      ? undefined
-      : this.palette.context(contextPlain)
-    const withNoCtx = tryJoin([compressedModel, segments[1], contextNoCtx, segments[3]])
-    if (withNoCtx !== undefined) return withNoCtx
-
-    // Stage 3: delete lower-priority content, preserving the compressed form.
-    const base = [compressedModel, segments[1], contextNoCtx, segments[3]]
-    for (const candidate of [base, base.slice(1), base.slice(2), base.slice(3)]) {
-      const text = tryJoin(candidate)
-      if (text !== undefined) return text
+    if (effort !== undefined) {
+      const modelOnly = tryJoin([compressedModel ?? model])
+      if (modelOnly !== undefined) return modelOnly
     }
-    return truncateToWidth(join([segments[3] ?? segments[2] ?? segments[1] ?? segments[0] ?? '']), width, '…')
+    return truncateToWidth(compressedModel ?? model ?? effort ?? queued ?? '', width, '…')
   }
 }

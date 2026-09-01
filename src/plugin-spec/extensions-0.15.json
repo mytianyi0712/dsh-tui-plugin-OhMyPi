@@ -1,0 +1,26 @@
+{
+  "$schema": "urn:omp-tui:extensions:0.15",
+  "profileVersion": "0.15",
+  "definitions": [
+    {
+      "name": "tui.settings-section",
+      "authority": "dsh-tui",
+      "coordinates": {
+        "apiVersion": "tui.dsh/v1alpha1",
+        "kind": "SettingsSection"
+      },
+      "kind": "extension",
+      "permissions": []
+    },
+    {
+      "name": "tui.scene",
+      "authority": "dsh-tui",
+      "coordinates": {
+        "apiVersion": "tui.dsh/v1alpha1",
+        "kind": "Scene"
+      },
+      "kind": "extension",
+      "permissions": []
+    }
+  ]
+}

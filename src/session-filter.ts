@@ -1,5 +1,5 @@
 import { resolve } from 'node:path'
-import type { SessionRecord } from '@deepseek-ai/dsh-session-query'
+import type { SessionRecord } from './dsh-host/index.ts'
 
 /** Compare session cwd values using the host platform's path semantics. */
 export function sameProject(left: string | null | undefined, right: string): boolean {

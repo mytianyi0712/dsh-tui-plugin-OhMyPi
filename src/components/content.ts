@@ -3,7 +3,7 @@
  * JSON string a model produced for a tool call.
  */
 
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock } from '../dsh-host/index.ts'
 import { displayText } from './text.ts'
 
 /** Concatenate every text/reasoning block, in order, separated by blank lines. */

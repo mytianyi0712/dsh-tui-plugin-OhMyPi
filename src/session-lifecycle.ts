@@ -1,5 +1,4 @@
-import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import { resolveSessionPreset, type Session, type SessionEvent } from './dsh-host/index.ts'
 
 /** Events proving that a session contains model-facing conversation data. */
 const CONVERSATION_EVENT_TYPES: Readonly<Record<string, true>> = {

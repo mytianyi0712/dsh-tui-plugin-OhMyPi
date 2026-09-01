@@ -17,9 +17,9 @@ import {
 } from '../src/components/transcript.ts'
 import {
   CommandHintComponent,
+  ComposerDirectoryComponent,
   ComposerFooterComponent,
   InputBorderComponent,
-  StatusLineComponent,
   chooseReasoningEffort,
   formatContextTokens,
   resolveSessionModelSelection,
@@ -367,26 +367,47 @@ describe('transcript viewport', () => {
 })
 
 describe('composer chrome', () => {
-  it('keeps mode and Git visible while collapsing an overlong directory', () => {
+  it('pins mode and permission to the right of the directory row', () => {
     const values: Record<string, string> = {
       mode: '标准  ',
-      cwd: ' D:/Projects/a/very/long/workspace/path',
+      'mode/compact': '标准',
+      cwd: ' D:/Projects/dsh',
       'git/worktree': '  main',
+      'permission/compact': 'read-only',
     }
-    const status = new StatusLineComponent(
+    const directory = new ComposerDirectoryComponent(
       [{ type: 'value', name: 'mode' }, { type: 'value', name: 'cwd' }, { type: 'value', name: 'git/worktree' }],
       name => values[name],
       palette,
     )
-    const [row] = status.render(32)
-    assert.equal(visibleWidth(row!), 32)
-    assert.ok(row!.startsWith(' ─── '))
-    assert.ok(row!.includes('标准  '))
-    assert.ok(row!.includes('…'))
-    assert.ok(row!.includes(' main '))
-    assert.ok(row!.endsWith(' '))
+    const [row] = directory.render(48)
+    assert.equal(visibleWidth(row!), 48)
+    assert.ok(row!.startsWith('   D:/Projects/dsh'))
+    assert.ok(row!.includes('标准 · read-only'))
+    assert.ok(row!.endsWith('read-only  '))
   })
-  it('uses compact built-in segments before truncating a narrow sidebar', () => {
+  it('keeps permission visible while compacting mode on a narrow directory row', () => {
+    const values: Record<string, string> = {
+      mode: 'Anchored Standard (experimental)  ',
+      cwd: ' D:/Projects/a/very/long/workspace/path',
+      'git/worktree': '   main',
+      'mode/compact': 'anchored-standard',
+      'cwd/compact': ' path',
+      'git/worktree/compact': ' main',
+      'permission/compact': 'workspace-write',
+    }
+    const directory = new ComposerDirectoryComponent(
+      [{ type: 'value', name: 'mode' }, { type: 'value', name: 'cwd' }, { type: 'value', name: 'git/worktree' }],
+      name => values[name],
+      palette,
+    )
+    const [row] = directory.render(30)
+    assert.equal(visibleWidth(row!), 30)
+    assert.ok(row!.includes('workspace-write'))
+    assert.ok(row!.includes('…'))
+    assert.ok(row!.endsWith('workspace-write  '))
+  })
+  it('uses compact directory segments before truncating a narrow sidebar', () => {
     const values: Record<string, string> = {
       mode: 'Anchored Standard (experimental)  ',
       cwd: ' D:/Projects/dsh',
@@ -394,80 +415,71 @@ describe('composer chrome', () => {
       'mode/compact': 'anchored-standard',
       'cwd/compact': ' dsh',
       'git/worktree/compact': ' main',
+      'permission/compact': 'read-only',
     }
-    const status = new StatusLineComponent(
+    const directory = new ComposerDirectoryComponent(
       [{ type: 'value', name: 'mode' }, { type: 'value', name: 'cwd' }, { type: 'value', name: 'git/worktree' }],
       name => values[name],
       palette,
     )
-    const [row] = status.render(42)
-    assert.equal(visibleWidth(row!), 42)
+    const [row] = directory.render(30)
+    assert.equal(visibleWidth(row!), 30)
     assert.ok(row!.includes('anchore'))
     assert.ok(row!.includes('…'))
-    assert.ok(!row!.includes('anchored-standard'))
-    assert.ok(row!.includes(' dsh'))
-    assert.ok(row!.includes(' main'))
-    assert.ok(!row!.includes('Anchored Standard (experimental)'))
+    assert.ok(row!.includes('read-only'))
 
-    const [narrowRow] = status.render(30)
-    assert.equal(visibleWidth(narrowRow!), 30)
-    assert.ok(narrowRow!.includes('main'))
-    assert.ok(!narrowRow!.includes(' dsh'))
+    const [narrowRow] = directory.render(20)
+    assert.equal(visibleWidth(narrowRow!), 20)
+    assert.ok(narrowRow!.includes('read-only'))
+    assert.ok(narrowRow!.endsWith('read-only  '))
   })
 
 
-  it('renders the footer as model · effort · used/limit below the rail', () => {
+  it('renders the footer with model and effort left and context with cache right', () => {
     const values: Record<string, string> = {
       model: 'deepseek-v4-flash',
       effort: ' · max',
       context: ' · ctx 100k/1m',
+      cache: ' · cache 42%',
     }
     const footer = new ComposerFooterComponent(
       [{ type: 'value', name: 'model' }, { type: 'value', name: 'effort' }, { type: 'value', name: 'context' }],
       name => values[name],
       palette,
     )
-    const [row] = footer.render(48)
-    assert.equal(row, '  deepseek-v4-flash · max · ctx 100k/1m')
-    assert.ok(visibleWidth(row!) <= 48)
+    const [row] = footer.render(64)
+    assert.ok(row!.startsWith('  deepseek-v4-flash · max'))
+    assert.ok(row!.includes('ctx 100k/1m · cache 42%'))
+    assert.ok(row!.endsWith('cache 42%  '))
+    assert.ok(visibleWidth(row!) <= 64)
   })
-  it('renders permission state immediately after context usage', () => {
+  it('keeps permission out of model and session information', () => {
     const values: Record<string, string> = {
       model: 'deepseek-v4-flash',
       effort: ' · max',
       context: ' · ctx 0/1m',
-      permission: ' · workspace-write',
+      queued: ' · ⏳1',
       'model/compact': 'deepseek-v4-flash',
       'effort/compact': 'max',
       'context/compact': 'ctx 0/1m',
-      'permission/compact': 'workspace-write',
+      'cache/compact': 'cache 0%',
     }
     const footer = new ComposerFooterComponent(
       [
         { type: 'value', name: 'model' },
         { type: 'value', name: 'effort' },
         { type: 'value', name: 'context' },
-        { type: 'value', name: 'permission' },
+        { type: 'value', name: 'queued' },
       ],
       name => values[name],
       palette,
     )
-    assert.equal(
-      footer.render(64)[0],
-      '  deepseek-v4-flash · max · ctx 0/1m · workspace-write',
-    )
-    assert.equal(
-      footer.render(42)[0],
-      '  de…sh · max · ctx 0/1m · workspace-write',
-    )
-    assert.equal(
-      footer.render(34)[0],
-      '  … · max · 0/1m · workspace-write',
-    )
-    assert.equal(
-      footer.render(30)[0],
-      '  max · 0/1m · workspace-write',
-    )
+    const row64 = footer.render(64)[0]!
+    assert.ok(row64.includes('deepseek-v4-flash'))
+    assert.ok(row64.includes('max'))
+    assert.ok(row64.includes('ctx 0/1m'))
+    assert.ok(row64.includes('⏳1'))
+    assert.ok(!row64.includes('workspace-write'))
   })
 
   it('uses Flash/max for a new session and the last request route for history', () => {
@@ -517,31 +529,27 @@ describe('composer chrome', () => {
     assert.equal(formatContextTokens(1_200_000), '1.2m')
   })
 
-  it('paints inset rails and the complete mode/path/Git prompt surface', () => {
+  it('paints matching empty rails and a colored directory permission row', () => {
     const enabled = createPalette(true, 'dark', true)
     const border = '\u001b[38;2;137;180;250m'
-    const surface = '\u001b[48;2;17;17;27m'
-    const tail = '\u001b[38;2;17;17;27m\u001b[39m'
-    const [rail] = new InputBorderComponent(enabled).render(12)
-    assert.equal(rail, ` ${border}${'─'.repeat(10)}\u001b[39m `)
-    const [emptyTop] = new StatusLineComponent([], () => undefined, enabled).render(20)
-    assert.ok(emptyTop!.startsWith(` ${border}───\u001b[39m`))
-    assert.equal(visibleWidth(emptyTop!), 20)
+    const [top] = new InputBorderComponent(enabled).render(20)
+    const [bottom] = new InputBorderComponent(enabled).render(20)
+    assert.equal(top, bottom)
+    assert.ok(top!.startsWith(` ${border}`))
+    assert.equal(visibleWidth(top!), 20)
 
     const values: Record<string, string> = {
-      mode: `${enabled.accent('标准')} ${enabled.statusSep('')} `,
-      cwd: enabled.path(' D:/Projects/dsh'),
-      'git/worktree': ` ${enabled.statusSep('')} ${enabled.git(' main')}`,
+      cwd: enabled.path('D:/Projects/dsh'),
+      'permission/compact': enabled.accent('workspace-write'),
     }
-    const [top] = new StatusLineComponent(
-      [{ type: 'value', name: 'mode' }, { type: 'value', name: 'cwd' }, { type: 'value', name: 'git/worktree' }],
+    const [directory] = new ComposerDirectoryComponent(
+      [{ type: 'value', name: 'cwd' }],
       name => values[name],
       enabled,
-    ).render(72)
-    assert.ok(top!.includes(`${surface} `))
-    assert.ok(top!.includes(`${enabled.path(' D:/Projects/dsh')} `))
-    assert.ok(top!.includes(`\u001b[49m${tail}`))
-    assert.equal(visibleWidth(top!), 72)
+    ).render(48)
+    assert.ok(directory!.startsWith(`  ${enabled.path('D:/Projects/dsh')}`))
+    assert.ok(directory!.endsWith(`${enabled.accent('workspace-write')}  `))
+    assert.equal(visibleWidth(directory!), 48)
   })
   it('renders a faint expected-argument hint inside the composer', () => {
     const hint = new CommandHintComponent(() => '/mode <standard|minimal|code|cordis|user preset>', palette)

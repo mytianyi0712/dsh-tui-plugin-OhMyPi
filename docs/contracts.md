@@ -1,8 +1,9 @@
 # dsh-omp-tui 合约速查表（contracts.md）
 
-> dsh 0.1.0-rc.8 唯一真相源。类型文本逐字引自 npm 安装包
-> `@deepseek-ai/*/lib/types/*.d.ts`。本文件是 TUI bundle 消费 harness 服务的地图；
-> 上游接口变更时先更新本表再改代码。
+> TUI 渲染层仍消费的 harness 类型地图。dsh 版本兼容由社区 std adapter
+> （`@dsh-std/adapter-dsh`，profile 动态链接）负责；本表不再钉死某一 rc。
+> 类型文本引自当前开发依赖 `@deepseek-ai/*/lib/types/*.d.ts`。
+> 上游接口变更时先更新本表再改 `src/dsh-host/index.ts` 的投影。
 > 包根：`node_modules/@deepseek-ai`（本仓库 pnpm 安装）与全局 dsh 安装目录中的 `node_modules/@deepseek-ai`
 
 ---
@@ -499,3 +500,48 @@ interface Config {
 8. **命令**：`ctx.commands.execute(agent, line, images, signal)`（rc8 起必须传 `images`，TUI 当前传 `[]`）；`/help` 列表用 `ctx.commands.list(agent)`。
 9. **模型选择**：`installModelSelection(agent.ctx, selectionRef)` + `agentDefaultModel.currentSelection()/saveSelection()`。
 10. **投影消费**：`ctx.sessionProjections.snapshot(session)` 或 `sessionProjectionCache.cachedSnapshot(header)`（列表零 I/O）。
+
+## 11. 社区生态适配器（dsh-ecosystem-spec v0.15）
+
+本节记录 dsh-omp-tui 对齐 dsh-TUI std 适配器规范后的边界与接缝，作为上游接口之外的补充合约。
+
+### 11.1 适配器边界（ADAPTER.md 对齐）
+
+- 公共适配层：`src/dsh-adapter/` 只保留 `@dsh-std/adapter-dsh` 的动态链接与入口（std-link / std-adapter / std-profile-loader）；本仓库不再维护私有 DSH 适配器。
+- 宿主渲染接缝：`src/dsh-host/` 是唯一允许 `import @deepseek-ai/*` 的目录；UI、微信桥、host、extensions 一律通过 `src/dsh-host/index.ts` 间接接触上游。std 协议尚未覆盖的渲染/交互面（session/event、agent、llm/stream、user-questions、permission-presets、settings、skill、session-query、cmdline、tools、session-title）留在这一层，不作为适配器。
+- 门禁：`pnpm run verify:boundary` 扫描全部源码，`@dsh-std/adapter-dsh` 越出 `src/dsh-adapter/`、`@deepseek-ai/*` 越出 `src/dsh-host/` 即失败。
+- 上游版本：由动态链接的 `@dsh-std/adapter-dsh` 吸收；本仓库不再按 dsh rc 钉版本，`verify:contract` 只校验 `@dsh-std/{core,manifest}` 与框架 major。
+
+### 11.2 插件准入与协商
+
+- `dsh-plugin.json` 声明 `facets.host`、`requires.contracts`（optional 引用必须带 fallback）、`permissions`、`subscriptions`；`provides`/`requires.services` 在 v0.15 直接拒绝。
+- `src/plugin-spec/` 提供 manifest 结构校验、协议目录（registry）、五态协商（`compatible / compatible_degraded / waiting_authorization / rejected / unknown`，优先级 unknown > rejected > waiting_authorization > compatible_degraded > compatible）与 Host Descriptor 构建。
+- 私有坐标固定为 `tui.dsh/v1alpha1`（`DecisionEvents`、`Channel`、`SettingsSection`、`Scene`）；私有定义通过 SHA-256 profile digest 固定，漂移即 fail-closed 剔除。
+
+### 11.3 宿主平面（src/host/，由 cordis.patch.yml 挂载）
+
+| 服务 | 落点 | 权限 |
+|---|---|---|
+| `tuiPluginHost` | admit / registerCommand / subscribeDecision / selfCheck / Host Descriptor | 见下 |
+| `tuiPluginStorage` | `~/.dsh-tui/plugin-storage/<ns>.json`（256 键 / 256 KiB / 精确 JSON / 原子写） | `storage.local.read` / `storage.local.write`（默认拒绝） |
+| `tuiMessageObserver` | `user/message → message.received`、`assistant/message → message.sent`；scope=`session:<id>` | `messages.observe.read`（默认拒绝） |
+| `tuiEffectLedger` | `~/.dsh-tui/effect-ledger.jsonl` append-only，写前过 allowlist | — |
+| grant store | `~/.dsh-tui/extension-grants.json`；缺失=全默认，损坏=全部拒绝（fail closed） | 8 个注册权限；`commands.invoke` 默认允许，其余默认拒绝 |
+
+决策事件权限映射：`tui/input → session.input.intercept`、`tui/rewind-prompt → session.rewind.intercept`、`tui/session-switch → session.switch.intercept`、`tui/compact → session.compact.intercept`；通知类事件（`tui/rewind-done`、`tui/session-switched`）不要求 intercept grant。
+
+### 11.4 扩展接缝（src/extensions/，由 TUI 行提供）
+
+- `ctx.tuiDialogs`：select / confirm / input，FIFO 排队，pi-tui 渲染；畸形请求落定取消值，不抛错。
+- `ctx.tuiStatus`：键控状态行（首次设置顺序，` · ` 连接），key 规则 `/^[a-z][a-z0-9_-]*(:[a-z][a-z0-9_-]*)*$/`，最多 20 键 / 200 cell。
+- `ctx.tuiShortcuts`：组合键注册，保留位拒绝；只在纯对话态派发。
+- `ctx.tuiRenderers`：插件 log-only 事件 → 纯文本转录行；输出在渲染器边界消毒截断。
+- `ctx.tuiSettingsSections`：/settings 中展示插件设置区块（本版本为只读展示）。
+- `ctx.tuiScenes`：**已知偏差** —— 本主机场景面使用 pi-tui `Component`，不接受 dsh-TUI 的 React 场景组件；工厂函数可接收 `{ close, palette, t }` 并返回 `Component`。
+
+### 11.5 已验证状态
+
+- 门禁：`verify:boundary`、`verify:contract`、`verify:plugin-spec` 已挂入 `pnpm run check` / `pnpm run build`。
+- 测试：`tests/plugin-spec.spec.ts` 与 `tests/extensions.spec.ts` 覆盖 manifest/协商/Host Descriptor 与 sanitize/status/shortcuts/renderers/dialogs。
+- 运行时接入：`tui/input`（submit 与 steer 前）、`tui/session-switch`（/new、/resume 前）、`tui/session-switched`（切换后广播）、`tui/compact`（/compact 前）。rewind 系列事件在 omp-tui 未实现 rewind，宿主已具备订阅与分发能力，待 rewind 功能落地后接入。
+

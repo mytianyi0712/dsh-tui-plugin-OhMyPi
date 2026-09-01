@@ -1,13 +1,13 @@
 /** Settings-aware first-prompt title provider for the terminal profile. */
 
-import type { Context } from '@deepseek-ai/cordis'
-import { SessionTitleProviderId } from '@deepseek-ai/dsh-session-title'
+import type { Context } from './dsh-host/index.ts'
+import { SessionTitleProviderId } from './dsh-host/index.ts'
 import {
   generateSessionTitleWithLlm,
   SessionTitleLlmConfigFields,
   type SessionTitleLlmConfig,
-} from '@deepseek-ai/dsh-session-title-llm'
-import z from '@deepseek-ai/schemastery'
+} from './dsh-host/index.ts'
+import { z } from './dsh-host/index.ts'
 import {
   SESSION_TITLE_SETTINGS_NAMESPACE,
   SessionTitleSettingsSchema,

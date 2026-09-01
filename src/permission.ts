@@ -1,5 +1,5 @@
 import type { AutocompleteItem } from '@earendil-works/pi-tui'
-import type { PresetOption } from '@deepseek-ai/dsh-permission-presets'
+import type { PresetOption } from './dsh-host/index.ts'
 import type { MessageKey, Translator } from './i18n.ts'
 
 /** Read-only surface of the host permission-preset registry. */

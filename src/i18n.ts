@@ -78,6 +78,8 @@ export type Messages = {
   noticeAlreadySession: string
   noticeResuming: string
   noticeCreatingSession: string
+  confirmYes: string
+  confirmNo: string
   noticeSessionCreated: string
   noticeSessionCreateFailed: string
   noticeSessionResumed: string
@@ -326,6 +328,8 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeAlreadySession: '已在当前会话。',
     noticeResuming: '正在恢复会话…',
     noticeCreatingSession: '正在创建新会话…',
+    confirmYes: '是',
+    confirmNo: '否',
     noticeSessionCreated: '已新建会话 {id}。',
     noticeSessionCreateFailed: '新建会话失败：{error}',
     noticeSessionResumed: '会话 {id} 已恢复。',
@@ -570,6 +574,8 @@ export const MESSAGES: Record<Locale, Messages> = {
     noticeAlreadySession: 'Already on this session.',
     noticeResuming: 'Resuming session…',
     noticeCreatingSession: 'Creating a new session…',
+    confirmYes: 'Yes',
+    confirmNo: 'No',
     noticeSessionCreated: 'Started session {id}.',
     noticeSessionCreateFailed: 'Failed to create session: {error}',
     noticeSessionResumed: 'Session {id} resumed.',

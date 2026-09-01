@@ -4,7 +4,7 @@
 // 微信侧的 @dsh 命令没有用户输入通道，这里通过 service 注册的 active agent
 // 直接调用 agent 的 inbox 方法 / commands.execute，获得完整命令上下文。
 
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent } from '../../dsh-host/index.ts'
 
 /** 当前插件选中的主 agent（由 WechatBridge 在 agent/created 时设置，TUI 切换会话时同步更新）。 */
 let activeAgent: Agent | undefined

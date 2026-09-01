@@ -13,9 +13,9 @@ import {
   visibleWidth,
   type Component,
 } from '@earendil-works/pi-tui'
-import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
-import type { ContentBlock, StreamChunk } from '@deepseek-ai/dsh-llm'
-import type { SessionEvent, TodoItem } from '@deepseek-ai/dsh-session'
+import type { Agent, ModelSelection } from '../dsh-host/index.ts'
+import type { ContentBlock, StreamChunk } from '../dsh-host/index.ts'
+import type { SessionEvent, TodoItem } from '../dsh-host/index.ts'
 import { frameBlock, frameBlockSections, gradientLogo, type MarkdownTheme, type Palette } from '../theme.ts'
 import type { Translator } from '../i18n.ts'
 import { contentText, parseArguments } from './content.ts'
