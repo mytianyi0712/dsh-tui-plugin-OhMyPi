@@ -22,7 +22,7 @@ jobs:
         with:
           node-version: 22.19.0
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile --trust-lockfile
       - run: npm install -g @deepseek-ai/dsh@0.1.0-rc.8
       - run: pnpm run check
       - run: pnpm run prepare
