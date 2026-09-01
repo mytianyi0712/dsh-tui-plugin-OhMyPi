@@ -17,6 +17,8 @@
 
 **dsh-omp-tui** 是 DeepSeek Harness（dsh）的独立 profile bundle（插件），负责终端呈现、输入交互与会话相关的 TUI 能力；agent、模型、工具、持久化和沙箱仍由 dsh harness 提供。
 
+目前本项目正在迁移并合并 DeepSeek Harness 社区发起的公开适配器支持，正在向社区公开的 [`@dsh-std/adapter-dsh`](https://www.npmjs.com/package/@dsh-std/adapter-dsh) 与 dsh-ecosystem-spec v0.15 插件准入规范迁移；详细说明见 [社区适配器迁移说明](#社区适配器迁移说明)。
+
 它内置了 OMP 风格的 Catppuccin 主题、会话与快捷键体系、`/model` 与 `/permission` 等斜杠命令，以及从 OMP 迁移来的微信桥插件（WeChat iLink），可直接通过 `dsh --profile tui` 启动使用。
 
 > [!IMPORTANT]
@@ -36,6 +38,7 @@
 - [配置](#配置)
 - [开发](#开发)
 - [项目结构](#项目结构)
+- [社区适配器迁移说明](#社区适配器迁移说明)
 - [变更记录](#变更记录)
 - [相关文档](#相关文档)
 - [许可](#许可)
@@ -179,7 +182,7 @@ dsh --profile tui --resume <session-id>
 | `/details` | 查看会话标题、目录、模型、agent、tokens 和 context |
 | `/mode [preset]` | 切换 dsh agent 组合；无参时循环切换 |
 | `/permission [preset]` | 切换沙箱和审批策略 |
-| `/theme [mode|dark|light|theme id]` | 查看或切换主题模式与主题 |
+| `/theme [mode\|dark\|light\|theme id]` | 查看或切换主题模式与主题 |
 | `/palette` | 查看当前主题实际使用的颜色角色 |
 | `/settings` | 打开可视化设置 |
 | `/skills` | 列出可用技能 |
@@ -353,6 +356,20 @@ docs/assets/            README 使用的实机截图
 架构边界保持简单：dsh harness 负责 agent、模型、工具、持久化与沙箱；本仓库负责终端呈现和输入。渲染层使用 `@earendil-works/pi-tui@0.80.7`，并通过 vendored patch 打入发布包，消费者无需单独安装 pi-tui。
 
 社区互操作走 [dsh-ecosystem-spec v0.15](https://github.com/T-Auto/dsh-ecosystem-spec) 与 [`@dsh-std/adapter-dsh`](https://www.npmjs.com/package/@dsh-std/adapter-dsh)：adapter 动态链接、可独立升级；`dsh-plugin.json` 由官方 `@dsh-std/manifest` 解析；`src/host/` 提供授权与台账等宿主平面；`src/extensions/` 提供社区扩展接缝。已知偏差：`tuiScenes` 场景使用 pi-tui 组件而非 React 场景（详见 `docs/contracts.md`）。
+
+## 社区适配器迁移说明
+
+本项目正在迁移并合并 DeepSeek Harness 社区发起的公开适配器支持，目标是逐步摆脱对单一 `@deepseek-ai/*` 版本的硬绑定，让 TUI 通过社区标准接口与插件生态互通。
+
+目前迁移到社区公开的 [`@dsh-std/adapter-dsh`](https://www.npmjs.com/package/@dsh-std/adapter-dsh) 适配器与 [dsh-ecosystem-spec v0.15](https://github.com/T-Auto/dsh-ecosystem-spec) 插件准入规范，并已落地以下能力：
+
+- **插件清单**：`dsh-plugin.json` 采用 Community v0.15 结构，由 `@dsh-std/manifest` 官方解析器校验。
+- **协议协商**：接入 `@dsh-std/core` 的 `ProtocolCatalog` 与 `ManifestDefinitionCatalog`，对 `commands`、`storage`、`messages`、`presentation` 等公共协议及 `tui.dsh/*` 私有协议进行统一解析与五态协商（`compatible` / `compatible_degraded` / `waiting_authorization` / `rejected` / `unknown`）。
+- **宿主平面**：提供 `tuiPluginHost`、`tuiPluginStorage`、`tuiMessageObserver`、`tuiEffectLedger` 与统一授权存储，覆盖插件准入、命令归属、私有存储、消息订阅、效果台账与权限撤销。
+- **诊断与门禁**：内置 `/plugins`、`/doctor` 诊断命令，并在 CI 中运行 `verify:boundary`、`verify:contract`、`verify:patch-surface`、`verify:plugin-spec` 四道门禁。
+- **版本策略**：所有 `@deepseek-ai/*` 宿主包改为 optional peer，dsh 版本差异尽量由动态链接的 `@dsh-std/adapter-dsh` 吸收，adapter 可在 profile 内独立升级，无需重建本插件。
+
+该迁移仍处于实验阶段，接口与行为可能随上游规范调整。当前已知限制：`@dsh-std/adapter-dsh@0.1.1-rc.2` 作为 dsh bundle 安装时，其自带行依赖 `sessionController`，在部分 dsh 版本上可能无法激活；此时 TUI 仍可正常启动，但社区 std 插件不会自动加载。
 
 ## 变更记录
 
