@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { parseTuiPromptTemplate, renderTuiPromptTemplate } from '../src/prompt.ts'
 import { contentText, parseArguments } from '../src/components/content.ts'
 import { displayInlineText, displayText } from '../src/components/text.ts'
+import { fillOverlayLines } from '../src/components/dialogs.ts'
 
 describe('parseTuiPromptTemplate', () => {
   it('parses ${name} value tokens and literal text', () => {
@@ -56,5 +57,14 @@ describe('text sanitizers', () => {
     assert.equal(displayText('a\u0007b'), 'ab')
     assert.equal(displayText('a\rb'), 'a\nb')
     assert.equal(displayInlineText('a\r\nb'), 'a b')
+  })
+})
+
+describe('fillOverlayLines', () => {
+  it('pads overlay content to the full viewport', () => {
+    const rows = fillOverlayLines(['╭ title ╮', '│ body  │'], 10, 5)
+    assert.equal(rows.length, 5)
+    assert.equal(rows[0], '╭ title ╮ ')
+    assert.equal(rows[4], '          ')
   })
 })

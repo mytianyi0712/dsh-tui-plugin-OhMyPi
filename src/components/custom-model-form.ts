@@ -14,7 +14,7 @@ import {
   type Focusable,
 } from '@earendil-works/pi-tui'
 import type { Translator } from '../i18n.ts'
-import { frameBlock, type Palette } from '../theme.ts'
+import { frameBlock, overlayViewportHeight, type Palette } from '../theme.ts'
 
 export interface CustomModelDraft {
   provider: string
@@ -132,7 +132,7 @@ export class CustomModelForm implements Component, Focusable {
     }
     rows.push('')
     rows.push(this.palette.dim(this.t('settingsSubmenuHint')))
-    return frameBlock(rows, safeWidth, this.palette.accent, undefined, this.title)
+    return frameBlock(rows, safeWidth, this.palette.accent, undefined, this.title, undefined, overlayViewportHeight())
   }
 
   private move(delta: number): void {

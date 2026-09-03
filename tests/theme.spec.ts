@@ -68,6 +68,14 @@ describe('frameBlock', () => {
     assert.equal(rows[4], '│ result               │')
     assert.equal(rows.at(-1), '╰──────────────────────╯')
   })
+
+  it('pads empty body rows to a requested minimum height', () => {
+    const rows = frameBlock(['body'], 24, palette.border, undefined, 'Title', undefined, 8)
+    assert.equal(rows.length, 8)
+    assert.equal(rows[0], '╭─── Title ────────────╮')
+    assert.equal(rows.at(-1), '╰──────────────────────╯')
+    assert.equal(rows[2], '│                      │')
+  })
 })
 
 describe('palette spec selection', () => {

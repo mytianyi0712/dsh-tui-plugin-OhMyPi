@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { visibleWidth, type SelectItem } from '@earendil-works/pi-tui'
-import { SettingsScreen, type SettingsTab } from '../src/components/settings-screen.ts'
+import { SettingsScreen, cycleValue, type SettingsTab } from '../src/components/settings-screen.ts'
 import { createTranslator } from '../src/i18n.ts'
 import { createPalette } from '../src/theme.ts'
 
@@ -124,5 +124,42 @@ describe('SettingsScreen', () => {
     const rendered = screen.render(40).join('\n')
     assert.ok(rendered.includes('https://gateway.example'))
     assert.ok(rendered.includes('chat/completions'))
+  })
+
+  it('skips section headers when moving and confirming', () => {
+    const screen = new SettingsScreen([], 'Settings', palette, t)
+    screen.setTabs([{
+      id: 'models',
+      label: 'Models',
+      items: [
+        { value: '__header', label: 'Providers', currentValue: '', kind: 'header' },
+        { value: 'add', label: 'Add provider', currentValue: '', kind: 'action' },
+        { value: 'model', label: 'Default model', currentValue: 'deepseek/chat' },
+      ],
+    }], 'Settings')
+    let selected: string | undefined
+    screen.onSelect = item => {
+      selected = item.value
+    }
+
+    const rendered = screen.render(80).join('\n')
+    assert.ok(rendered.includes('Providers'))
+    assert.ok(!rendered.includes('→ Providers'))
+
+    screen.handleInput('\r')
+    assert.equal(selected, 'add')
+
+    screen.handleInput('\x1b[A')
+    screen.handleInput('\r')
+    assert.equal(selected, 'model')
+  })
+})
+
+describe('cycleValue', () => {
+  it('advances and wraps through the provided values', () => {
+    assert.equal(cycleValue(['off', 'low', 'max'], 'off'), 'low')
+    assert.equal(cycleValue(['off', 'low', 'max'], 'max'), 'off')
+    assert.equal(cycleValue(['off', 'low', 'max'], undefined), 'off')
+    assert.equal(cycleValue([3, 6, 10], 7), 3)
   })
 })

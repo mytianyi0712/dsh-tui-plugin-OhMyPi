@@ -35,7 +35,7 @@ function privateDefinition(entry: (typeof PRIVATE_DEFINITIONS)[number]): Protoco
 
 export const SHARED_PROTOCOL_CATALOG = new ProtocolCatalog({
   name: 'dsh-omp-tui',
-  version: '0.3.0',
+  version: '0.3.1',
 })
 
 export const SHARED_MANIFEST_CATALOG = new ManifestDefinitionCatalog()

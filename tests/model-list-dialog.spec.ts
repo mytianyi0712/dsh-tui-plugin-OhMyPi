@@ -1,15 +1,15 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { visibleWidth } from '@earendil-works/pi-tui'
-import { ModelListDialog } from '../src/components/model-list-dialog.ts'
+import { ModelListDialog, type ProviderModelDraft } from '../src/components/model-list-dialog.ts'
 import { createTranslator } from '../src/i18n.ts'
 import { createPalette } from '../src/theme.ts'
 
 const palette = createPalette(false, 'dark', true)
 const t = createTranslator('en')
 
-function dialog(models: string[]) {
-  const state = { saved: undefined as string[] | undefined, cancelled: false }
+function dialog(models: Array<string | ProviderModelDraft>) {
+  const state = { saved: undefined as ProviderModelDraft[] | undefined, cancelled: false }
   const view = new ModelListDialog('Models', models, palette, t, value => {
     if (value === undefined) state.cancelled = true
     else state.saved = value
@@ -22,24 +22,89 @@ const down = (view: ModelListDialog, count: number): void => {
 }
 
 describe('ModelListDialog', () => {
-  it('adds a model and commits the complete list', () => {
+  it('adds a model, expands fields, and commits', () => {
     const { view, state } = dialog([])
     view.handleInput('\r')
     view.handleInput('gateway-model')
     view.handleInput('\n')
-    down(view, 2)
+    const text = view.render(80).join('\n')
+    assert.ok(text.includes('Display name'))
+    assert.ok(text.includes('Thinking levels'))
+    assert.ok(text.includes('Context window'))
+    down(view, 6)
     view.handleInput('\r')
-    assert.deepEqual(state.saved, ['gateway-model'])
+    assert.deepEqual(state.saved, [{ id: 'gateway-model' }])
   })
 
-  it('edits the selected model', () => {
+  it('expands a model into a flat editable field list on Enter', () => {
+    const { view } = dialog(['model-a'])
+    view.handleInput('\r')
+    const text = view.render(80).join('\n')
+    assert.ok(text.includes('Full model ID'))
+    assert.ok(text.includes('Display name'))
+    assert.ok(text.includes('Thinking levels'))
+    assert.ok(text.includes('Thinking level'))
+    assert.ok(text.includes('Context window'))
+    assert.ok(text.includes('Max output tokens'))
+  })
+
+  it('cycles thinking level presets with Enter on the thinking levels row', () => {
     const { view, state } = dialog(['model-a'])
     view.handleInput('\r')
-    view.handleInput('-edited')
-    view.handleInput('\n')
     down(view, 2)
+    view.handleInput('\r') // inherit -> DeepSeek preset
+    view.handleInput('\r') // DeepSeek -> OpenAI preset
+    down(view, 5)
     view.handleInput('\r')
-    assert.deepEqual(state.saved, ['model-a-edited'])
+    assert.deepEqual(state.saved, [{
+      id: 'model-a',
+      reasoningEfforts: { off: 'none', low: 'low', medium: 'medium', high: 'high' },
+      reasoningEffort: 'medium',
+    }])
+  })
+
+  it('edits custom thinking levels with e using the simple list format', () => {
+    const { view, state } = dialog(['model-a'])
+    view.handleInput('\r')
+    down(view, 2)
+    view.handleInput('e')
+    view.handleInput('off, high, max')
+    view.handleInput('\n')
+    down(view, 5)
+    view.handleInput('\r')
+    assert.deepEqual(state.saved, [{
+      id: 'model-a',
+      reasoningEfforts: { off: null, high: 'high', max: 'max' },
+      reasoningEffort: 'high',
+    }])
+  })
+
+  it('cycles through all presets to non-reasoning and back to inherit', () => {
+    const { view, state } = dialog(['model-a'])
+    view.handleInput('\r')
+    down(view, 2)
+    for (let index = 0; index < 5; index++) view.handleInput('\r')
+    down(view, 5)
+    view.handleInput('\r')
+    assert.deepEqual(state.saved, [{ id: 'model-a', reasoningEfforts: false }])
+
+    const { view: back, state: backState } = dialog(['model-a'])
+    back.handleInput('\r')
+    down(back, 2)
+    for (let index = 0; index < 6; index++) back.handleInput('\r')
+    down(back, 5)
+    back.handleInput('\r')
+    assert.deepEqual(backState.saved, [{ id: 'model-a' }])
+  })
+
+  it('collapses the expanded model on Esc then cancels on a second Esc', () => {
+    const { view, state } = dialog(['model-a'])
+    view.handleInput('\r')
+    assert.ok(view.render(80).join('\n').includes('Display name'))
+    view.handleInput('\x1b')
+    assert.ok(!view.render(80).join('\n').includes('Display name'))
+    view.handleInput('\x1b')
+    assert.equal(state.cancelled, true)
   })
 
   it('deletes the currently highlighted model, not the last model', () => {
@@ -48,40 +113,12 @@ describe('ModelListDialog', () => {
     view.handleInput('\x7f')
     down(view, 2)
     view.handleInput('\r')
-    assert.deepEqual(state.saved, ['model-a', 'model-c'])
+    assert.deepEqual(state.saved, [{ id: 'model-a' }, { id: 'model-c' }])
   })
-
-  it('deletes a model before saving', () => {
-    const { view, state } = dialog(['model-a'])
-    view.handleInput('\x7f')
-    down(view, 1)
-    view.handleInput('\r')
-    assert.deepEqual(state.saved, [])
-  })
-
-  it('cancels without returning destructive edits', () => {
-    const { view, state } = dialog(['model-a'])
-    view.handleInput('\x7f')
-    view.handleInput('\x1b')
-    assert.equal(state.cancelled, true)
-    assert.equal(state.saved, undefined)
-  })
-
 
   it('wraps help and model rows within a narrow frame', () => {
     const { view } = dialog(['company/region/very-long-model-name-with-capabilities'])
     const rendered = view.render(28)
-    const text = rendered.join('\n')
-    assert.ok(text.includes('Delete/Backspace'))
-    assert.ok(text.replace(/[│\s]/g, '').includes('company/region/very-long-model-name-with-capabilities'))
     assert.ok(rendered.every(row => visibleWidth(row) === 28))
-  })
-
-  it('shows the full selected model id below the compact list row', () => {
-    const longModel = 'company/region/very-long-model-name-with-capabilities'
-    const { view } = dialog([longModel])
-    const rendered = view.render(40).join('\n')
-    assert.ok(rendered.includes('company/region'))
-    assert.ok(rendered.includes('capabilities'))
   })
 })

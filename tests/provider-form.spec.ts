@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { ProviderForm, SUPPORTED_PROVIDER_APIS, type ProviderDraft } from '../src/components/provider-form.ts'
+import { ProviderForm, SUPPORTED_PROVIDER_APIS, nextSupportedProviderApi, type ProviderDraft } from '../src/components/provider-form.ts'
 import { createTranslator } from '../src/i18n.ts'
 import { createPalette } from '../src/theme.ts'
 
@@ -13,7 +13,7 @@ const DRAFT: ProviderDraft = {
   api: 'openai-completions',
   baseURL: 'http://localhost:3000/v1',
   apiKey: 'secret',
-  models: ['model-a', 'model-b'],
+  models: [{ id: 'model-a' }, { id: 'model-b' }],
 }
 
 function makeForm(draft: ProviderDraft = DRAFT) {
@@ -49,21 +49,15 @@ describe('ProviderForm', () => {
       'anthropic-messages',
     ])
   })
-  it('uses the predefined WebUI API type picker', async () => {
-    let picked = false
-    const form = new ProviderForm('Add provider', palette, t, DRAFT, () => {}, {
-      pickApi: async () => {
-        picked = true
-        return 'openai-responses'
-      },
-    })
-    // id -> name -> api
+  it('cycles official API types in place without a nested picker', () => {
+    const { form } = makeForm()
     form.handleInput('\x1b[B')
     form.handleInput('\x1b[B')
     form.handleInput('\r')
-    await Promise.resolve()
-    assert.equal(picked, true)
-    assert.ok(form.render(80).join('\n').includes('openai-responses'))
+    const rows = form.render(80).join('\n')
+    assert.ok(rows.includes('Response (OpenAI Responses)'))
+    assert.equal(nextSupportedProviderApi('openai-completions'), 'openai-responses')
+    assert.equal(nextSupportedProviderApi('anthropic-messages'), 'openai-completions')
   })
   it('rejects a custom route without an official API type', () => {
     const form = new ProviderForm('Add provider', palette, t, { ...DRAFT, api: '' }, () => {}, {}, {
@@ -110,7 +104,7 @@ describe('ProviderForm', () => {
     const form = new ProviderForm('Add provider', palette, t, DRAFT, () => {}, {
       manageModels: async () => {
         managed = true
-        return ['model-x', 'model-y']
+        return [{ id: 'model-x' }, { id: 'model-y' }]
       },
     })
     // id -> name -> api -> baseURL -> apiKey -> models
@@ -133,7 +127,7 @@ describe('ProviderForm', () => {
     assert.deepEqual(saved, DRAFT)
   })
 
-  it('runs discovery and shows the discovered count', async () => {
+  it('runs discovery and merges models without opening the editor', async () => {
     let discovered = false
     const form = new ProviderForm('Add provider', palette, t, DRAFT, () => {}, {
       discover: async () => {
@@ -141,12 +135,14 @@ describe('ProviderForm', () => {
         return [{ id: 'model-c' }, { id: 'model-d' }]
       },
     })
-    // id -> name -> api -> baseURL -> apiKey -> models -> discover
     for (let index = 0; index < 6; index++) form.handleInput('\x1b[B')
     form.handleInput('\r')
     await Promise.resolve()
     assert.equal(discovered, true)
-    assert.ok(form.render(80).join('\n').includes('2 models discovered'))
+    const rows = form.render(80).join('\n')
+    assert.ok(rows.includes('2 models discovered'))
+    assert.ok(rows.includes('Added 2 models from upstream'))
+    assert.ok(rows.includes('4 models'))
   })
 
   it('shows a long Base URL in a wrapped detail block', () => {

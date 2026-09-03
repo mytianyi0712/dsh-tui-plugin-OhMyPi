@@ -144,6 +144,7 @@ export type Messages = {
   settingsTitle: string
   settingsHint: string
   settingsSubmenuHint: string
+  settingsEffortHint: string
   settingsEmpty: string
   settingsTabGeneral: string
   settingsTabModelsProviders: string
@@ -167,6 +168,15 @@ export type Messages = {
   settingsModelListHint: string
   settingsModelListEmpty: string
   settingsModelValue: string
+  settingsModelEffort: string
+  settingsModelEffortLevels: string
+  settingsModelEffortHint: string
+  settingsModelDisplayName: string
+  settingsModelContextWindow: string
+  settingsModelMaxTokens: string
+  settingsEffortInherit: string
+  settingsEffortFromAdapter: string
+  settingsEffortDisabled: string
   settingsModelRequired: string
   settingsModelDuplicate: string
   settingsProviderTemplate: string
@@ -174,6 +184,7 @@ export type Messages = {
   settingsDiscoverModels: string
   settingsDiscovering: string
   settingsDiscoveredCount: string
+  settingsDiscoverMerged: string
   settingsDiscoveryUnavailable: string
   settingsConfiguredProviders: string
   settingsConfiguredModels: string
@@ -391,8 +402,9 @@ export const MESSAGES: Record<Locale, Messages> = {
     modelEffort: '推理强度',
     resumeTitle: '恢复会话',
     settingsTitle: '设置',
-    settingsHint: '↑/↓ 选择 · ←/→/Tab 切换标签 · Enter/Space 修改 · Esc 关闭',
+    settingsHint: '↑/↓ 选择 · ←/→/Tab 切换标签 · Enter 切换/修改 · Esc 关闭',
     settingsSubmenuHint: '↑/↓ 选择 · Enter 确认 · Esc 返回',
+    settingsEffortHint: '回车循环切换默认模型的思考等级',
     settingsEmpty: '没有可用选项',
     settingsTabGeneral: '常规',
     settingsTabModelsProviders: '模型与供应商',
@@ -413,9 +425,18 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsModels: '模型列表',
     settingsManageModels: '管理模型列表',
     settingsAddModel: '新增模型',
-    settingsModelListHint: '↑/↓ 选择模型 · Enter 编辑 · Delete/Backspace 删除当前模型 · Enter 执行操作 · Esc 取消；修改只在保存后生效',
+    settingsModelListHint: '↑/↓ 选择 · Enter 展开/切换 · e 自定义思考等级 · Esc 收起 · Delete 删除模型',
     settingsModelListEmpty: '暂无模型。请选择“新增模型”。',
     settingsModelValue: '完整模型 ID',
+    settingsModelEffort: '思考强度',
+    settingsModelEffortLevels: '思考等级',
+    settingsModelEffortHint: 'Enter 循环预设：跟随上游 → DeepSeek → OpenAI → GPT → Claude → 非推理；e 自定义，可输入 deepseek/openai/gpt/claude/false，或 off, high, max，或 high: ultra, max: ultra',
+    settingsModelDisplayName: '显示名称',
+    settingsModelContextWindow: '上下文窗口',
+    settingsModelMaxTokens: '最大输出 tokens',
+    settingsEffortInherit: '跟随默认',
+    settingsEffortFromAdapter: '跟随上游',
+    settingsEffortDisabled: '非推理',
     settingsModelRequired: '模型 ID 不能为空',
     settingsModelDuplicate: '模型 ID 已存在',
     settingsProviderTemplate: '选择供应商模板',
@@ -423,13 +444,14 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsDiscoverModels: '探测上游模型',
     settingsDiscovering: '正在探测模型…',
     settingsDiscoveredCount: '已发现 {count} 个模型',
+    settingsDiscoverMerged: '已从上游加入 {count} 个模型',
     settingsDiscoveryUnavailable: '当前部署未提供模型探测服务。',
     settingsConfiguredProviders: '已配置供应商',
     settingsConfiguredModels: '已配置模型',
     settingsProviderModelCount: '{count} 个模型',
     settingsSetDefaultModel: '设为默认模型',
     settingsSetTitleModel: '设为标题模型',
-    providerFormHint: '↑/↓/←/→ 移动 · Enter 编辑/执行 · Esc 返回',
+    providerFormHint: '↑/↓ 移动 · Enter 编辑/循环接口/执行 · Esc 返回',
     providerConfigRequired: '供应商名称不能为空',
     providerIdRequired: '供应商 ID 不能为空',
     providerIdInvalid: '供应商 ID 必须是小写字母开头的 kebab-case',
@@ -637,8 +659,9 @@ export const MESSAGES: Record<Locale, Messages> = {
     modelEffort: 'Reasoning effort',
     resumeTitle: 'Resume session',
     settingsTitle: 'Settings',
-    settingsHint: '↑/↓ select · ←/→/Tab switch tabs · Enter/Space change · Esc close',
+    settingsHint: '↑/↓ select · ←/→/Tab switch tabs · Enter toggle/change · Esc close',
     settingsSubmenuHint: '↑/↓ select · Enter confirm · Esc go back',
+    settingsEffortHint: 'Enter cycles the default model thinking level',
     settingsEmpty: 'No options available',
     settingsTabGeneral: 'General',
     settingsTabModelsProviders: 'Models & Providers',
@@ -659,9 +682,18 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsModels: 'Models',
     settingsManageModels: 'Manage model list',
     settingsAddModel: 'Add model',
-    settingsModelListHint: '↑/↓ select model · Enter edit · Delete/Backspace delete current model · Enter run action · Esc cancel; changes apply only on Save',
+    settingsModelListHint: '↑/↓ select · Enter expand/cycle · e custom thinking levels · Esc collapse · Delete remove model',
     settingsModelListEmpty: 'No models. Choose “Add model”.',
     settingsModelValue: 'Full model ID',
+    settingsModelEffort: 'Thinking level',
+    settingsModelEffortLevels: 'Thinking levels',
+    settingsModelEffortHint: 'Enter cycles presets: follow upstream → DeepSeek → OpenAI → GPT → Claude → non-reasoning; e custom. Accepts deepseek/openai/gpt/claude/false, off, high, max, or high: ultra, max: ultra',
+    settingsModelDisplayName: 'Display name',
+    settingsModelContextWindow: 'Context window',
+    settingsModelMaxTokens: 'Max output tokens',
+    settingsEffortInherit: 'Follow default',
+    settingsEffortFromAdapter: 'Follow upstream',
+    settingsEffortDisabled: 'Non-reasoning',
     settingsModelRequired: 'Model ID is required',
     settingsModelDuplicate: 'Model ID already exists',
     settingsProviderTemplate: 'Choose provider template',
@@ -669,13 +701,14 @@ export const MESSAGES: Record<Locale, Messages> = {
     settingsDiscoverModels: 'Discover upstream models',
     settingsDiscovering: 'Discovering models…',
     settingsDiscoveredCount: '{count} models discovered',
+    settingsDiscoverMerged: 'Added {count} models from upstream',
     settingsDiscoveryUnavailable: 'Model discovery is not available in this deployment.',
     settingsConfiguredProviders: 'Configured providers',
     settingsConfiguredModels: 'Configured models',
     settingsProviderModelCount: '{count} models',
     settingsSetDefaultModel: 'Set as default model',
     settingsSetTitleModel: 'Set as title model',
-    providerFormHint: '↑/↓/←/→ move · Enter edit/run · Esc back',
+    providerFormHint: '↑/↓/←/→ move · Enter edit/cycle API/run · Esc back',
     providerConfigRequired: 'Provider name is required',
     providerIdRequired: 'Provider ID is required',
     providerIdInvalid: 'Provider ID must be lowercase kebab-case',

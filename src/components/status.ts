@@ -76,6 +76,24 @@ export type ReasoningEffortChoice =
   | { kind: 'already'; effort: LlmReasoningEffortInfo }
   | { kind: 'selected'; effort: LlmReasoningEffortInfo }
 
+/** Fallback cycle when a model does not advertise selectable efforts. */
+export const FALLBACK_REASONING_EFFORTS = ['off', 'low', 'high', 'max'] as const
+
+/**
+ * Cycle one model's stored thinking level: inherit (undefined) then advertised
+ * ids, or the common off/low/high/max ladder when the adapter exposes none.
+ */
+export function nextModelReasoningEffort(
+  current: string | undefined,
+  advertisedIds: readonly string[],
+): string | undefined {
+  const ids = advertisedIds.length > 0 ? [...advertisedIds] : [...FALLBACK_REASONING_EFFORTS]
+  const cycle: Array<string | undefined> = [undefined, ...ids]
+  const index = cycle.findIndex(id => id === current)
+  const from = index >= 0 ? index : 0
+  return cycle[(from + 1) % cycle.length]
+}
+
 /** Resolve an explicit effort or cycle through the model's advertised order. */
 export function chooseReasoningEffort(
   efforts: readonly LlmReasoningEffortInfo[],

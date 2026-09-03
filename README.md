@@ -5,7 +5,7 @@
 **OMP 风格的 DeepSeek Harness（dsh）终端界面**
 
 [![License](https://img.shields.io/badge/License-BSD--3--Clause-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.0-blue)](#变更记录)
+[![Version](https://img.shields.io/badge/version-0.3.1-blue)](#变更记录)
 [![dsh](https://img.shields.io/badge/dsh-0.1.1--rc.2%20%2F%200.1.2--alpha.3-4c8bf5)](#运行要求)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
@@ -102,7 +102,7 @@ npm install --global pnpm@11.7.0
 
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
-  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.3.0/dsh-omp-tui-0.3.0.tgz
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.3.1/dsh-omp-tui-0.3.1.tgz
 ```
 
 tarball 已包含构建后的 `lib/`，用户机器无需编译本项目。
@@ -114,7 +114,7 @@ Git 安装会执行本项目的 `prepare` 构建。pnpm 11 默认阻止依赖构
 ```sh
 npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
   --allow-build=dsh-omp-tui \
-  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.3.0
+  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.3.1
 ```
 
 固定 tag 比直接使用 `#main` 更容易复现。完整的升级、卸载和安装排障说明见 [`docs/INSTALL.md`](docs/INSTALL.md)。
@@ -124,7 +124,7 @@ npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
 如果希望直接使用 `omdsh` 启动器，也可以全局安装本地 tarball；包内的 dsh 宿主 peer 依赖为 optional，npm 11 不会因 peer 图触发 Arborist 的 `null.children` 崩溃：
 
 ```sh
-npm install --global ./dsh-omp-tui-0.3.0.tgz
+npm install --global ./dsh-omp-tui-0.3.1.tgz
 npm install --global @deepseek-ai/dsh@0.1.1-rc.2
 omdsh
 ```
@@ -224,13 +224,14 @@ dsh --profile tui --resume <session-id>
 
 ### 使用 `omdsh` 启动 TUI
 
-项目提供 `omdsh` 启动器（`scripts/omdsh.js` 为跨平台 bin，另有 `scripts/omdsh` 与 `scripts/omdsh.cmd`）。`omdsh` 会调用系统 PATH 中的官方 `dsh` 并启动 `--profile tui`；本项目不下载、不缓存 dsh。正常启动不打印日志、不迁移配置、不自动升级；首次尚无 tui profile 时会静默安装当前启动器包（可用 `OMDSH_NO_BOOTSTRAP=1` 跳过）。从 GitHub 获取新版本并做适配请使用 `omdsh update`。官方 dsh 命令（`web`、`plugin`、显式 `--profile` 等）请直接使用 `dsh`。
+项目提供 `omdsh` 启动器（`scripts/omdsh.js` 为跨平台 bin，另有 `scripts/omdsh` 与 `scripts/omdsh.cmd`）。`omdsh` 会调用系统 PATH 中的官方 `dsh` 并启动 `--profile tui`；本项目不下载、不缓存 dsh。正常启动不打印日志、不迁移配置、不自动升级；首次尚无 tui profile 时会静默安装当前启动器包（可用 `OMDSH_NO_BOOTSTRAP=1` 跳过）。同版本内容漂移请使用 `omdsh check` 用全局包覆盖 profile。从 GitHub 获取新版本并做适配请使用 `omdsh update`。官方 dsh 命令（`web`、`plugin`、显式 `--profile` 等）请直接使用 `dsh`。
 
 ```sh
 # 开发环境：把仓库 scripts 目录加入 PATH
 export PATH="$HOME/dsh-omp-tui/scripts:$PATH"   # Git Bash / zsh
 omdsh                         # 等价于 dsh --profile tui
 omdsh --resume <session-id>   # 透传给 tui profile
+omdsh check                   # 比较全局包与 tui profile，有差异则用全局覆盖
 omdsh update                  # 从 GitHub Release 安装最新包并适配
 
 # Windows cmd / PowerShell
@@ -289,7 +290,7 @@ $env:DEEPSEEK_BASE_URL = 'http://localhost:3000/v1'
 
 - `mode` 只对空白会话生效；切换结果会写入会话日志，恢复会话时沿用。
 - `/theme` 和 `/settings` 的选择在存在官方 settings provider 时写入 `$DSH_HOME/settings.yaml`。
-- `/settings` 分为“常规 / 模型与供应商 / 高级 / 微信claw”四页；模型与供应商页支持新增/编辑供应商、模型探测与手动模型列表。接口类型使用 dsh-llm-pi-ai 官方值：OAI 兼容 `openai-completions`、Response `openai-responses`、Message `anthropic-messages`。
+- `/settings` 分为“常规 / 模型与供应商 / 高级 / 微信claw”四页。开关、工具输出行数、并行数和默认思考等级在当前行回车即可切换；模型与供应商页集中默认模型、思考等级和供应商列表，Enter 循环思考等级。供应商表单中接口类型就地循环官方值：OAI 兼容 `openai-completions`、Response `openai-responses`、Message `anthropic-messages`；探测上游会直接合并进模型列表。
 - 默认模式会读取 dsh settings 中保存的 `agent-presets.default`：设置页修改后，新会话启动会使用该默认模式，而不是固定回退到 `standard`。
 - `theme.custom` 只接受 RGB 三元组；未知角色和非法值会被忽略。
 - `theme.mode` 可选 `dynamic`（动态，按终端明暗在 `theme.dark` / `theme.light` 之间切换）或 `selected`（选定，固定使用 `theme.selected`）。三个主题槽位均填写具体 OMP 主题 id，不校验主题自身明暗，可任意搭配。
@@ -373,7 +374,7 @@ docs/assets/            README 使用的实机截图
 
 ## 变更记录
 
-完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。当前版本：`0.3.0`。
+完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。当前版本：`0.3.1`。
 
 ## 相关文档
 

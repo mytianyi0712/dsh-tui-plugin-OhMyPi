@@ -6,11 +6,11 @@
  * release focus back to the editor on completion.
  */
 
-import { Input, SelectList, wrapTextWithAnsi, type Component, type Container, type Focusable, type OverlayHandle, type OverlayOptions, type TUI } from '@earendil-works/pi-tui'
+import { Input, SelectList, visibleWidth, wrapTextWithAnsi, type Component, type Container, type Focusable, type OverlayHandle, type OverlayOptions, type TUI } from '@earendil-works/pi-tui'
 import type { LlmRuntime } from '../dsh-host/index.ts'
 import type { ModelSelection } from '../dsh-host/index.ts'
 import type { AskUserQuestionAnswerItem, AskUserQuestionItem } from '../dsh-host/index.ts'
-import { frameBlock, selectTheme, type ColorRole, type Palette } from '../theme.ts'
+import { frameBlock, overlayViewportHeight, selectTheme, type ColorRole, type Palette } from '../theme.ts'
 import type { Translator } from '../i18n.ts'
 import { displayText } from './text.ts'
 
@@ -24,7 +24,7 @@ export class SelectDialog implements Component {
     palette: Palette,
     private readonly onDone: (value: string | undefined) => void,
   ) {
-    this.list = new SelectList(items, 8, selectTheme(palette))
+    this.list = new SelectList(items, Math.max(8, overlayViewportHeight() - 6), selectTheme(palette))
     this.list.onSelect = (item) => onDone(item.value)
     this.list.onCancel = () => onDone(undefined)
     this.title = title
@@ -45,7 +45,7 @@ export class SelectDialog implements Component {
   render(width: number): string[] {
     const inner = Math.max(20, width - 4)
     const rows = this.list.render(inner - 4)
-    return frameBlock(rows, width, this.palette.accent, undefined, this.title)
+    return frameBlock(rows, width, this.palette.accent, undefined, this.title, undefined, overlayViewportHeight())
   }
 }
 
@@ -60,7 +60,7 @@ export class ToggleDialog implements Component {
     palette: Palette,
     private readonly onDone: (values: string[] | undefined) => void,
   ) {
-    this.list = new SelectList(items, 8, selectTheme(palette))
+    this.list = new SelectList(items, Math.max(8, overlayViewportHeight() - 6), selectTheme(palette))
     this.list.onSelect = (item) => {
       if (this.selected.has(item.value)) this.selected.delete(item.value)
       else this.selected.add(item.value)
@@ -88,7 +88,7 @@ export class ToggleDialog implements Component {
   render(width: number): string[] {
     const inner = Math.max(20, width - 4)
     const rows = this.list.render(inner - 4)
-    return frameBlock(rows, width, this.palette.accent, undefined, this.title)
+    return frameBlock(rows, width, this.palette.accent, undefined, this.title, undefined, overlayViewportHeight())
   }
 }
 
@@ -125,7 +125,7 @@ export class InputDialog implements Component {
   render(width: number): string[] {
     const inner = Math.max(20, width - 4)
     const rows = [`${this.palette.dim(this.t('dialogTypeAnswer'))}`, this.input.render(inner - 4)[0] ?? '']
-    return frameBlock(rows, width, this.palette.accent, undefined, this.title)
+    return frameBlock(rows, width, this.palette.accent, undefined, this.title, undefined, overlayViewportHeight())
   }
 }
 
@@ -196,24 +196,88 @@ export class AskCardComponent implements Component, Focusable {
   }
 }
 
+/** Full-screen overlay layout: the next menu covers the previous one completely. */
+export const FULLSCREEN_OVERLAY: Pick<OverlayOptions, 'anchor' | 'width' | 'maxHeight' | 'margin'> = {
+  anchor: 'top-left',
+  width: '100%',
+  maxHeight: '100%',
+  margin: 0,
+}
+
+/** Stretch overlay lines so they paint over the entire terminal. */
+export function fillOverlayLines(lines: readonly string[], width: number, height: number): string[] {
+  const safeWidth = Math.max(1, width)
+  const pad = (line: string): string => {
+    const extra = Math.max(0, safeWidth - visibleWidth(line))
+    return extra === 0 ? line : `${line}${' '.repeat(extra)}`
+  }
+  const filled = lines.map(pad)
+  if (filled.length >= height) return filled.slice(0, height)
+  while (filled.length < height) filled.push(' '.repeat(safeWidth))
+  return filled
+}
+
+const overlayStack: OverlayHandle[] = []
+
+class OverlayCover implements Component, Focusable {
+  constructor(private readonly inner: Component) {}
+
+  get focused(): boolean {
+    return 'focused' in this.inner ? (this.inner as Focusable).focused === true : false
+  }
+
+  set focused(value: boolean) {
+    if ('focused' in this.inner) (this.inner as Focusable).focused = value
+  }
+
+  handleInput(data: string): void {
+    this.inner.handleInput?.(data)
+  }
+
+  invalidate(): void {
+    this.inner.invalidate?.()
+  }
+
+  render(width: number): string[] {
+    return fillOverlayLines(this.inner.render(width), width, overlayViewportHeight())
+  }
+}
+
+/** Show a full-screen overlay, hiding any previous overlay until this one closes. */
+export function pushOverlay(
+  ui: TUI,
+  component: Component,
+  options?: Partial<Pick<OverlayOptions, 'anchor' | 'width' | 'maxHeight' | 'offsetY' | 'margin'>>,
+): OverlayHandle {
+  const parent = overlayStack[overlayStack.length - 1]
+  parent?.setHidden(true)
+  const inner = ui.showOverlay(new OverlayCover(component), { ...FULLSCREEN_OVERLAY, ...options })
+  overlayStack.push(inner)
+  return {
+    ...inner,
+    hide(): void {
+      const index = overlayStack.lastIndexOf(inner)
+      if (index === -1) return
+      overlayStack.splice(index, 1)
+      inner.hide()
+      overlayStack[overlayStack.length - 1]?.setHidden(false)
+    },
+  }
+}
+
 /** Show an overlay component and resolve once it reports through `onDone`. */
 export function showOverlay<T>(
   ui: TUI,
   make: (done: (value: T | undefined) => void) => Component,
   options?: Partial<Pick<OverlayOptions, 'anchor' | 'width' | 'maxHeight' | 'offsetY' | 'margin'>>,
 ): Promise<T | undefined> {
-  return new Promise((resolve) => {
-    const handle = ui.showOverlay(make((value) => {
-      handle.hide()
-      resolve(value)
-    }), {
-      anchor: 'center',
-      width: '80%',
-      maxHeight: '85%',
-      ...options,
-    })
-    ui.requestRender()
-  })
+  const { promise, resolve } = Promise.withResolvers<T | undefined>()
+  const handle = pushOverlay(ui, make((value) => {
+    handle.hide()
+    resolve(value)
+  }), options)
+  ui.requestRender()
+  return promise
 }
 
 /**
@@ -342,7 +406,6 @@ export async function runQuestionFlow(
   signal: AbortSignal | undefined,
 ): Promise<AskUserQuestionAnswerItem[]> {
   const answers: AskUserQuestionAnswerItem[] = []
-  const askOverlayOptions = { width: '90%', maxHeight: '90%' } as const
   for (const question of questions) {
     if (signal?.aborted) break
     const options = (question.options ?? []).map(option => ({
@@ -352,19 +415,19 @@ export async function runQuestionFlow(
     }))
     let selected: string[] | undefined
     if (options.length === 0) {
-      const custom = await showOverlay<string>(ui, (done) => new InputDialog(question.question, palette, done, t), askOverlayOptions)
+      const custom = await showOverlay<string>(ui, (done) => new InputDialog(question.question, palette, done, t))
       if (custom === undefined) break
       selected = [custom]
     } else if (question.multiSelect === true) {
-      const picked = await showOverlay<string[]>(ui, (done) => new ToggleDialog(question.question, options, palette, done), askOverlayOptions)
+      const picked = await showOverlay<string[]>(ui, (done) => new ToggleDialog(question.question, options, palette, done))
       if (picked === undefined) break
       selected = picked
     } else {
       const withCustom = [...options, { value: CUSTOM_ANSWER, label: '✎ 自定义回答…' }]
-      const picked = await showOverlay<string>(ui, (done) => new SelectDialog(question.question, withCustom, palette, done), askOverlayOptions)
+      const picked = await showOverlay<string>(ui, (done) => new SelectDialog(question.question, withCustom, palette, done))
       if (picked === undefined) break
       if (picked === CUSTOM_ANSWER) {
-        const custom = await showOverlay<string>(ui, (done) => new InputDialog(question.question, palette, done, t), askOverlayOptions)
+        const custom = await showOverlay<string>(ui, (done) => new InputDialog(question.question, palette, done, t))
         if (custom === undefined) break
         selected = [custom]
       } else {

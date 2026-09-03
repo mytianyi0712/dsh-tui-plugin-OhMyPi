@@ -461,6 +461,11 @@ export interface FrameSection {
   readonly lines: readonly string[]
 }
 
+/** Terminal rows available for a full-screen overlay frame. */
+export function overlayViewportHeight(): number {
+  return Math.max(8, process.stdout.rows ?? 24)
+}
+
 /**
  * Frame rows with OMP's rounded output-block grammar and any number of
  * labelled sections. Titles begin after a three-cell cap (`╭─── title ─╮`);
@@ -472,6 +477,7 @@ export function frameBlockSections(
   background: ColorRole | undefined,
   title: string | undefined,
   sections: readonly FrameSection[],
+  minHeight?: number,
 ): string[] {
   const bodyInner = Math.max(1, width - 4)
   const paint = (row: string): string => background === undefined ? row : background(row)
@@ -495,6 +501,12 @@ export function frameBlockSections(
     for (const line of section.lines) rows.push(body(line))
   }
   rows.push(bar('╰', '╯'))
+  if (minHeight !== undefined && rows.length < minHeight) {
+    const empty = body('')
+    const bottom = rows.pop()!
+    while (rows.length + 1 < minHeight) rows.push(empty)
+    rows.push(bottom)
+  }
   return rows
 }
 
@@ -509,11 +521,12 @@ export function frameBlock(
   background: ColorRole | undefined,
   title?: string,
   sectionTitle?: string,
+  minHeight?: number,
 ): string[] {
   return frameBlockSections(width, border, background, title, [
     ...sectionTitle === undefined ? [] : [{ title: sectionTitle, lines: [] as readonly string[] }],
     { lines },
-  ])
+  ], minHeight)
 }
 
 /** Sample text every `/palette` row renders, long enough to judge a tone against its neighbours. */

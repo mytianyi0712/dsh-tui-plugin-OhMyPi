@@ -3,6 +3,7 @@
 // 只负责调用系统 PATH 中官方 dsh 的独立进程，并启动 tui profile。
 // 本项目不下载、不缓存 dsh。正常启动不迁移配置、不自动升级。
 // `omdsh update` 从 GitHub Release 安装最新包，并做新版本适配。
+// `omdsh check` 比较全局包与 tui profile 内容，有差异时用全局包覆盖 profile。
 //
 // 环境变量：
 //   DSH_REAL             显式指定 dsh 可执行文件
@@ -10,6 +11,7 @@
 //   OMDSH_NO_BOOTSTRAP=1 跳过首次运行的 profile 引导
 
 import { spawn, spawnSync } from 'node:child_process'
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -29,13 +31,17 @@ const launcherHelp = `omdsh — dsh-omp-tui 启动器
 
 用法:
   omdsh [参数...]
+  omdsh check
   omdsh update
 
 说明:
   omdsh 会调用系统 PATH 中的官方 dsh，并启动 --profile tui。
-  每次启动都会同步 tui profile 中的 dsh-omp-tui：版本与全局不一致、
-  或 profile 中残留旧版链接安装时，会用当前全局包重新安装。
+  每次启动都会按版本号同步 tui profile 中的 dsh-omp-tui：版本与全局不一致、
+  或 profile 中残留旧版链接安装时，会用当前全局包重新安装。同版本仅内容变化
+  时启动不会覆盖，请使用 omdsh check。
   首次尚无 tui profile 时会自动引导安装。
+  omdsh check 比较全局 dsh-omp-tui 与 tui profile 的实际内容，存在差异时
+  用全局包覆盖 profile。
   omdsh update 从 GitHub Release 安装最新包，并针对新版本做适配
   （凭据扁平化、旧会话编码、社区 std adapter）。
   所有其它参数原样透传给 dsh（例如 --resume <session>）。
@@ -133,8 +139,28 @@ function profileInstallIsHealthy() {
   return true
 }
 
+/**
+ * Dev `tsdown` omits session-title / session-persistence. Rebuild with the
+ * prepare config before packing so tui profile can load those loader entries.
+ */
+function ensurePublishBuild() {
+  const root = packageRoot()
+  const prepareConfig = path.join(root, 'tsdown.prepare.config.ts')
+  if (!fs.existsSync(prepareConfig)) return
+  const result = runSync('npx', ['--no-install', 'tsdown', '--config', prepareConfig], { cwd: root, stdio: 'pipe' })
+  if (result.status !== 0) {
+    throw new Error(`构建发布产物失败：${String(result.stderr ?? result.stdout ?? '').trim() || '未知错误'}`)
+  }
+  const needed = ['session-title.js', 'session-persistence.js', 'index.js']
+  const missing = needed.filter(name => !fs.existsSync(path.join(root, 'lib', name)))
+  if (missing.length > 0) {
+    throw new Error(`发布产物缺少 ${missing.join(', ')}`)
+  }
+}
+
 /** 把全局包目录打包成临时 tarball，避免 pnpm 把 file: 目录安装成链接。 */
 function packSelfTarball() {
+  ensurePublishBuild()
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omdsh-pack-'))
   const output = path.join(tempDir, `${PACKAGE}-${ownVersion}.tgz`)
   const result = runSync('npm', ['pack', packageRoot(), '--ignore-scripts', '--pack-destination', tempDir], { stdio: 'pipe' })
@@ -279,11 +305,130 @@ function addResultError(result) {
   return stderr === '' ? '插件安装失败。' : stderr
 }
 
+function requireDsh() {
+  const dshProbe = runSync(dsh, ['--version'], { stdio: 'pipe' })
+  if (dshProbe.error || dshProbe.status !== 0) {
+    fail('未检测到 dsh CLI。请先安装官方客户端：npm install -g @deepseek-ai/dsh')
+  }
+}
+
+function syncMarkerPath() {
+  return path.join(profilePackageDir(), '.omdsh-source')
+}
+
+function fileSha256(file) {
+  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')
+}
+
+/** Content hash of a directory tree; file bytes only, so tarball mtimes do not matter. */
+function directoryFingerprint(root) {
+  const hash = crypto.createHash('sha256')
+  const files = []
+  const walk = (dir, rel) => {
+    let entries
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name))
+    for (const entry of entries) {
+      if (entry.name === 'node_modules' || entry.name === '.omdsh-source') continue
+      const nextRel = rel === '' ? entry.name : `${rel}/${entry.name}`
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) walk(full, nextRel)
+      else if (entry.isFile()) files.push(nextRel)
+    }
+  }
+  walk(root, '')
+  for (const rel of files) {
+    hash.update(rel)
+    hash.update('\0')
+    try {
+      hash.update(fs.readFileSync(path.join(root, rel)))
+    } catch {
+      hash.update('<unreadable>')
+    }
+    hash.update('\0')
+  }
+  return hash.digest('hex')
+}
+
+function fingerprintTarball(tarball) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'omdsh-check-'))
+  try {
+    const result = runSync('tar', ['-xzf', tarball, '-C', tempDir], { stdio: 'pipe' })
+    if (result.status !== 0) {
+      throw new Error(`解包失败：${String(result.stderr ?? '').trim() || '未知错误'}`)
+    }
+    const nested = path.join(tempDir, 'package')
+    return directoryFingerprint(fs.existsSync(nested) ? nested : tempDir)
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true })
+  }
+}
+
+function readProfileSourceHash() {
+  try {
+    const value = fs.readFileSync(syncMarkerPath(), 'utf8').trim()
+    return value === '' ? undefined : value
+  } catch {
+    return undefined
+  }
+}
+
+function writeProfileSourceHash(hash) {
+  fs.writeFileSync(syncMarkerPath(), `${hash}\n`, 'utf8')
+}
+
+/** Pack the current global/launcher package and install it into tui profile. */
+function installGlobalToProfile(previousVersion, tarball) {
+  requireDsh()
+  removeProfilePackage()
+  if (previousVersion !== undefined) {
+    say(`正在把 tui profile 的 dsh-omp-tui 同步为 ${ownVersion}（原 ${previousVersion}）…`)
+  } else {
+    say(`正在把全局 dsh-omp-tui ${ownVersion} 安装到 tui profile…`)
+  }
+
+  let packed = tarball
+  if (packed === undefined) {
+    try {
+      packed = packSelfTarball()
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const addResult = pnpmAvailable()
+    ? addToProfile(packed, false)
+    : npmInstallToProfile(packed, false)
+  if (addResult.status !== 0) {
+    fail(`插件安装失败。可稍后手工重试：dsh plugin --profile tui add <tgz 或 file:包路径>\n${addResultError(addResult)}`)
+  }
+  writeProfileSourceHash(fingerprintTarball(packed))
+}
+
+function profileDiffersFromGlobal(globalHash) {
+  if (!fs.existsSync(profilePackageDir())) {
+    return { differ: true, reason: 'missing' }
+  }
+  if (!profileInstallIsHealthy()) {
+    return { differ: true, reason: 'unhealthy' }
+  }
+  const profileHash = readProfileSourceHash()
+  if (profileHash !== globalHash) {
+    return { differ: true, reason: 'content', profileHash }
+  }
+  return { differ: false, profileHash }
+}
+
 /**
  * 同步 tui profile 中的 dsh-omp-tui：
  * - 首次安装：静默引导安装当前全局包；
  * - 旧版本或链接安装：用当前全局包重新打包安装，支持从旧版本更新。
  * 安装优先走 dsh 官方 plugin add（pnpm），没有 pnpm 时回退 npm。
+ * 同版本仅内容变化时不覆盖，交给 `omdsh check`。
  */
 function ensureProfile() {
   const installed = installedProfileVersion()
@@ -299,29 +444,46 @@ function ensureProfile() {
     return
   }
 
-  const dshProbe = runSync(dsh, ['--version'], { stdio: 'pipe' })
-  if (dshProbe.error || dshProbe.status !== 0) {
-    fail('未检测到 dsh CLI。请先安装官方客户端：npm install -g @deepseek-ai/dsh')
-  }
+  installGlobalToProfile(installed)
+}
 
-  removeProfilePackage()
-  if (installed !== undefined) {
-    say(`正在把 tui profile 的 dsh-omp-tui 同步为 ${ownVersion}（原 ${installed}）…`)
-  }
-
+function runCheck() {
+  const installed = installedProfileVersion()
   let tarball
   try {
     tarball = packSelfTarball()
   } catch (error) {
     fail(error instanceof Error ? error.message : String(error))
   }
-
-  const addResult = pnpmAvailable()
-    ? addToProfile(tarball, false)
-    : npmInstallToProfile(tarball, false)
-  if (addResult.status !== 0) {
-    fail(`插件安装失败。可稍后手工重试：dsh plugin --profile tui add <tgz 或 file:包路径>\n${addResultError(addResult)}`)
+  const globalHash = fingerprintTarball(tarball)
+  const profileHash = readProfileSourceHash()
+  say(`全局 dsh-omp-tui v${ownVersion}  源包 ${globalHash.slice(0, 12)}`)
+  if (!fs.existsSync(profilePackageDir())) {
+    say('tui profile 尚未安装 dsh-omp-tui。')
+  } else {
+    say(`tui profile     v${installed ?? '未知'}  源包 ${profileHash === undefined ? '未知' : profileHash.slice(0, 12)}`)
   }
+
+  const diff = profileDiffersFromGlobal(globalHash)
+  if (!diff.differ) {
+    say('全局环境与 tui profile 一致，无需覆盖。')
+    return
+  }
+
+  const reason = diff.reason === 'missing'
+    ? 'profile 未安装'
+    : diff.reason === 'unhealthy'
+      ? 'profile 为链接或旧版嵌套安装'
+      : profileHash === undefined
+        ? 'profile 不是由当前启动器同步的'
+        : installed !== ownVersion
+          ? `版本不一致（全局 ${ownVersion} / profile ${installed ?? '未知'}）`
+          : '同版本内容不一致'
+  say(`存在差异（${reason}），正在用全局包覆盖 tui profile…`)
+  installGlobalToProfile(installed, tarball)
+  const after = installedProfileVersion()
+  const afterHash = readProfileSourceHash()
+  say(`已用全局 v${ownVersion} 覆盖 tui profile（现为 v${after ?? '未知'}，源包 ${afterHash === undefined ? '未知' : afterHash.slice(0, 12)}）。`)
 }
 
 function stdAdapterInstalled() {
@@ -435,6 +597,8 @@ function startTui(passthrough) {
 
 if (args[0] === 'update') {
   void runUpdate().catch(error => fail(error instanceof Error ? error.message : String(error)))
+} else if (args[0] === 'check') {
+  runCheck()
 } else {
   startTui(args)
 }

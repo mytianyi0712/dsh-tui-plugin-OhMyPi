@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.1] - 2026-09-02
+
+- 思考等级改为读写 dsh `llm-pi-ai` 的 `reasoningEfforts` 模型能力：读取供应商模型配置中保存的档位映射（off/minimal/low/medium/high/xhigh/max → 上游取值），保存时写回字典或 `false`（非推理模型）。不再维护 TUI 自管的 modelEfforts，也不再覆盖 LLM 适配器返回的 reasoning 信息。
+- 新增 `src/reasoning-maps.ts`：统一思考等级映射的解析、格式化、预设循环与默认强度选择；识别 DeepSeek/OpenAI/GPT/Claude 预设，并保留 `false` 的往返。
+- 供应商模型列表改为回车展开平铺字段：模型 ID、显示名称、思考等级、默认思考强度、上下文窗口、最大输出 tokens 均可在当前页编辑。模型 ID/名称/上下文/输出 tokens 原地输入；思考等级行按 Enter 循环预设（跟随上游 → DeepSeek → OpenAI → GPT → Claude → 非推理），按 `e` 自定义；思考强度行按 Enter 循环选择。
+- 自定义思考等级输入支持更宽松的格式：预设名（`deepseek`/`openai`/`gpt`/`claude`）、档位列表（`off, high, max`）、显式映射（`high: ultra, max`）或 `false`，同时兼容旧的 `off: none, high: high, max: max` 写法。
+- 保存供应商时把模型能力（`contextWindow`、`maxTokens`、`reasoningEfforts`）写入 dsh 配置；保存失败时把完整错误写入会话，错误提示保留更久。
+- 简化 `/settings`：开关和数字项在当前行回车即可切换或循环；分组标题不再占用光标；「模型与供应商」页集中默认模型、默认思考强度、标题模型与供应商编辑，去掉扁平模型清单和额外操作子页。
+- 设置与选择类菜单改为全屏覆盖：打开下一级时隐藏上一层，关闭后还原，不再叠出多层边框；选择列表高度随终端视口调整。
+- 供应商表单中接口类型按 Enter 循环官方值 `openai-completions` / `openai-responses` / `anthropic-messages`；探测上游模型直接合并进草稿，不再自动打开另一层编辑器。
+- 新增 `omdsh check`：比较全局 `dsh-omp-tui` 与 tui profile 的实际内容（不只看版本号），存在差异时用全局包覆盖 profile。普通启动仍只在版本不一致或安装不健康时自动同步，同版本内容变化不覆盖。
+- 修复 `omdsh check` / 同步把开发构建打进 tui profile 导致缺少 `session-title` / `session-persistence` 而无法启动的问题：打包前改为走发布构建，并在 tsdown 入口中显式包含这两个模块。
+- 默认模型选择会结合适配器声明的 reasoning 能力（默认强度与可用档位）自动确定思考强度；设置页的默认思考强度按 Enter 循环。
+
 ## [0.3.0] - 2026-09-01
 
 ### 社区 std 适配器（dsh-ecosystem-spec v0.15）

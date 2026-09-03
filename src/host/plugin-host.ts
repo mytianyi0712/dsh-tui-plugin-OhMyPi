@@ -260,7 +260,7 @@ export class PluginHost implements TuiPluginHost {
   buildHostDescriptor(options: { commandsMounted?: boolean } = {}): ReturnType<typeof buildDescriptor> {
     return buildDescriptor({
       hostId: 'dsh-omp-tui',
-      hostVersion: '0.3.0',
+      hostVersion: '0.3.1',
       generationId: this.generationId,
       headless: false,
       commandsMounted: options.commandsMounted,

@@ -13,9 +13,13 @@ import {
 import type { Translator } from '../i18n.ts'
 import type { Palette } from '../theme.ts'
 
+/** Visual role of a settings row. Headers are not selectable. */
+export type SettingsItemKind = 'row' | 'header' | 'action'
+
 /** A setting row: label on the left, effective value on the right. */
 export interface SettingsItem extends SelectItem {
   currentValue: string
+  kind?: SettingsItemKind
 }
 
 export interface SettingsTab {
@@ -26,6 +30,17 @@ export interface SettingsTab {
 
 function isSettingsItem(item: SelectItem): item is SettingsItem {
   return 'currentValue' in item
+}
+
+function isHeaderItem(item: SelectItem): boolean {
+  return isSettingsItem(item) && item.kind === 'header'
+}
+
+/** Advance `current` to the next value in `values`, wrapping at the end. */
+export function cycleValue<T>(values: readonly T[], current: T | undefined): T {
+  if (values.length === 0) throw new Error('cycleValue requires at least one value')
+  const index = current === undefined ? -1 : values.findIndex(value => Object.is(value, current))
+  return values[(index + 1) % values.length]!
 }
 
 export class SettingsScreen implements Component, Focusable {
@@ -55,6 +70,7 @@ export class SettingsScreen implements Component, Focusable {
     this.maxVisible = Math.max(1, maxVisible)
     this.height = height
     this.items = items
+    this.selectedIndex = this.nearestSelectable(0)
   }
 
   /** Switch to the tabbed main screen, preserving each tab's cursor. */
@@ -65,7 +81,7 @@ export class SettingsScreen implements Component, Focusable {
     this.title = title
     const tab = tabs[this.activeTab]
     this.items = tab?.items ?? []
-    this.selectedIndex = this.clampIndex(tab === undefined ? 0 : (this.tabSelections.get(tab.id) ?? 0))
+    this.selectedIndex = this.nearestSelectable(tab === undefined ? 0 : (this.tabSelections.get(tab.id) ?? 0))
   }
 
   /** Open a nested selector and optionally preselect its current value. */
@@ -75,7 +91,7 @@ export class SettingsScreen implements Component, Focusable {
     this.title = title
     this.items = items
     const selected = selectedValue === undefined ? -1 : items.findIndex(item => item.value === selectedValue)
-    this.selectedIndex = this.clampIndex(selected < 0 ? 0 : selected)
+    this.selectedIndex = this.nearestSelectable(selected < 0 ? 0 : selected)
   }
 
   getActiveTabId(): string | undefined {
@@ -116,16 +132,16 @@ export class SettingsScreen implements Component, Focusable {
       return
     }
     if (matchesKey(data, 'home')) {
-      this.selectedIndex = 0
+      this.selectedIndex = this.nearestSelectable(0)
       return
     }
     if (matchesKey(data, 'end')) {
-      this.selectedIndex = Math.max(0, this.items.length - 1)
+      this.selectedIndex = this.nearestSelectable(Math.max(0, this.items.length - 1))
       return
     }
     if (kb.matches(data, 'tui.select.confirm') || data === ' ') {
       const item = this.items[this.selectedIndex]
-      if (item !== undefined) this.onSelect?.(item, this.getActiveTabId())
+      if (item !== undefined && !isHeaderItem(item)) this.onSelect?.(item, this.getActiveTabId())
     }
   }
 
@@ -172,16 +188,36 @@ export class SettingsScreen implements Component, Focusable {
     this.activeTab = (this.activeTab + delta + this.tabs.length) % this.tabs.length
     const tab = this.tabs[this.activeTab]!
     this.items = tab.items
-    this.selectedIndex = this.clampIndex(this.tabSelections.get(tab.id) ?? 0)
+    this.selectedIndex = this.nearestSelectable(this.tabSelections.get(tab.id) ?? 0)
+  }
+
+  private selectableIndexes(): number[] {
+    return this.items.flatMap((item, index) => isHeaderItem(item) ? [] : [index])
+  }
+
+  private nearestSelectable(index: number): number {
+    const selectable = this.selectableIndexes()
+    if (selectable.length === 0) return 0
+    const clamped = Math.max(0, Math.min(index, Math.max(0, this.items.length - 1)))
+    if (selectable.includes(clamped)) return clamped
+    const next = selectable.find(candidate => candidate >= clamped)
+    return next ?? selectable[selectable.length - 1]!
   }
 
   private moveSelection(delta: number): void {
-    if (this.items.length === 0) return
-    this.selectedIndex = (this.selectedIndex + delta + this.items.length) % this.items.length
-  }
-
-  private clampIndex(index: number): number {
-    return Math.max(0, Math.min(index, Math.max(0, this.items.length - 1)))
+    const selectable = this.selectableIndexes()
+    if (selectable.length === 0) return
+    let position = selectable.indexOf(this.selectedIndex)
+    if (position < 0) {
+      this.selectedIndex = this.nearestSelectable(this.selectedIndex)
+      return
+    }
+    const sign = delta < 0 ? -1 : 1
+    const magnitude = Math.abs(delta) <= 1
+      ? 1
+      : Math.max(1, Math.min(Math.abs(delta), selectable.length - 1))
+    position = (position + sign * magnitude + selectable.length) % selectable.length
+    this.selectedIndex = selectable[position]!
   }
 
   private renderContent(width: number, height: number): string[] {
@@ -189,7 +225,7 @@ export class SettingsScreen implements Component, Focusable {
     const selected = this.items[this.selectedIndex]
     const selectedDetails = [
       selected?.description,
-      selected !== undefined && isSettingsItem(selected) && selected.currentValue !== ''
+      selected !== undefined && isSettingsItem(selected) && selected.kind !== 'header' && selected.currentValue !== ''
         ? `${selected.label}: ${selected.currentValue}`
         : undefined
     ].filter((value): value is string => value !== undefined && value !== '')
@@ -206,10 +242,14 @@ export class SettingsScreen implements Component, Focusable {
     ))
     const end = Math.min(this.items.length, start + visibleRows)
     const lines: string[] = []
-    const maximumLabelWidth = Math.max(...this.items.map(item => visibleWidth(item.label)))
+    const labeledItems = this.items.filter(item => isSettingsItem(item) && item.kind !== 'header')
+    const maximumLabelWidth = labeledItems.length === 0
+      ? 0
+      : Math.max(...labeledItems.map(item => visibleWidth(item.label)))
     const labelWidth = Math.min(maximumLabelWidth, Math.max(1, Math.floor(width * 0.45)))
     for (let index = start; index < end; index++) {
       const item = this.items[index]!
+      if (isHeaderItem(item) && lines.length > 0) lines.push('')
       lines.push(this.renderItem(item, index === this.selectedIndex, width, labelWidth))
     }
     if (needsScroll) lines.push(this.palette.dim(`  (${this.selectedIndex + 1}/${this.items.length})`))
@@ -221,11 +261,17 @@ export class SettingsScreen implements Component, Focusable {
   }
 
   private renderItem(item: SelectItem, selected: boolean, width: number, labelWidth: number): string {
+    if (isHeaderItem(item)) {
+      return truncateToWidth(this.palette.dim(item.label), width, '')
+    }
     const prefix = selected ? '→ ' : '  '
     const prefixWidth = visibleWidth(prefix)
     const styled = (text: string): string => selected
       ? this.palette.bold(this.palette.accent(text))
       : this.palette.text(text)
+    if (isSettingsItem(item) && item.kind === 'action') {
+      return truncateToWidth(styled(`${prefix}${item.label}`), width, '')
+    }
     if (isSettingsItem(item)) {
       const effectiveLabelWidth = Math.max(1, Math.min(labelWidth, width - prefixWidth - 4))
       const label = truncateToWidth(item.label, effectiveLabelWidth, '')

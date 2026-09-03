@@ -108,15 +108,19 @@ import {
   runInlineQuestionFlow,
   runModelFlow,
   showOverlay,
+  pushOverlay,
 } from './components/dialogs.ts'
 import { ModelListDialog } from './components/model-list-dialog.ts'
-import { SettingsScreen, type SettingsItem, type SettingsTab } from './components/settings-screen.ts'
-import { CustomModelForm, type CustomModelDraft } from './components/custom-model-form.ts'
+import {
+  parseReasoningEffortSetting,
+  type ReasoningEffortSetting,
+} from './reasoning-maps.ts'
+import { SettingsScreen, cycleValue, type SettingsTab } from './components/settings-screen.ts'
 import {
   ProviderForm,
-  SUPPORTED_PROVIDER_APIS,
   type DiscoveredModel,
   type ProviderDraft,
+  type ProviderModelDraft,
 } from './components/provider-form.ts'
 import { contentText } from './components/content.ts'
 import { displayInlineText, displayText } from './components/text.ts'
@@ -276,6 +280,7 @@ export class Tui extends Service {
       name?: string
       contextWindow?: number
       maxTokens?: number
+      reasoningEfforts?: ReasoningEffortSetting
     }
     interface ConfiguredProviderProfile {
       apiKeyEnv?: string
@@ -322,6 +327,12 @@ export class Tui extends Service {
               ...(typeof modelRecord.name === 'string' ? { name: modelRecord.name } : {}),
               ...(typeof modelRecord.contextWindow === 'number' ? { contextWindow: modelRecord.contextWindow } : {}),
               ...(typeof modelRecord.maxTokens === 'number' ? { maxTokens: modelRecord.maxTokens } : {}),
+              ...(() => {
+                const reasoningEfforts = parseReasoningEffortSetting(
+                  modelRecord.reasoningEfforts as string | readonly string[] | ReasoningEffortSetting | Record<string, unknown> | boolean | undefined,
+                )
+                return reasoningEfforts === undefined ? {} : { reasoningEfforts }
+              })(),
             }]
             : []
         })
@@ -337,6 +348,7 @@ export class Tui extends Service {
       }
       return profiles
     }
+    let reasoningEffortCache: { route: string; efforts: readonly LlmReasoningEffortInfo[] } | undefined
     // Provider configuration belongs to the adapter that declares it through
     // dsh-llm's configurable-provider directory. The TUI only follows the
     // declared namespace/path and never invents a provider-owned namespace.
@@ -423,7 +435,6 @@ export class Tui extends Service {
       setReasoningEffort: undefined,
       selectionRef: undefined,
     }
-    let reasoningEffortCache: { route: string; efforts: readonly LlmReasoningEffortInfo[] } | undefined
     const reasoningEffortsFor = async (selection: ModelSelection): Promise<readonly LlmReasoningEffortInfo[]> => {
       const route = `${selection.provider}\u0000${selection.model}`
       if (reasoningEffortCache?.route === route) return reasoningEffortCache.efforts
@@ -544,7 +555,7 @@ export class Tui extends Service {
       noticeTimer = setTimeout(() => {
         noticeText = ''
         ui.requestRender()
-      }, 5000)
+      }, kind === 'error' ? 20000 : kind === 'warning' ? 10000 : 5000)
       ui.requestRender()
     }
 
@@ -1527,20 +1538,12 @@ export class Tui extends Service {
             | 'theme-light'
             | 'theme-selected'
             | 'theme-custom'
-            | 'show-reasoning'
-            | 'tool-output-lines'
             | 'title-provider'
             | 'title-model'
             | 'default-permission'
             | 'default-provider'
             | 'default-model'
-            | 'default-model-effort'
-            | 'default-effort'
             | 'default-mode'
-            | 'max-parallel-tool-calls'
-            | 'model-actions'
-            | 'wechat-progress-enabled'
-            | 'wechat-notify'
 
           interface ProviderCatalogEntry {
             id: string
@@ -1550,10 +1553,6 @@ export class Tui extends Service {
             profile?: ConfiguredProviderProfile
           }
 
-          const booleanItems: SelectItem[] = [
-            { value: 'true', label: t('settingsOn') },
-            { value: 'false', label: t('settingsOff') },
-          ]
           const toolOutputLineOptions = [3, 6, 10, 20, 50]
           const parallelToolCallOptions = [1, 2, 4, 8, 10, 16, 32]
           const CUSTOM_PROVIDER = '\u0000custom-provider'
@@ -1658,39 +1657,15 @@ export class Tui extends Service {
           }
 
           const providerCurrentValue = (provider: string): string => {
+            const entry = providerCatalog.find(candidate => candidate.id === provider)
             const count = providerModelCount(provider)
-            return count > 0 ? t('settingsProviderModelCount', { count }) : '—'
+            const parts = [
+              entry?.profile?.api,
+              count > 0 ? t('settingsProviderModelCount', { count }) : undefined,
+            ].filter((part): part is string => part !== undefined && part !== '')
+            return parts.length > 0 ? parts.join(' · ') : '—'
           }
 
-          const modelCurrentValue = (provider: string, model: string): string => {
-            const defaultSelection = ctx.agentDefaultModel.currentSelection()
-            const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
-              provider?: string
-              model?: string
-            } | undefined
-            const marks: string[] = []
-            if (defaultSelection.provider === provider && defaultSelection.model === model) marks.push('★')
-            if (titleSettings?.provider === provider && titleSettings.model === model) marks.push('T')
-            if (marks.length > 0) return marks.join(' ')
-            return '—'
-          }
-
-          const buildModelItems = (): SettingsItem[] => {
-            const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
-              provider?: string
-              model?: string
-            } | undefined
-            const titleProvider = titleSettings?.provider ?? current.options.provider ?? 'auto'
-            const titleModel = titleSettings?.model ?? current.options.model ?? 'auto'
-            const defaultSelection = ctx.agentDefaultModel.currentSelection()
-            return [
-              { value: 'title-model', label: t('settingsTitleModel'), currentValue: `${titleProvider}/${titleModel}` },
-              { value: 'provider', label: t('settingsProvider'), currentValue: defaultSelection.provider },
-              { value: 'model', label: t('settingsModel'), currentValue: defaultSelection.model },
-              { value: 'custom-config', label: t('settingsCustomConfig'), currentValue: `${defaultSelection.provider}/${defaultSelection.model}` },
-              { value: 'effort', label: t('settingsDefaultEffort'), currentValue: defaultSelection.reasoningEffort ?? '—' },
-            ]
-          }
           const themeSummary = (): string => themeMode === 'dynamic'
             ? `${t('settingsThemeModeDynamic')} · ${themeDark} / ${themeLight}`
             : `${t('settingsThemeModeSelected')} · ${themeSelected}`
@@ -1732,9 +1707,6 @@ export class Tui extends Service {
                   { value: 'theme-custom', label: t('settingsThemeCustom'), currentValue: themeCustomSummary() },
                   { value: 'show-reasoning', label: t('settingsShowReasoning'), currentValue: showReasoning ? t('settingsOn') : t('settingsOff') },
                   { value: 'tool-output-lines', label: t('settingsToolOutputLines'), currentValue: String(maxToolOutputLines) },
-                  { value: 'provider', label: t('settingsDefaultModel'), currentValue: `${defaultSelection.provider}/${defaultSelection.model}` },
-                  { value: 'effort', label: t('settingsDefaultEffort'), currentValue: defaultSelection.reasoningEffort ?? '—' },
-                  { value: 'title-model', label: t('settingsTitleModel'), currentValue: `${titleProvider}/${titleModel}` },
                   { value: 'permission', label: t('settingsDefaultPermission'), currentValue: defaultPermission },
                   { value: 'default-mode', label: t('settingsDefaultMode'), currentValue: modeLabel(t, defaultMode, presetNames) },
                 ],
@@ -1743,19 +1715,21 @@ export class Tui extends Service {
                 id: 'models-providers',
                 label: t('settingsTabModelsProviders'),
                 items: [
-                  { value: '__providers-header', label: t('settingsConfiguredProviders'), currentValue: '' },
+                  { value: 'provider', label: t('settingsDefaultModel'), currentValue: `${defaultSelection.provider}/${defaultSelection.model}` },
+                  {
+                    value: 'effort',
+                    label: t('settingsDefaultEffort'),
+                    currentValue: defaultSelection.reasoningEffort ?? '—',
+                    description: t('settingsEffortHint'),
+                  },
+                  { value: 'title-model', label: t('settingsTitleModel'), currentValue: `${titleProvider}/${titleModel}` },
+                  { value: '__providers-header', label: t('settingsConfiguredProviders'), currentValue: '', kind: 'header' },
                   ...providerCatalog.map(entry => ({
                     value: `provider:${entry.id}`,
                     label: entry.name,
                     currentValue: providerCurrentValue(entry.id),
                   })),
-                  { value: 'add-provider', label: t('settingsAddProvider'), currentValue: '' },
-                  { value: '__models-header', label: t('settingsConfiguredModels'), currentValue: '' },
-                  ...modelCatalog.map(model => ({
-                    value: `model:${model.provider}\u0000${model.model}`,
-                    label: `${model.provider}/${model.model}`,
-                    currentValue: modelCurrentValue(model.provider, model.model),
-                  })),
+                  { value: 'add-provider', label: t('settingsAddProvider'), currentValue: '', kind: 'action' as const },
                 ],
               },
               {
@@ -1856,11 +1830,8 @@ export class Tui extends Service {
           let view: SettingsView = 'main'
           let viewVersion = 0
           let pendingProvider: string | undefined
-          let pendingModel: ModelSelection | undefined
           let pendingModelItems: SelectItem[] = []
-          let pendingEfforts: readonly LlmReasoningEffortInfo[] = []
           let busy = false
-          let modelActionsBack = false
 
           const showItems = (
             nextView: Exclude<SettingsView, 'main'>,
@@ -1877,10 +1848,7 @@ export class Tui extends Service {
             view = 'main'
             viewVersion++
             pendingProvider = undefined
-            pendingModel = undefined
             pendingModelItems = []
-            pendingEfforts = []
-            modelActionsBack = false
             screen.setTabs(buildSettingsTabs(), t('settingsTitle'))
             ui.requestRender()
           }
@@ -1888,7 +1856,6 @@ export class Tui extends Service {
             const value = await showOverlay<string>(
               ui,
               done => new InputDialog(title, palette, done, t, initialValue),
-              { width: '80%', maxHeight: '50%' },
             )
             const trimmed = value?.trim()
             return trimmed === '' ? undefined : trimmed
@@ -1997,12 +1964,22 @@ export class Tui extends Service {
               if (draft.api.trim() === '') unset('api')
               else set('api', draft.api.trim())
               if (draft.models.length === 0) unset('models')
-              else set('models', draft.models.map(model => ({ id: model })))
+              else set('models', draft.models.map(model => {
+                const reasoningEfforts = parseReasoningEffortSetting(model.reasoningEfforts)
+                return {
+                  id: model.id,
+                  ...(model.name === undefined || model.name === '' ? {} : { name: model.name }),
+                  ...(typeof model.contextWindow === 'number' ? { contextWindow: model.contextWindow } : {}),
+                  ...(typeof model.maxTokens === 'number' ? { maxTokens: model.maxTokens } : {}),
+                  ...(reasoningEfforts === undefined ? {} : { reasoningEfforts }),
+                }
+              }))
             }
             if (draft.baseURL.trim() === '') unset('baseURL')
             else set('baseURL', draft.baseURL.trim())
             if (apiKeyEnv !== undefined) set('apiKeyEnv', apiKeyEnv)
             await settings.mutate(target.ns, ops)
+            reasoningEffortCache = undefined
             appendNotice(t('noticeProviderSaved'), 'info')
           }
           const openProviderForm = async (providerId?: string): Promise<void> => {
@@ -2027,7 +2004,6 @@ export class Tui extends Service {
               const template = await showOverlay<string>(
                 ui,
                 done => new SelectDialog(t('settingsProviderTemplate'), templateItems, palette, done),
-                { width: '70%', maxHeight: '70%' },
               )
               if (template === undefined) return
               if (template.startsWith('preset:')) {
@@ -2061,8 +2037,16 @@ export class Tui extends Service {
               apiKey: '',
               apiKeyEnv: profile?.apiKeyEnv,
               apiKeyConfigured,
-              models: profile?.models?.map(model => model.id)
-                ?? modelCatalog.filter(model => model.provider === providerId).map(model => model.model),
+              models: profile?.models?.map(model => ({
+                id: model.id,
+                ...(model.name === undefined ? {} : { name: model.name }),
+                ...(model.reasoningEfforts === undefined ? {} : { reasoningEfforts: model.reasoningEfforts }),
+                ...(typeof model.contextWindow === 'number' ? { contextWindow: model.contextWindow } : {}),
+                ...(typeof model.maxTokens === 'number' ? { maxTokens: model.maxTokens } : {}),
+              }))
+                ?? modelCatalog.filter(model => model.provider === id).map(model => ({
+                  id: model.model,
+                })),
             }
             const submitted = await showOverlay<ProviderDraft>(
               ui,
@@ -2091,29 +2075,22 @@ export class Tui extends Service {
       return undefined
                     }
                   },
-                  pickApi: async () => await showOverlay<string>(
-                    ui,
-                    done => new SelectDialog(
-                      t('settingsApi'),
-                      [
-                        { value: SUPPORTED_PROVIDER_APIS[0], label: t('settingsApiOpenAiCompletions') },
-                        { value: SUPPORTED_PROVIDER_APIS[1], label: t('settingsApiOpenAiResponses') },
-                        { value: SUPPORTED_PROVIDER_APIS[2], label: t('settingsApiAnthropicMessages') },
-                      ],
-                      palette,
-                      done,
-                    ),
-                    { width: '70%', maxHeight: '50%' },
-                  ),
                   manageModels: async (currentDraft, discovered) => {
-                    const all = [...new Set([
+                    const merged = [
                       ...currentDraft.models,
-                      ...discovered.map(model => model.id),
-                    ])]
-                    return showOverlay<string[]>(
+                      ...discovered
+                        .filter(model => !currentDraft.models.some(entry => entry.id === model.id))
+                        .map(model => ({ id: model.id })),
+                    ]
+                    return showOverlay<ProviderModelDraft[]>(
                       ui,
-                      done => new ModelListDialog(t('settingsModels'), all, palette, t, done),
-                      { width: '90%', maxHeight: '85%' },
+                      done => new ModelListDialog(
+                        t('settingsModels'),
+                        merged,
+                        palette,
+                        t,
+                        done,
+                      ),
                     )
                   }
                 },
@@ -2124,12 +2101,18 @@ export class Tui extends Service {
                   requireBaseURL: !isCatalogProvider,
                 }
               ),
-              { width: '90%', maxHeight: '85%' },
             )
             if (submitted === undefined) return
-            await saveProvider(providerId, submitted)
-            await refreshProviderModelCatalog()
-            if (view === 'main') showMain()
+            try {
+              await saveProvider(providerId, submitted)
+              await refreshProviderModelCatalog()
+              if (view === 'main') showMain()
+            } catch (error: unknown) {
+              const message = t('noticeProviderFailed', { error: errorChain(error) })
+              appendNotice(message, 'error')
+              chat.addChild(new StaticCardComponent([palette.error(displayText(message))], palette))
+              ui.requestRender()
+            }
           }
 
           const handleBack = (): void => {
@@ -2139,20 +2122,6 @@ export class Tui extends Service {
             }
             if (view === 'default-model') {
               showItems('default-provider', providerItems(), t('modelProvider'), pendingProvider)
-              return
-            }
-            if (view === 'default-model-effort' && modelActionsBack) {
-              modelActionsBack = false
-              showMain()
-              return
-            }
-            if (view === 'default-model-effort' && pendingProvider !== undefined) {
-              showItems(
-                'default-model',
-                pendingModelItems,
-                t('modelTitle', { provider: pendingProvider }),
-                pendingModel?.model,
-              )
               return
             }
             showMain()
@@ -2170,14 +2139,18 @@ export class Tui extends Service {
                 } else if (item.value === 'theme-custom') {
                   showItems('theme-custom', themeCustomItems(), t('settingsThemeCustom'), 'accent')
                 } else if (item.value === 'show-reasoning') {
-                  showItems('show-reasoning', booleanItems, t('settingsShowReasoning'), String(showReasoning))
+                  const next = !showReasoning
+                  await tuiSettings.update({ showReasoning: next })
+                  showReasoning = next
+                  appendNotice(t('noticeSettingsSaved'), 'info')
+                  if (selectedVersion === viewVersion && view === selectedView) showMain()
                 } else if (item.value === 'tool-output-lines') {
-                  showItems(
-                    'tool-output-lines',
-                    toolOutputLineOptions.map(value => ({ value: String(value), label: String(value) })),
-                    t('settingsToolOutputLines'),
-                    String(maxToolOutputLines),
-                  )
+                  const next = cycleValue(toolOutputLineOptions, maxToolOutputLines)
+                  await tuiSettings.update({ maxToolOutputLines: next })
+                  maxToolOutputLines = next
+                  rebuildTranscript()
+                  appendNotice(t('noticeSettingsSaved'), 'info')
+                  if (selectedVersion === viewVersion && view === selectedView) showMain()
                 } else if (item.value === 'title-model') {
                   const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
                     provider?: string
@@ -2209,22 +2182,19 @@ export class Tui extends Service {
                     defaultMode,
                   )
                 } else if (item.value === 'max-parallel-tool-calls') {
-                  const current = (settings.get(settingsNamespace('agent-loop')) as {
+                  const currentParallel = (settings.get(settingsNamespace('agent-loop')) as {
                     maxParallelToolCalls?: number
                   } | undefined)?.maxParallelToolCalls ?? 10
-                  showItems(
-                    'max-parallel-tool-calls',
-                    parallelToolCallOptions.map(value => ({ value: String(value), label: String(value) })),
-                    t('settingsMaxParallelToolCalls'),
-                    String(current),
-                  )
+                  const next = cycleValue(parallelToolCallOptions, currentParallel)
+                  await settings.update(settingsNamespace('agent-loop'), { maxParallelToolCalls: next })
+                  appendNotice(t('noticeSettingsSaved'), 'info')
+                  if (selectedVersion === viewVersion && view === selectedView) showMain()
                 } else if (item.value === 'left-prompt' || item.value === 'right-prompt') {
                   const editLeft = item.value === 'left-prompt'
                   const initial = editLeft ? leftPrompt : rightPrompt
                   const answer = await showOverlay<string>(
                     ui,
                     done => new InputDialog(t('settingsPromptHint'), palette, done, t, initial),
-                    { width: '80%', maxHeight: '50%' },
                   )
                   const trimmed = answer?.trim() ?? ''
                   const next = trimmed === ''
@@ -2244,13 +2214,13 @@ export class Tui extends Service {
                   appendNotice(t('noticePromptSet', { name: editLeft ? t('settingsLeftPrompt') : t('settingsRightPrompt') }), 'info')
                   if (selectedVersion === viewVersion && view === selectedView) showMain()
                   else ui.requestRender()
-                  return                } else if (item.value === 'key-tools' || item.value === 'key-reasoning') {
+                  return
+                } else if (item.value === 'key-tools' || item.value === 'key-reasoning') {
                   const editTools = item.value === 'key-tools'
                   const initial = editTools ? keyTools : keyReasoning
                   const answer = await showOverlay<string>(
                     ui,
                     done => new InputDialog(t('settingsPromptHint'), palette, done, t, initial),
-                    { width: '80%', maxHeight: '50%' },
                   )
                   const trimmed = answer?.trim() ?? ''
                   if (trimmed !== '') {
@@ -2261,18 +2231,19 @@ export class Tui extends Service {
                   appendNotice(t('noticeKeybindingSet', { name: editTools ? t('settingsKeyTools') : t('settingsKeyReasoning') }), 'info')
                   if (selectedVersion === viewVersion && view === selectedView) showMain()
                   else ui.requestRender()
-                  return                } else if (item.value === 'wechat-progress-enabled') {
+                  return
+                } else if (item.value === 'wechat-progress-enabled') {
                   const wechatConfig = getWechatConfig()
                   if (wechatConfig === undefined) {
                     appendNotice(t('settingsWechatUnavailable'), 'warning')
                     return
                   }
-                  showItems(
-                    'wechat-progress-enabled',
-                    booleanItems,
-                    t('settingsWechatProgressEnabled'),
-                    String(wechatConfig.progress.enabled),
-                  )
+                  setWechatConfig({
+                    ...wechatConfig,
+                    progress: { ...wechatConfig.progress, enabled: !wechatConfig.progress.enabled },
+                  })
+                  appendNotice(t('noticeSettingsSaved'), 'info')
+                  if (selectedVersion === viewVersion && view === selectedView) showMain()
                 } else if (item.value === 'wechat-progress-interval') {
                   const wechatConfig = getWechatConfig()
                   if (wechatConfig === undefined) {
@@ -2295,12 +2266,9 @@ export class Tui extends Service {
                     appendNotice(t('settingsWechatUnavailable'), 'warning')
                     return
                   }
-                  showItems(
-                    'wechat-notify',
-                    booleanItems,
-                    t('settingsWechatNotify'),
-                    String(wechatConfig.notify),
-                  )
+                  setWechatConfig({ ...wechatConfig, notify: !wechatConfig.notify })
+                  appendNotice(t('noticeSettingsSaved'), 'info')
+                  if (selectedVersion === viewVersion && view === selectedView) showMain()
                 } else if (item.value === 'wechat-unavailable') {
                   appendNotice(t('settingsWechatUnavailable'), 'warning')
                 } else if (item.value.startsWith('plugin-field:')) {
@@ -2319,96 +2287,43 @@ export class Tui extends Service {
                     t('modelProvider'),
                     ctx.agentDefaultModel.currentSelection().provider,
                   )
-                } else if (item.value === 'model') {
-                  const defaultSelection = ctx.agentDefaultModel.currentSelection()
-                  const provider = defaultSelection.provider
-                  let models: Awaited<ReturnType<typeof ctx.llm.listModels>> = []
-                  try {
-                    models = await listModelsForProvider(provider)
-                  } catch {
-                    // Keep the list empty and still allow a custom model id.
-                  }
-                  if (selectedVersion !== viewVersion || view !== selectedView) return
-                  pendingProvider = provider
-                  pendingModelItems = modelPickerItems(models, defaultSelection.model)
-                  showItems(
-                    'default-model',
-                    pendingModelItems,
-                    t('modelTitle', { provider: pendingProvider }),
-                    defaultSelection.model,
-                  )
-                } else if (item.value === 'custom-config') {
-                  const defaultSelection = ctx.agentDefaultModel.currentSelection()
-                  const draft: CustomModelDraft = {
-                    provider: defaultSelection.provider,
-                    model: defaultSelection.model,
-                    reasoningEffort: defaultSelection.reasoningEffort ?? '',
-                    saveDefault: true,
-                    saveTitle: false,
-                  }
-                  const submitted = await showOverlay<CustomModelDraft>(
-                    ui,
-                    done => new CustomModelForm(t('settingsCustomConfig'), palette, t, draft, done),
-                    { width: '90%', maxHeight: '85%' },
-                  )
-                  if (selectedVersion !== viewVersion || view !== selectedView) return
-                  if (submitted === undefined) {
-                    ui.requestRender()
-                    return
-                  }
-                  if (submitted.saveDefault) {
-                    await ctx.agentDefaultModel.saveSelection({
-                      provider: submitted.provider,
-                      model: submitted.model,
-                      ...submitted.reasoningEffort === ''
-                        ? {}
-                        : { reasoningEffort: submitted.reasoningEffort as ModelSelection['reasoningEffort'] },
-                    })
-                  }
-                  if (submitted.saveTitle) {
-                    await settings.update(SESSION_TITLE_SETTINGS_NAMESPACE, {
-                      provider: submitted.provider,
-                      model: submitted.model,
-                    })
-                  }
-                  appendNotice(t('noticeSettingsSaved'), 'info')
-                  if (selectedVersion === viewVersion && view === selectedView) showMain()
                 } else if (item.value === 'effort') {
                   const defaultSelection = ctx.agentDefaultModel.currentSelection()
-                  pendingEfforts = await reasoningEffortsFor(defaultSelection)
+                  const efforts = await reasoningEffortsFor(defaultSelection)
                   if (selectedVersion !== viewVersion || view !== selectedView) return
-                  if (pendingEfforts.length === 0) {
+                  const choice = chooseReasoningEffort(efforts, defaultSelection.reasoningEffort, '')
+                  if (choice.kind === 'unsupported') {
                     appendNotice(t('noticeThinkUnsupported'), 'warning')
                     return
                   }
-                  showItems(
-                    'default-effort',
-                    pendingEfforts.map(effort => ({ value: effort.id, label: `${effort.id} — ${effort.name}`, description: effort.description })),
-                    t('settingsDefaultEffort'),
-                    defaultSelection.reasoningEffort,
-                  )
+                  if (choice.kind === 'unknown') {
+                    appendNotice(t('noticeThinkUnknown', { name: choice.requested }), 'warning')
+                    return
+                  }
+                  if (choice.kind === 'already') {
+                    appendNotice(t('noticeThinkAlready', { name: displayText(choice.effort.name), id: displayText(choice.effort.id) }), 'info')
+                    return
+                  }
+                  const effortId = choice.effort.id as NonNullable<ModelSelection['reasoningEffort']>
+                  await ctx.agentDefaultModel.saveSelection({
+                    ...defaultSelection,
+                    reasoningEffort: effortId,
+                  })
+                  const live = handles.selectionRef?.current
+                  if (
+                    live !== undefined
+                    && live.provider === defaultSelection.provider
+                    && live.model === defaultSelection.model
+                    && handles.setReasoningEffort !== undefined
+                  ) {
+                    await handles.setReasoningEffort(effortId)
+                  }
+                  appendNotice(t('noticeDefaultEffortSet', { effort: `${choice.effort.id} — ${choice.effort.name}` }), 'info')
+                  if (selectedVersion === viewVersion && view === selectedView) showMain()
                 } else if (item.value === 'add-provider') {
                   await openProviderForm()
                 } else if (item.value.startsWith('provider:')) {
                   await openProviderForm(item.value.slice('provider:'.length))
-                } else if (item.value.startsWith('model:')) {
-                  const route = item.value.slice('model:'.length)
-                  const separator = route.indexOf('\u0000')
-                  if (separator >= 0) {
-                    const provider = route.slice(0, separator)
-                    const model = route.slice(separator + 1)
-                    pendingProvider = provider
-                    pendingModel = { provider, model }
-                    showItems(
-                      'model-actions',
-                      [
-                        { value: 'set-default', label: t('settingsSetDefaultModel') },
-                        { value: 'set-title', label: t('settingsSetTitleModel') },
-                        { value: 'set-effort', label: t('settingsDefaultEffort') },
-                      ],
-                      `${provider}/${model}`,
-                    )
-                  }
                 }
                 return
               }
@@ -2461,7 +2376,6 @@ export class Tui extends Service {
                 const answer = await showOverlay<string>(
                   ui,
                   done => new InputDialog(t('settingsThemeCustomEditHint'), palette, done, t, initial),
-                  { width: '80%', maxHeight: '50%' },
                 )
                 const trimmed = answer?.trim() ?? ''
                 const next = { ...(themeCustom ?? {}) } as Record<string, number[]>
@@ -2488,24 +2402,6 @@ export class Tui extends Service {
                 else ui.requestRender()
                 return
               }
-              if (selectedView === 'show-reasoning') {
-                const next = item.value === 'true'
-                await tuiSettings.update({ showReasoning: next })
-                showReasoning = next
-                appendNotice(t('noticeSettingsSaved'), 'info')
-                if (selectedVersion === viewVersion && view === selectedView) showMain()
-                return
-              }
-
-              if (selectedView === 'tool-output-lines') {
-                const next = Number(item.value)
-                await tuiSettings.update({ maxToolOutputLines: next })
-                maxToolOutputLines = next
-                rebuildTranscript()
-                appendNotice(t('noticeSettingsSaved'), 'info')
-                if (selectedVersion === viewVersion && view === selectedView) showMain()
-                return
-              }
 
               if (selectedView === 'default-mode') {
                 await settings.update(settingsNamespace('agent-presets'), { default: item.value })
@@ -2514,40 +2410,6 @@ export class Tui extends Service {
                 return
               }
 
-              if (selectedView === 'max-parallel-tool-calls') {
-                const next = Number(item.value)
-                await settings.update(settingsNamespace('agent-loop'), { maxParallelToolCalls: next })
-                appendNotice(t('noticeSettingsSaved'), 'info')
-                if (selectedVersion === viewVersion && view === selectedView) showMain()
-                return
-              }
-
-              if (selectedView === 'wechat-progress-enabled') {
-                const wechatConfig = getWechatConfig()
-                if (wechatConfig === undefined) {
-                  appendNotice(t('settingsWechatUnavailable'), 'warning')
-                  return
-                }
-                setWechatConfig({
-                  ...wechatConfig,
-                  progress: { ...wechatConfig.progress, enabled: item.value === 'true' },
-                })
-                appendNotice(t('noticeSettingsSaved'), 'info')
-                if (selectedVersion === viewVersion && view === selectedView) showMain()
-                return
-              }
-
-              if (selectedView === 'wechat-notify') {
-                const wechatConfig = getWechatConfig()
-                if (wechatConfig === undefined) {
-                  appendNotice(t('settingsWechatUnavailable'), 'warning')
-                  return
-                }
-                setWechatConfig({ ...wechatConfig, notify: item.value === 'true' })
-                appendNotice(t('noticeSettingsSaved'), 'info')
-                if (selectedVersion === viewVersion && view === selectedView) showMain()
-                return
-              }
 
               if (selectedView === 'title-provider') {
                 const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
@@ -2637,107 +2499,31 @@ export class Tui extends Service {
                     ? await promptCustom(t('settingsEditCustomModel'), savedModel)
                     : item.value
                 if (model === undefined) return
-                const selectedModel: ModelSelection = { provider: pendingProvider, model }
+                if (selectedVersion !== viewVersion || view !== selectedView) return
+                let reasoningEffort: ModelSelection['reasoningEffort']
                 try {
                   const info = await ctx.llm.resolveModelInfo(pendingProvider, model)
-                  pendingEfforts = info.reasoning?.efforts ?? []
+                  const efforts = info.reasoning?.efforts ?? []
+                  const advertised = info.reasoning?.defaultEffort
+                  const reuse = defaultSelection.reasoningEffort !== undefined
+                    && efforts.some(effort => effort.id === defaultSelection.reasoningEffort)
+                  reasoningEffort = (reuse
+                    ? defaultSelection.reasoningEffort
+                    : advertised !== undefined && efforts.some(effort => effort.id === advertised)
+                      ? advertised as NonNullable<ModelSelection['reasoningEffort']>
+                      : efforts[0]?.id as ModelSelection['reasoningEffort'])
                 } catch {
-                  pendingEfforts = []
+                  reasoningEffort = undefined
                 }
-                if (selectedVersion !== viewVersion || view !== selectedView) return
-                pendingModel = selectedModel
-                if (pendingEfforts.length > 1) {
-                  modelActionsBack = false
-                  showItems(
-                    'default-model-effort',
-                    pendingEfforts.map(effort => ({ value: effort.id, label: `${effort.id} — ${effort.name}`, description: effort.description })),
-                    t('modelEffort'),
-                    defaultSelection.provider === pendingProvider && defaultSelection.model === model
-                      ? defaultSelection.reasoningEffort
-                      : undefined,
-                  )
-                } else {
-                  await ctx.agentDefaultModel.saveSelection(selectedModel)
-                  appendNotice(t('noticeDefaultModelSet', { provider: selectedModel.provider, model: selectedModel.model }), 'info')
-                  if (selectedVersion === viewVersion && view === selectedView) showMain()
+                const selectedModel: ModelSelection = {
+                  provider: pendingProvider,
+                  model,
+                  ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
                 }
-                return
-              }
-
-              if (selectedView === 'default-model-effort') {
-                if (pendingModel === undefined) return
-                await ctx.agentDefaultModel.saveSelection({
-                  ...pendingModel,
-                  reasoningEffort: item.value as ModelSelection['reasoningEffort'],
-                })
-                appendNotice(t('noticeDefaultModelSet', { provider: pendingModel.provider, model: pendingModel.model }), 'info')
+                await ctx.agentDefaultModel.saveSelection(selectedModel)
+                appendNotice(t('noticeDefaultModelSet', { provider: selectedModel.provider, model: selectedModel.model }), 'info')
                 if (selectedVersion === viewVersion && view === selectedView) showMain()
                 return
-              }
-
-              if (selectedView === 'default-effort') {
-                const currentDefault = ctx.agentDefaultModel.currentSelection()
-                await ctx.agentDefaultModel.saveSelection({
-                  ...currentDefault,
-                  reasoningEffort: item.value as ModelSelection['reasoningEffort'],
-                })
-                appendNotice(t('noticeDefaultEffortSet', { effort: item.label }), 'info')
-                if (selectedVersion === viewVersion && view === selectedView) showMain()
-                return
-              }
-
-              if (selectedView === 'model-actions') {
-                if (pendingModel === undefined) return
-                if (item.value === 'set-default') {
-                  const selectedModel = pendingModel
-                  try {
-                    const info = await ctx.llm.resolveModelInfo(selectedModel.provider, selectedModel.model)
-                    pendingEfforts = info.reasoning?.efforts ?? []
-                  } catch {
-                    pendingEfforts = []
-                  }
-                  if (pendingEfforts.length > 1) {
-                    modelActionsBack = true
-                    showItems(
-                      'default-model-effort',
-                      pendingEfforts.map(effort => ({ value: effort.id, label: `${effort.id} — ${effort.name}`, description: effort.description })),
-                      t('modelEffort'),
-                      ctx.agentDefaultModel.currentSelection().provider === selectedModel.provider &&
-                        ctx.agentDefaultModel.currentSelection().model === selectedModel.model
-                        ? ctx.agentDefaultModel.currentSelection().reasoningEffort
-                        : undefined,
-                    )
-                  } else {
-                    await ctx.agentDefaultModel.saveSelection(selectedModel)
-                    appendNotice(t('noticeDefaultModelSet', { provider: selectedModel.provider, model: selectedModel.model }), 'info')
-                    if (selectedVersion === viewVersion && view === selectedView) showMain()
-                  }
-                } else if (item.value === 'set-title') {
-                  await settings.update(SESSION_TITLE_SETTINGS_NAMESPACE, {
-                    provider: pendingModel.provider,
-                    model: pendingModel.model,
-                  })
-                  const sessionTitle = ctx.get('sessionTitle')
-                  if (sessionTitle !== undefined) void sessionTitle.refresh(current.session).catch(() => undefined)
-                  appendNotice(t('noticeTitleModelSet', { provider: pendingModel.provider, model: pendingModel.model }), 'info')
-                  if (selectedVersion === viewVersion && view === selectedView) showMain()
-                } else if (item.value === 'set-effort') {
-                  pendingEfforts = await reasoningEffortsFor(pendingModel)
-                  if (pendingEfforts.length === 0) {
-                    appendNotice(t('noticeThinkUnsupported'), 'warning')
-                    return
-                  }
-                  modelActionsBack = true
-                  showItems(
-                    'default-model-effort',
-                    pendingEfforts.map(effort => ({ value: effort.id, label: `${effort.id} — ${effort.name}`, description: effort.description })),
-                    t('modelEffort'),
-                    ctx.agentDefaultModel.currentSelection().provider === pendingModel.provider &&
-                      ctx.agentDefaultModel.currentSelection().model === pendingModel.model
-                      ? ctx.agentDefaultModel.currentSelection().reasoningEffort
-                      : undefined,
-                  )
-                }
               }
             } catch (error: unknown) {
               appendNotice(t('noticeSettingsFailed', { error: errorChain(error) }), 'error')
@@ -2751,13 +2537,13 @@ export class Tui extends Service {
           }
           screen.onBack = handleBack
 
-          const handle = ui.showOverlay(screen, { anchor: 'top-left', width: '100%', maxHeight: '100%', margin: 0 })
-          await new Promise<void>((resolve) => {
-            screen.onClose = () => {
-              handle.hide()
-              resolve()
-            }
-          })
+          const handle = pushOverlay(ui, screen)
+          const { promise, resolve } = Promise.withResolvers<void>()
+          screen.onClose = () => {
+            handle.hide()
+            resolve()
+          }
+          await promise
           ui.requestRender()
         } catch (error: unknown) {
           appendNotice(t('noticeSettingsFailed', { error: errorChain(error) }), 'error')
@@ -3251,7 +3037,7 @@ export class Tui extends Service {
       }
 
       // A historical session continues its last actual request route. A new
-      // session starts from the configured Agent route and persisted default effort.
+      // session starts from the configured Agent route and dsh default model.
       const initialSelection = selectionFor(liveAgent)
       const selectionRef: ModelSelectionRef = { current: initialSelection, assembled: undefined }
       offModelSelection = installModelSelection(liveAgent.ctx, selectionRef)
