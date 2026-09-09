@@ -21,6 +21,7 @@ export const STD_PROTOCOL_PACKAGES: readonly { name: string; minimum: string }[]
   { name: '@dsh-std/storage', minimum: '0.1.1-rc.1' },
   { name: '@dsh-std/messages', minimum: '0.1.1-rc.1' },
   { name: '@dsh-std/presentation', minimum: '0.1.1-rc.1' },
+  { name: '@dsh-std/session', minimum: '0.1.1-rc.2' },
 ]
 
 /** Community adapter dynamically linked from the profile. Optional at build time. */

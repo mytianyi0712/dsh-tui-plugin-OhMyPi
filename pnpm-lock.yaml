@@ -26,6 +26,9 @@ importers:
       '@dsh-std/presentation':
         specifier: ^0.1.1-rc.1
         version: 0.1.1-rc.1
+      '@dsh-std/session':
+        specifier: 0.1.1-rc.2
+        version: 0.1.1-rc.2
       '@dsh-std/storage':
         specifier: ^0.1.1-rc.1
         version: 0.1.1-rc.1
