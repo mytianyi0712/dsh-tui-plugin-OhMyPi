@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.2] - 2026-09-08
+
+### 社区 std 标准适配改进
+
+- 依赖版本策略调整：`devDependencies` 中 harness 包改为范围依赖 `^0.1.2-alpha.3` 允许同通道补丁更新，`peerDependencies` 扩展为 `>=0.1.0-rc.6 <0.1.3` 覆盖所有已知兼容版本线。
+- std adapter peer 范围更新为 `>=0.1.1-rc.2 <0.2.0`，支持未来 0.1.x 系列所有兼容更新。
+- std 协议包（`@dsh-std/command`, `storage`, `messages`, `presentation`）改为范围依赖 `^0.1.1-rc.1` 接受补丁更新。
+- 验证版本改为数组支持多版本线：`UPSTREAM_VALIDATED_VERSIONS` 记录所有经过烟雾测试的 harness 版本，`/doctor` 显示完整已验证清单。
+- 运行时合约探针：`/doctor check` 子命令实时检测当前 profile 中协议包/adapter 版本漂移，启动时仅警告不阻断。
+- 移除硬编码的 `UPSTREAM_VALIDATED_VERSION` 单版本锁定：合约检查改为范围验证，仅在 MAJOR 版本不匹配时发出警告。
+
+### Breaking Changes
+
+无运行时破坏性变更；peer 范围扩展为**放宽约束**。
+
+### 已知限制
+
+- TUI 仍直接依赖 `@deepseek-ai/dsh-*` harness 类型（devDep），未通过 std adapter 抽象接口消费；完全解耦需架构级重构，列入 0.4.0 规划。
+- adapter 版本协商协议需 dsh-ecosystem-spec 规范补充，当前为手动声明 `STD_ADAPTER_MINIMUM`。
+
 ## [0.3.1] - 2026-09-02
 
 - 思考等级改为读写 dsh `llm-pi-ai` 的 `reasoningEfforts` 模型能力：读取供应商模型配置中保存的档位映射（off/minimal/low/medium/high/xhigh/max → 上游取值），保存时写回字典或 `false`（非推理模型）。不再维护 TUI 自管的 modelEfforts，也不再覆盖 LLM 适配器返回的 reasoning 信息。

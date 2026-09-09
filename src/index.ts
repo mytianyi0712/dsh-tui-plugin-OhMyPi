@@ -26,7 +26,7 @@ import {
 import type { Agent, AgentHandle, AgentStatus, ModelSelection, ModelSelectionRef } from './dsh-host/index.ts'
 import { installModelSelection } from './dsh-host/index.ts'
 import { CombinedAutocompleteProvider, type AutocompleteItem, type SlashCommand } from '@earendil-works/pi-tui'
-import { createUserMessage, errorChain, type ToolCallId, type LlmConfigurableProvider, type LlmReasoningEffortInfo } from './dsh-host/index.ts'
+import { createUserMessage, errorChain, type ToolCallId, type LlmConfigurableProvider, type LlmReasoningEffortInfo, currentPermissionPreset, setPermissionPreset } from './dsh-host/index.ts'
 import { SessionId, type Session, type SessionEvent } from './dsh-host/index.ts'
 import { foldSessionTitle } from './dsh-host/index.ts'
 import { parseSessionReferenceText } from './dsh-host/index.ts'
@@ -132,7 +132,7 @@ import { setTuiForegroundControl } from './wechat/dsh/tui-control.ts'
 import { createExtensionServices, type ExtensionServices, type SettingsField, type SettingsSection } from './extensions/index.ts'
 import type { TuiPluginHost } from './host/index.ts'
 import { enqueueBootNotice, drainBootNotices } from './boot-notices.ts'
-import { upstreamDriftWarnings } from './std-contract.ts'
+import { upstreamDriftWarnings, UPSTREAM_VALIDATED_VERSIONS } from './std-contract.ts'
 import { negotiate, parseManifest } from './plugin-spec/index.ts'
 
 export const name = 'tui'
@@ -627,7 +627,7 @@ export class Tui extends Service {
     })
 
     const warnIfFullAccess = (target: Agent): void => {
-      if (ctx.permissionPresets.current(target.session) === FULL_ACCESS_REGISTRY_NAME) {
+      if (currentPermissionPreset(ctx, target.session) === FULL_ACCESS_REGISTRY_NAME) {
         appendNotice(t('noticeFullAccessWarning'), 'warning')
       }
     }
@@ -806,7 +806,7 @@ export class Tui extends Service {
         contextUsageCache = {
           measuredAt: now,
           totalTokens,
-          permission: ctx.permissionPresets.current(current.session),
+          permission: currentPermissionPreset(ctx, current.session),
         }
       }
       const contextText = `ctx ${formatContextTokens(contextUsageCache.totalTokens)}/${formatContextTokens(contextWindow)}`
@@ -1283,7 +1283,7 @@ export class Tui extends Service {
           rows.push(`contracts advertised: ${descriptor.contracts.length}`)
           rows.push(`generation: ${pluginHost.generationId}`)
         }
-        rows.push('verified dsh line: 0.1.2-alpha.3 (see verify:contract)')
+        rows.push(`verified dsh lines: ${UPSTREAM_VALIDATED_VERSIONS.join(', ')} (see verify:contract)`)
         chat.addChild(new StaticCardComponent(rows, palette))
         ui.requestRender()
         return
@@ -3408,10 +3408,10 @@ export class Tui extends Service {
         })
         // `/new` should continue the current session's permission instead of
         // falling back to the global startup default.
-        const currentPermission = ctx.permissionPresets.current(current.session)
+        const currentPermission = currentPermissionPreset(ctx, current.session)
         if (currentPermission !== 'custom') {
           try {
-            ctx.permissionPresets.set(handle.agent.session, currentPermission)
+            setPermissionPreset(ctx, handle.agent.session, currentPermission)
           } catch {
             // If the preset cannot be applied, the new session keeps the default.
           }

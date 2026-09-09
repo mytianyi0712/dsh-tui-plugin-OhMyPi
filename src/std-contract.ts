@@ -17,14 +17,17 @@ import { STD_ADAPTER_PACKAGE } from './dsh-adapter/std-link.ts'
 export const STD_PROTOCOL_PACKAGES: readonly { name: string; minimum: string }[] = [
   { name: '@dsh-std/core', minimum: '0.1.1-rc.1' },
   { name: '@dsh-std/manifest', minimum: '0.1.1-rc.2' },
+  { name: '@dsh-std/command', minimum: '0.1.1-rc.1' },
+  { name: '@dsh-std/storage', minimum: '0.1.1-rc.1' },
   { name: '@dsh-std/messages', minimum: '0.1.1-rc.1' },
+  { name: '@dsh-std/presentation', minimum: '0.1.1-rc.1' },
 ]
 
 /** Community adapter dynamically linked from the profile. Optional at build time. */
 export const STD_ADAPTER_MINIMUM = '0.1.1-rc.2'
 
 /** Peer range advertised for the dynamically-linked adapter. */
-export const STD_ADAPTER_PEER_RANGE = '^0.1.1-rc.2'
+export const STD_ADAPTER_PEER_RANGE = '>=0.1.1-rc.2 <0.2.0'
 
 /** Framework packages are validated by MAJOR only. */
 export const FRAMEWORK_PACKAGES: readonly { name: string; major: number }[] = [
@@ -66,9 +69,10 @@ export const HARNESS_PACKAGES: readonly string[] = [
 ]
 
 /** Versions this host has been type- and smoke-verified against. */
-export const UPSTREAM_VALIDATED_VERSIONS: readonly string[] = ['0.1.2-alpha.3']
-
-export const UPSTREAM_VALIDATED_VERSION = '0.1.2-alpha.3'
+export const UPSTREAM_VALIDATED_VERSIONS: readonly string[] = [
+  '0.1.2-alpha.2',
+  '0.1.2-alpha.3',
+]
 
 export interface ContractDrift {
   package: string

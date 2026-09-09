@@ -15,6 +15,38 @@ export function settingsNamespace(value: string): SettingsNamespace {
   return value as unknown as SettingsNamespace
 }
 
+import type { Context } from './framework.ts'
+import type { Session } from './session.ts'
+
+/**
+ * Permission preset API version bridge: alpha.3 changed `current(session)` from
+ * rc.2's `current(events)`. Compile against alpha types but adapt at runtime.
+ */
+export function currentPermissionPreset(ctx: Context, session: Session): string {
+  const service = ctx.permissionPresets as unknown as {
+    permissionState?: (session: Session) => unknown
+    current: (arg: Session | readonly unknown[]) => string
+  }
+  if (typeof service.permissionState === 'function') {
+    // alpha.3: current(session) → derive(permissionState(session))
+    return service.current(session)
+  }
+  // rc.2: current(events) → derive(foldKnobs(events))
+  return service.current(session.events)
+}
+
+export function setPermissionPreset(ctx: Context, session: Session, preset: string): void {
+  const service = ctx.permissionPresets as unknown as {
+    permissionState?: (session: Session) => unknown
+    set: (arg: Session | readonly unknown[], preset: string) => void
+  }
+  if (typeof service.permissionState === 'function') {
+    service.set(session, preset)
+  } else {
+    service.set(session.events, preset)
+  }
+}
+
 export { foldSessionTitle, SessionTitleProviderId } from '@deepseek-ai/dsh-session-title'
 export { parseSessionReferenceText } from '@deepseek-ai/dsh-session-reference'
 export { renderSkillContent } from '@deepseek-ai/dsh-skill'
