@@ -23,7 +23,7 @@ import type {
   FollowSessionHistoryInput,
   ReadSessionHistoryInput,
 } from '@dsh-std/session/history'
-import type { Session as DshSession, SessionEvent as DshSessionEvent } from '@deepseek-ai/dsh-session'
+import type { Session as DshSession, SessionEvent as DshSessionEvent } from '../dsh-host/session.ts'
 
 /**
  * TUI 内部会话句柄（混合 DSH 原生 + std 投影）
