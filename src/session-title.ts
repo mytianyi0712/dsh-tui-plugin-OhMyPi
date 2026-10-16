@@ -8,17 +8,17 @@ import {
   type SessionTitleLlmConfig,
 } from './dsh-host/index.ts'
 import { z } from './dsh-host/index.ts'
-import {
-  SESSION_TITLE_SETTINGS_NAMESPACE,
-  SessionTitleSettingsSchema,
-  type SessionTitleSettings,
-} from './settings.ts'
 
 export const name = 'session-title-first-prompt-llm'
-export const inject = ['sessionTitle', 'llm', 'sessions', 'settings']
+export const inject = ['sessionTitle', 'llm', 'sessions']
 
 export type Config = SessionTitleLlmConfig
 
+/**
+ * The row's Config is its own settings section under dsh 0.2 (`SettingsForms`
+ * exposes live Loader Config and writes through `update`), so `/settings`
+ * edits `provider` / `model` here and the row re-applies with the new route.
+ */
 export const Config: z<Config> = z.object({
   targetWords: SessionTitleLlmConfigFields.targetWords,
   targetCjkCharacters: SessionTitleLlmConfigFields.targetCjkCharacters,
@@ -29,22 +29,7 @@ export const Config: z<Config> = z.object({
   model: SessionTitleLlmConfigFields.model,
 })
 
-function configuredRoute(config: Config): Partial<SessionTitleSettings> {
-  return {
-    ...config.provider === undefined ? {} : { provider: config.provider },
-    ...config.model === undefined ? {} : { model: config.model },
-  }
-}
-
 export function apply(ctx: Context, config: Config): void {
-  const scope = ctx.settings.register(SESSION_TITLE_SETTINGS_NAMESPACE, SessionTitleSettingsSchema, {
-    base: configuredRoute(config),
-    validate: (value) => {
-      if ((value.provider === undefined) !== (value.model === undefined)) {
-        throw new Error('session-title settings require provider and model together')
-      }
-    },
-  })
   const providerId = SessionTitleProviderId(name)
   ctx.sessionTitle.register({
     id: providerId,
@@ -54,7 +39,7 @@ export function apply(ctx: Context, config: Config): void {
       if (first === undefined) throw new Error('first-prompt title provider requires one human message')
       return generateSessionTitleWithLlm(
         ctx,
-        { ...config, ...scope.get() },
+        config,
         request,
         [first],
         providerId,

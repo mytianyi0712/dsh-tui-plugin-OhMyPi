@@ -70,7 +70,7 @@
 | 💬 会话管理 | 支持新建、命名、恢复和进程内切换持久化会话 |
 | ⏱️ 插话队列 | 生成中按 `Enter` 把消息加入插话队列，在下一步（通常在工具调用完成后）送达模型；`Alt+Up` 编辑未生效插话并取消排队 |
 | 🧠 模型与思考等级 | 通过 `/model`、`/think` 选择 provider、model 和 reasoning effort |
-| 🔀 工作模式 | 支持 dsh 官方 `standard`、`minimal`、`code`、`cordis` 预设，也能发现本地安装的 agent preset |
+| 🔀 工作模式 | 内置 `standard`、`minimal`、`code`、`cordis` 四套 agent preset 组合（dsh 0.2 不再随发行版提供预设名册，本 bundle 自带声明），也能发现本地安装的 agent preset |
 | 🔐 权限模式 | 通过 `/permission` 在 `read-only`、`workspace-write`、`full-access` 等部署可用预设间切换 |
 | 🌗 主题与本地化 | 移植本机 OMP 全部 98 个具体主题（`dark-*` / `light-*` / 中性主题），支持动态（深浅色槽位独立）与选定（单一主题）两种模式；支持逐角色 RGB 覆盖；内置 `zh-CN` 与 `en` |
 | ⌨️ 命令与补全 | 支持斜杠命令、`@` 会话/文件引用、路径补全和参数补全 |
@@ -84,7 +84,7 @@
 |---|---|
 | Node.js | `^22.19.0` 或 `>=24.0.0` |
 | pnpm | `11.7.0` 或兼容的 pnpm 11 |
-| dsh | `0.1.1-rc.2`（开发钉死）或 `0.1.2-alpha.2/3`（std adapter 覆盖线） |
+| dsh | `0.2.0-rc.2`（开发钉死）；`0.1.2-alpha.2/3` 与 `0.2.0-rc.1` 也在 std adapter 覆盖线内 |
 | 终端 | 推荐支持 truecolor；使用 Nerd Font 可获得完整图标显示 |
 
 > [!NOTE]
@@ -101,8 +101,8 @@ npm install --global pnpm@11.7.0
 然后安装当前 release tarball：
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
-  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.3.1/dsh-omp-tui-0.3.1.tgz
+npx --yes @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile tui add \
+  https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi/releases/download/v0.4.0/dsh-omp-tui-0.4.0.tgz
 ```
 
 tarball 已包含构建后的 `lib/`，用户机器无需编译本项目。
@@ -112,9 +112,9 @@ tarball 已包含构建后的 `lib/`，用户机器无需编译本项目。
 Git 安装会执行本项目的 `prepare` 构建。pnpm 11 默认阻止依赖构建脚本，因此必须显式允许本包：
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
+npx --yes @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile tui add \
   --allow-build=dsh-omp-tui \
-  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.3.1
+  github:mytianyi0712/dsh-tui-plugin-OhMyPi#v0.4.0
 ```
 
 固定 tag 比直接使用 `#main` 更容易复现。完整的升级、卸载和安装排障说明见 [`docs/INSTALL.md`](docs/INSTALL.md)。
@@ -124,8 +124,8 @@ npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add \
 如果希望直接使用 `omdsh` 启动器，也可以全局安装本地 tarball；包内的 dsh 宿主 peer 依赖为 optional，npm 11 不会因 peer 图触发 Arborist 的 `null.children` 崩溃：
 
 ```sh
-npm install --global ./dsh-omp-tui-0.3.1.tgz
-npm install --global @deepseek-ai/dsh@0.1.1-rc.2
+npm install --global ./dsh-omp-tui-0.4.0.tgz
+npm install --global @deepseek-ai/dsh@0.2.0-rc.2
 omdsh
 ```
 
@@ -138,9 +138,9 @@ omdsh
 
 ```sh
 # 使用 npx
-npx --yes @deepseek-ai/dsh@0.1.1-rc.2 --profile tui
-npx --yes @deepseek-ai/dsh@0.1.1-rc.2 --profile tui --session my-id
-npx --yes @deepseek-ai/dsh@0.1.1-rc.2 --profile tui --resume <session-id>
+npx --yes @deepseek-ai/dsh@0.2.0-rc.2 --profile tui
+npx --yes @deepseek-ai/dsh@0.2.0-rc.2 --profile tui --session my-id
+npx --yes @deepseek-ai/dsh@0.2.0-rc.2 --profile tui --resume <session-id>
 
 # 已安装 dsh launcher 后
 dsh --profile tui
@@ -260,10 +260,10 @@ $env:DEEPSEEK_API_KEY = 'your-key'
 
 ```sh
 # Git Bash / zsh
-export DEEPSEEK_BASE_URL='http://localhost:3000/v1'
+export DEEPSEEK_BASE_URL='http://10.0.0.1:3000/v1'
 
 # PowerShell
-$env:DEEPSEEK_BASE_URL = 'http://localhost:3000/v1'
+$env:DEEPSEEK_BASE_URL = 'http://10.0.0.1:3000/v1'
 ```
 
 环境变量必须在启动 dsh 的同一个 shell 中可见。启动后可用 `/model` 选择并持久化 provider、model 和思考等级。
@@ -291,7 +291,7 @@ $env:DEEPSEEK_BASE_URL = 'http://localhost:3000/v1'
 - `mode` 只对空白会话生效；切换结果会写入会话日志，恢复会话时沿用。
 - `/theme` 和 `/settings` 的选择在存在官方 settings provider 时写入 `$DSH_HOME/settings.yaml`。
 - `/settings` 分为“常规 / 模型与供应商 / 高级 / 微信claw”四页。开关、工具输出行数、并行数和默认思考等级在当前行回车即可切换；模型与供应商页集中默认模型、思考等级和供应商列表，Enter 循环思考等级。供应商表单中接口类型就地循环官方值：OAI 兼容 `openai-completions`、Response `openai-responses`、Message `anthropic-messages`；探测上游会直接合并进模型列表。
-- 默认模式会读取 dsh settings 中保存的 `agent-presets.default`：设置页修改后，新会话启动会使用该默认模式，而不是固定回退到 `standard`。
+- 默认模式读取 dsh settings 中 `agent-presets` 行的 `selectedDefault`（用户选择的默认预设）：设置页修改后，新会话启动会使用该默认模式，而不是固定回退到 `standard`。dsh 0.2 的预设注册表把「部署默认」和「用户选择默认」分开，`defaultId` 即两者合并后的结果。
 - `theme.custom` 只接受 RGB 三元组；未知角色和非法值会被忽略。
 - `theme.mode` 可选 `dynamic`（动态，按终端明暗在 `theme.dark` / `theme.light` 之间切换）或 `selected`（选定，固定使用 `theme.selected`）。三个主题槽位均填写具体 OMP 主题 id，不校验主题自身明暗，可任意搭配。
 - `/permission` 的可用选项以当前部署的权限预设为准，自定义 preset 也会进入命令提示和补全。
@@ -321,7 +321,7 @@ node --experimental-transform-types scripts/perf-probe.ts
 测试使用 Node 原生 `node:test` 运行 `.ts` 文件，不依赖兄弟 harness checkout。修改源码后重新运行 `pnpm run prepare`，再使用 `link:` profile 验证：
 
 ```sh
-npx --yes @deepseek-ai/dsh@0.1.1-rc.2 plugin --profile tui add link:.
+npx --yes @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile tui add link:.
 ```
 
 社区 std adapter（`@dsh-std/adapter-dsh`）由 profile 动态链接，不打进本包。`omdsh update` 会在升级时尝试把它装进 tui profile；也可以手工安装：
@@ -370,11 +370,11 @@ docs/assets/            README 使用的实机截图
 - **诊断与门禁**：内置 `/plugins`、`/doctor` 诊断命令，并在 CI 中运行 `verify:boundary`、`verify:contract`、`verify:patch-surface`、`verify:plugin-spec` 四道门禁。
 - **版本策略**：所有 `@deepseek-ai/*` 宿主包改为 optional peer，dsh 版本差异尽量由动态链接的 `@dsh-std/adapter-dsh` 吸收，adapter 可在 profile 内独立升级，无需重建本插件。
 
-该迁移仍处于实验阶段，接口与行为可能随上游规范调整。当前已知限制：`@dsh-std/adapter-dsh@0.1.1-rc.2` 作为 dsh bundle 安装时，其自带行依赖 `sessionController`，在部分 dsh 版本上可能无法激活；此时 TUI 仍可正常启动，但社区 std 插件不会自动加载。
+该迁移仍处于实验阶段，接口与行为可能随上游规范调整。当前已知限制：`@dsh-std/adapter-dsh@0.1.1-rc.4` 作为 dsh bundle 安装时，其自带行依赖 `sessionController`；dsh `0.2.0-rc.2` 未提供该服务，因此该行停留在 pending 状态，TUI 仍可正常启动，但社区 std 插件不会自动加载。npm 的 `latest` 标签仍是 `0.1.1-rc.2`（peer 范围不覆盖 0.2），启动器按 `0.1.1-rc.4` 精确安装。
 
 ## 变更记录
 
-完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。当前版本：`0.3.1`。
+完整版本历史见 [CHANGELOG.md](CHANGELOG.md)。当前版本：`0.4.0`。
 
 ## 相关文档
 

@@ -1,9 +1,5 @@
-/**
- * std-sessions 模块测试
- * 验证 TuiSessionManager 的基本功能
- */
-
-import { describe, test, expect, beforeEach } from 'vitest'
+import { describe, test, beforeEach } from 'node:test'
+import assert from 'node:assert/strict'
 import { TuiSessionManager } from '../src/std-sessions/index.ts'
 import type { SessionCatalogClient } from '@dsh-std/session/catalog'
 import type { SessionHistoryClient } from '@dsh-std/session/history'
@@ -78,11 +74,11 @@ describe('TuiSessionManager', () => {
   test('creates session with native fallback', async () => {
     const session = await manager.create({ title: 'Test Session' })
     
-    expect(session).toBeDefined()
-    expect(session.id).toMatch(/^session-/)
-    expect(session.descriptor.title).toBe('Test Session')
-    expect(session.descriptor.state).toBe('available')
-    expect(session.native).toBeDefined()
+    assert.ok(session)
+    assert.match(session.id, /^session-/)
+    assert.equal(session.descriptor.title, 'Test Session')
+    assert.equal(session.descriptor.state, 'available')
+    assert.ok(session.native)
   })
 
   test('lists sessions with native fallback', async () => {
@@ -93,24 +89,24 @@ describe('TuiSessionManager', () => {
 
     const sessions = await manager.list()
     
-    expect(sessions).toHaveLength(3)
-    expect(sessions[0].descriptor.title).toBe('Session 1')
-    expect(sessions[1].descriptor.title).toBe('Session 2')
-    expect(sessions[2].descriptor.title).toBe('Session 3')
+    assert.equal(sessions.length, 3)
+    assert.equal(sessions[0].descriptor.title, 'Session 1')
+    assert.equal(sessions[1].descriptor.title, 'Session 2')
+    assert.equal(sessions[2].descriptor.title, 'Session 3')
   })
 
   test('gets session by id', async () => {
     const created = await manager.create({ title: 'Get Test' })
     const retrieved = await manager.get(created.id)
     
-    expect(retrieved).toBeDefined()
-    expect(retrieved?.id).toBe(created.id)
-    expect(retrieved?.descriptor.title).toBe('Get Test')
+    assert.ok(retrieved)
+    assert.equal(retrieved?.id, created.id)
+    assert.equal(retrieved?.descriptor.title, 'Get Test')
   })
 
   test('returns undefined for non-existent session', async () => {
     const session = await manager.get('non-existent-id')
-    expect(session).toBeUndefined()
+    assert.equal(session, undefined)
   })
 
   test('renames session', async () => {
@@ -118,7 +114,7 @@ describe('TuiSessionManager', () => {
     await manager.rename(session.id, 'Updated Title')
     
     const retrieved = await manager.get(session.id)
-    expect(retrieved?.descriptor.title).toBe('Updated Title')
+    assert.equal(retrieved?.descriptor.title, 'Updated Title')
   })
 
   test('generates unique requestId', async () => {
@@ -126,18 +122,18 @@ describe('TuiSessionManager', () => {
     const session2 = await manager.create({ title: 'Test 2' })
     
     // 不同的会话应该有不同的ID
-    expect(session1.id).not.toBe(session2.id)
+    assert.notEqual(session1.id, session2.id)
   })
 
   test('session has correct capabilities', async () => {
     const session = await manager.create({ title: 'Capability Test' })
     
-    expect(session.getCatalog()).toBeDefined()
-    expect(session.getHistory()).toBeDefined()
+    assert.ok(session.getCatalog())
+    assert.ok(session.getHistory())
   })
 
   test('handles empty session list', async () => {
     const sessions = await manager.list()
-    expect(sessions).toHaveLength(0)
+    assert.equal(sessions.length, 0)
   })
 })

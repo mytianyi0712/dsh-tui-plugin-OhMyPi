@@ -19,7 +19,7 @@
       "id": "system-prompt",
       "keys": [
         "config",
-        "persona"
+        "personaPrefix"
       ]
     },
     {
@@ -67,13 +67,19 @@
       ]
     },
     {
-      "id": "session-persistence-conversation-gate",
+      "id": "session-persistence-tool-call-sanitizer",
       "keys": [
         "name"
       ]
     },
     {
       "id": "session-reference",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-subagent-model-selection-settings",
       "keys": [
         "name"
       ]
@@ -92,6 +98,617 @@
         "name",
         "config",
         "default"
+      ]
+    },
+    {
+      "id": "preset-standard",
+      "keys": [
+        "name",
+        "config",
+        "id",
+        "description",
+        "order",
+        "plugins"
+      ]
+    },
+    {
+      "id": "persona",
+      "keys": [
+        "name",
+        "config",
+        "prefix"
+      ]
+    },
+    {
+      "id": "agent-instructions",
+      "keys": [
+        "name",
+        "config",
+        "maxBytes"
+      ]
+    },
+    {
+      "id": "tool-bash",
+      "keys": [
+        "name",
+        "disabled"
+      ]
+    },
+    {
+      "id": "tool-pwsh",
+      "keys": [
+        "name",
+        "disabled"
+      ]
+    },
+    {
+      "id": "tool-fs",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-fs-search",
+      "keys": [
+        "name",
+        "config",
+        "sampleOverCapGlobResults"
+      ]
+    },
+    {
+      "id": "tool-jobs",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "skill-filesystem",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-skill",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "command-goal",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-goal",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "planning",
+      "keys": [
+        "name",
+        "group",
+        "isolate",
+        "planMode",
+        "config"
+      ]
+    },
+    {
+      "id": "plan-mode",
+      "keys": [
+        "name",
+        "config",
+        "section"
+      ]
+    },
+    {
+      "id": "compaction",
+      "keys": [
+        "name",
+        "group",
+        "isolate",
+        "compaction",
+        "toolResultPruner",
+        "config"
+      ]
+    },
+    {
+      "id": "compaction-basic",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "command-compact",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-result-pruner",
+      "keys": [
+        "name",
+        "config",
+        "thresholdChars",
+        "headChars",
+        "tailChars"
+      ]
+    },
+    {
+      "id": "delegation",
+      "keys": [
+        "name",
+        "group",
+        "isolate",
+        "workflowEngine",
+        "config"
+      ]
+    },
+    {
+      "id": "tool-subagent-control",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-subagent-list-agents",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-subagent",
+      "keys": [
+        "name",
+        "config",
+        "provider",
+        "toolName",
+        "modelSelectionSettings",
+        "backgroundMode"
+      ]
+    },
+    {
+      "id": "tool-subagent-fork",
+      "keys": [
+        "name",
+        "config",
+        "provider",
+        "toolName",
+        "backgroundMode"
+      ]
+    },
+    {
+      "id": "workflow-ptc",
+      "keys": [
+        "name",
+        "config",
+        "provider"
+      ]
+    },
+    {
+      "id": "tool-workflow",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-ralph",
+      "keys": [
+        "name",
+        "config",
+        "subagentProvider",
+        "maxRounds"
+      ]
+    },
+    {
+      "id": "tool-ask-user",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-todo",
+      "keys": [
+        "name",
+        "config",
+        "allowParallelInProgress"
+      ]
+    },
+    {
+      "id": "tool-web",
+      "keys": [
+        "name",
+        "config",
+        "fetch",
+        "searchTimeoutMs"
+      ]
+    },
+    {
+      "id": "preset-minimal",
+      "keys": [
+        "name",
+        "config",
+        "id",
+        "description",
+        "order",
+        "plugins"
+      ]
+    },
+    {
+      "id": "persona",
+      "keys": [
+        "name",
+        "config",
+        "prefix",
+        "complete",
+        "includeRuntimeContext"
+      ]
+    },
+    {
+      "id": "tool-bash",
+      "keys": [
+        "name",
+        "disabled"
+      ]
+    },
+    {
+      "id": "tool-pwsh",
+      "keys": [
+        "name",
+        "disabled"
+      ]
+    },
+    {
+      "id": "tool-fs",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "preset-code",
+      "keys": [
+        "name",
+        "config",
+        "id",
+        "description",
+        "order",
+        "plugins"
+      ]
+    },
+    {
+      "id": "persona",
+      "keys": [
+        "name",
+        "config",
+        "prefix"
+      ]
+    },
+    {
+      "id": "agent-instructions",
+      "keys": [
+        "name",
+        "config",
+        "maxBytes"
+      ]
+    },
+    {
+      "id": "tool-bash",
+      "keys": [
+        "name",
+        "disabled"
+      ]
+    },
+    {
+      "id": "tool-pwsh",
+      "keys": [
+        "name",
+        "disabled"
+      ]
+    },
+    {
+      "id": "tool-fs",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-fs-search",
+      "keys": [
+        "name",
+        "config",
+        "sampleOverCapGlobResults"
+      ]
+    },
+    {
+      "id": "tool-jobs",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-todo",
+      "keys": [
+        "name",
+        "config",
+        "allowParallelInProgress"
+      ]
+    },
+    {
+      "id": "planning",
+      "keys": [
+        "name",
+        "group",
+        "isolate",
+        "planMode",
+        "config"
+      ]
+    },
+    {
+      "id": "plan-mode",
+      "keys": [
+        "name",
+        "config",
+        "section"
+      ]
+    },
+    {
+      "id": "compaction",
+      "keys": [
+        "name",
+        "group",
+        "isolate",
+        "compaction",
+        "toolResultPruner",
+        "config"
+      ]
+    },
+    {
+      "id": "compaction-basic",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "command-compact",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-result-pruner",
+      "keys": [
+        "name",
+        "config",
+        "thresholdChars",
+        "headChars",
+        "tailChars"
+      ]
+    },
+    {
+      "id": "preset-cordis",
+      "keys": [
+        "name",
+        "config",
+        "id",
+        "description",
+        "order",
+        "plugins"
+      ]
+    },
+    {
+      "id": "persona",
+      "keys": [
+        "name",
+        "config",
+        "prefix"
+      ]
+    },
+    {
+      "id": "agent-instructions",
+      "keys": [
+        "name",
+        "config",
+        "maxBytes"
+      ]
+    },
+    {
+      "id": "tool-bash",
+      "keys": [
+        "name",
+        "disabled"
+      ]
+    },
+    {
+      "id": "tool-pwsh",
+      "keys": [
+        "name",
+        "disabled"
+      ]
+    },
+    {
+      "id": "tool-fs",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-fs-search",
+      "keys": [
+        "name",
+        "config",
+        "sampleOverCapGlobResults"
+      ]
+    },
+    {
+      "id": "tool-jobs",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "skill-filesystem",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-skill",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "command-goal",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-goal",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "planning",
+      "keys": [
+        "name",
+        "group",
+        "isolate",
+        "planMode",
+        "config"
+      ]
+    },
+    {
+      "id": "plan-mode",
+      "keys": [
+        "name",
+        "config",
+        "section"
+      ]
+    },
+    {
+      "id": "compaction",
+      "keys": [
+        "name",
+        "group",
+        "isolate",
+        "compaction",
+        "toolResultPruner",
+        "config"
+      ]
+    },
+    {
+      "id": "compaction-basic",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "command-compact",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-result-pruner",
+      "keys": [
+        "name",
+        "config",
+        "thresholdChars",
+        "headChars",
+        "tailChars"
+      ]
+    },
+    {
+      "id": "delegation",
+      "keys": [
+        "name",
+        "group",
+        "isolate",
+        "workflowEngine",
+        "config"
+      ]
+    },
+    {
+      "id": "tool-subagent-control",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-subagent-list-agents",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-subagent",
+      "keys": [
+        "name",
+        "config",
+        "provider",
+        "toolName",
+        "modelSelectionSettings",
+        "backgroundMode"
+      ]
+    },
+    {
+      "id": "tool-subagent-fork",
+      "keys": [
+        "name",
+        "config",
+        "provider",
+        "toolName",
+        "backgroundMode"
+      ]
+    },
+    {
+      "id": "workflow-ptc",
+      "keys": [
+        "name",
+        "config",
+        "provider"
+      ]
+    },
+    {
+      "id": "tool-workflow",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-ralph",
+      "keys": [
+        "name",
+        "config",
+        "subagentProvider",
+        "maxRounds"
+      ]
+    },
+    {
+      "id": "tool-ask-user",
+      "keys": [
+        "name"
+      ]
+    },
+    {
+      "id": "tool-todo",
+      "keys": [
+        "name",
+        "config",
+        "allowParallelInProgress"
+      ]
+    },
+    {
+      "id": "tool-web",
+      "keys": [
+        "name",
+        "config",
+        "fetch",
+        "searchTimeoutMs"
       ]
     },
     {

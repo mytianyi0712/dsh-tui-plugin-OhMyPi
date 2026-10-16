@@ -578,10 +578,10 @@ export class ToolCardComponent implements Component {
 
   /** Record the tool result. */
   updateResult(event: Extract<SessionEvent, { type: 'tool/result' }>['data']): void {
-    const result = event.message.content[0]
+    const message = event.message
     this.result = {
-      content: [...result.content],
-      isError: result.isError === true,
+      content: [...message.content],
+      isError: message.isError === true,
     }
     this.renderCache = undefined
   }

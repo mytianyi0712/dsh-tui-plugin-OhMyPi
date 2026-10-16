@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 
 const PACKAGE = 'dsh-omp-tui'
 const PROFILE = 'tui'
-const STD_ADAPTER = '@dsh-std/adapter-dsh'
+const STD_ADAPTER = '@dsh-std/adapter-dsh@0.1.1-rc.4'
 const GITHUB_REPO = 'mytianyi0712/dsh-tui-plugin-OhMyPi'
 const ownPackageJson = JSON.parse(
   fs.readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
@@ -193,37 +193,11 @@ function compareVersions(a, b) {
 }
 
 /**
- * 新版 dsh 的 credentials-local 只接受「凭据名 → 非空字符串」的扁平文档，
- * 而更早版本写入的是 `version: 1` + `refs:` 两层结构；旧文件会让新版 dsh
- * 在插件树加载阶段直接报错。仅在 `omdsh update` 时迁移。
- */
-function migrateLegacyCredentials() {
-  const file = path.join(dshHome(), '.credentials.yaml')
-  let text
-  try {
-    text = fs.readFileSync(file, 'utf8')
-  } catch {
-    return
-  }
-
-  const lines = text.split(/\r?\n/)
-  if (!lines.some((line) => /^version:\s*\d+\s*$/.test(line))) return
-  if (!lines.some((line) => /^refs:\s*$/.test(line))) return
-
-  const migrated = lines
-    .filter((line) => !/^version:\s*\d+\s*$/.test(line) && !/^refs:\s*$/.test(line))
-    .map((line) => line.replace(/^\s{2}/, ''))
-    .join('\n')
-    .trimEnd() + '\n'
-
-  fs.writeFileSync(file, migrated, 'utf-8')
-  say('已把旧版 ~/.dsh/.credentials.yaml 迁移为新版扁平格式。')
-}
-
-/**
  * 新版 dsh-session-persistence-jsonl 默认使用 zstd；同一会话目录里若同时存在
- * `session.jsonl` 与 `session.jsonl.zstd`，会被新版后端判定为 encoding mismatch
- * 并拒绝加载。仅在 `omdsh update` 时处理会阻断启动的两类旧布局。
+ * 同一格式代际的 plain 与 zstd 日志，会被新版后端判定为 encoding mismatch 并
+ * 拒绝加载。0.2 的规范文件名按代际寻址（v0 为 `session.jsonl`，其后为
+ * `vN.session.jsonl`，zstd 编码再加 `.zstd`），所以冲突检查必须覆盖全部代际。
+ * 仅在 `omdsh update` 时处理会阻断启动的两类旧布局。
  */
 function migrateLegacySessionArtifacts() {
   const sessionsRoot = path.join(dshHome(), 'sessions')
@@ -255,12 +229,22 @@ function migrateLegacySessionArtifacts() {
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
       const sessionDir = path.join(projectDir, entry.name)
-      const plain = path.join(sessionDir, 'session.jsonl')
-      const zstd = path.join(sessionDir, 'session.jsonl.zstd')
-      if (!fs.existsSync(plain) || !fs.existsSync(zstd)) continue
-      const legacy = `session.jsonl.omdsh-legacy-${Date.now()}`
-      fs.renameSync(plain, path.join(sessionDir, legacy))
-      say(`已将会话 ${entry.name} 的旧 plain 日志重命名为 ${legacy}，保留 zstd 版本。`)
+      let files
+      try {
+        files = fs.readdirSync(sessionDir)
+      } catch {
+        continue
+      }
+      // 规范代际名：`session.jsonl`（v0）或 `vN.session.jsonl`；带 `.zstd`
+      // 后缀的是同一代际的压缩版本。保留 zstd，把冲突的 plain 让位。
+      for (const name of files) {
+        const base = /^(v\d+\.)?session\.jsonl$/.exec(name)
+        if (base === null) continue
+        if (!files.includes(`${name}.zstd`)) continue
+        const legacy = `${name}.omdsh-legacy-${Date.now()}`
+        fs.renameSync(path.join(sessionDir, name), path.join(sessionDir, legacy))
+        say(`已将会话 ${entry.name} 的旧 plain 日志 ${name} 重命名为 ${legacy}，保留 zstd 版本。`)
+      }
     }
   }
 }
@@ -505,7 +489,6 @@ function ensureStdAdapter() {
 }
 
 function adaptForNewVersion() {
-  migrateLegacyCredentials()
   migrateLegacySessionArtifacts()
   ensureStdAdapter()
 }

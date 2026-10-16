@@ -7,7 +7,7 @@
 
 import type { Context } from '../../dsh-host/index.ts'
 import type { Agent } from '../../dsh-host/index.ts'
-import { createUserMessage } from '../../dsh-host/index.ts'
+import { createUserMessage, sessionEvents } from '../../dsh-host/index.ts'
 import type { SessionEvent } from '../../dsh-host/index.ts'
 import {
   clearWechatPending,
@@ -50,14 +50,28 @@ export function registerProgressHooks(ctx: Context): void {
       markTurnStarted()
       return
     }
-    if (event.type === 'assistant/chunk') {
-      const task = getWechatTurn()
-      if (task?.mode === 'chat' && event.data.chunk.type === 'text-delta') {
-        queueChatText(task, event.data.turn, event.data.chunk.text)
-      }
+    if (event.type === 'turn/end') void handleTurnEnd(agent, event)
+  })
+
+  // dsh 0.2 streams assistant text through `agent/assistant-stream` frames
+  // (the durable `assistant/chunk` session event is gone). Chunk frames carry no
+  // turn, so the start frame's turn is retained for the attempt. Chat-mode tasks
+  // flush each text delta into the WeChat stream.
+  let streamTurn: number | undefined
+  ctx.on('agent/assistant-stream', ({ agent: candidate, frame }) => {
+    const agent = getActiveAgent()
+    if (!agent || candidate.id !== agent.id) return
+    if (frame.type === 'start') {
+      streamTurn = frame.turn
       return
     }
-    if (event.type === 'turn/end') void handleTurnEnd(agent, event)
+    if (frame.type !== 'chunk') return
+    const turn = streamTurn
+    if (turn === undefined) return
+    const task = getWechatTurn()
+    if (task?.mode !== 'chat') return
+    if (frame.chunk.type !== 'text-delta') return
+    queueChatText(task, turn, frame.chunk.text)
   })
 
   // 进度注入：只对微信 work 任务（及显式开启通知的终端任务）生效。
@@ -79,7 +93,7 @@ export function registerProgressHooks(ctx: Context): void {
                   '然后用 wechat_send 工具向微信用户简要汇报当前进度，之后继续原任务。',
               }],
               source: {
-                kind: 'plugin',
+                kind: 'wechat-bridge',
                 plugin: 'dsh-wechat-ilink',
                 form: 'notice',
                 summary: '微信进度汇报',
@@ -213,7 +227,7 @@ async function handleTurnEnd(agent: Agent, event: SessionEvent & { type: 'turn/e
 /** 提取某个 turn 内最后一条 assistant/message 的全部文本块（thinking 排除）。 */
 function extractFinalText(agent: Agent, turn: number): string {
   let text = ''
-  for (const event of agent.session.events) {
+  for (const event of sessionEvents(agent.session)) {
     if (event.type !== 'assistant/message' || event.data.turn !== turn) continue
     const parts: string[] = []
     for (const block of event.data.message.content) {

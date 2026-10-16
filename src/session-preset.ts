@@ -1,26 +1,21 @@
 /**
- * Session preset reconstruction that works on both 0.1.1-rc.2 (where
- * `@deepseek-ai/dsh-agent-presets` exported `resolveSessionPreset`) and
- * 0.1.2-alpha.x (where that helper was replaced by the `agentPreset`
- * session projection). Newest `agent-preset/selected` event wins; the
- * creation header is the fallback.
+ * Session preset reconstruction. dsh 0.2 records the preset a session runs
+ * under as the `agentPreset` session projection, initialized from the creation
+ * header and advanced by `agent-preset/selected` events logged when a blank
+ * session switches composition. The projection is the authoritative read; the
+ * header is the fallback when the projection registry is absent.
  */
 
-export interface PresetBearingSession {
-  readonly header: { readonly agentPreset?: string }
-  readonly events: readonly { readonly type: string; readonly data?: unknown }[]
-}
+import type { Context, Session } from './dsh-host/index.ts'
 
-export function resolveSessionPreset(session: PresetBearingSession): string | undefined {
-  let preset = typeof session.header.agentPreset === 'string' && session.header.agentPreset !== ''
-    ? session.header.agentPreset
-    : undefined
-  for (const event of session.events) {
-    if (event.type !== 'agent-preset/selected') continue
-    const data = event.data
-    if (data === null || typeof data !== 'object' || !('agentPreset' in data)) continue
-    const value = data.agentPreset
-    if (typeof value === 'string' && value !== '') preset = value
-  }
-  return preset
+export function resolveSessionPreset(ctx: Context, session: Session): string | undefined {
+  // Read the projection registry through `ctx.get`: the agent setup context does
+  // not declare `sessionProjections` in its inject list, and a direct property
+  // read on a Cordis context throws without it.
+  const registry = ctx.get('sessionProjections') as
+    | { stateOf: (session: Session, key: string) => unknown }
+    | undefined
+  const projected = registry?.stateOf(session, 'agentPreset')
+  if (typeof projected === 'string' && projected !== '') return projected
+  return session.header.agentPreset
 }

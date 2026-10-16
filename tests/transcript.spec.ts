@@ -195,7 +195,8 @@ describe('transcript components respect the render width', () => {
     const powershell = new ToolCardComponent('powershell', '{}', 6, palette)
     powershell.updateResult({
       message: {
-        content: [{ content: [{ type: 'text', text: 'first\r\nsecond\rthird' }], isError: false }],
+        content: [{ type: 'text', text: 'first\r\nsecond\rthird' }],
+        isError: false,
       },
     } as never)
     const rows = render(powershell, 48)
@@ -210,12 +211,10 @@ describe('transcript components respect the render width', () => {
     unsafe.updateResult({
       message: {
         content: [{
-          content: [{
-            type: 'text',
-            text: 'Line 1839:\tbefore\x1b[48;5;240m highlighted \x1b[0mafter\nmove\x1b[2J\x1b[Hhome\nmarker\x1b_pi:c\x07cursor\ncharset\x1b(0A\nutf8-csi\u009b31mred\u009b0m',
-          }],
-          isError: false,
+          type: 'text',
+          text: 'Line 1839:\tbefore\x1b[48;5;240m highlighted \x1b[0mafter\nmove\x1b[2J\x1b[Hhome\nmarker\x1b_pi:c\x07cursor\ncharset\x1b(0A\nutf8-csi\u009b31mred\u009b0m',
         }],
+        isError: false,
       },
     } as never)
 

@@ -191,9 +191,13 @@ describe('wechat @dsh command parsing', () => {
     const { clearWechatPending, consumeWechatTurn, markWechatPending } = await import('../src/wechat/core/runtime.ts')
     const { setActiveAgent } = await import('../src/wechat/dsh/session.ts')
     let sessionHook: ((session: unknown, event: unknown) => void) | undefined
+    let streamHook: ((payload: { agent: unknown; frame: unknown }) => void) | undefined
     const ctx = {
       on: (event: string, hook: unknown) => {
         if (event === 'session/event') sessionHook = hook as (session: unknown, event: unknown) => void
+        if (event === 'agent/assistant-stream') {
+          streamHook = hook as (payload: { agent: unknown; frame: unknown }) => void
+        }
       },
     } as never
     const delivered = Promise.withResolvers<void>()
@@ -227,7 +231,7 @@ describe('wechat @dsh command parsing', () => {
       id: 'agent-stream',
       session: {
         id: 's-stream',
-        events: [{
+        snapshotEvents: () => [{
           type: 'assistant/message',
           data: { turn: 1, message: { content: [{ type: 'text', text: '完整回复' }] } },
         }],
@@ -241,9 +245,20 @@ describe('wechat @dsh command parsing', () => {
     try {
       markWechatPending({ mode: 'chat', accountId: account.id, userId: 'user-stream' })
       sessionHook?.(agent.session, { type: 'turn/start', data: { turn: 1 } })
-      sessionHook?.(agent.session, {
-        type: 'assistant/chunk',
-        data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: streamedText } },
+      streamHook?.({
+        agent,
+        frame: { type: 'start', attemptId: 'attempt-1', revision: 1, turn: 1, step: 1 },
+      })
+      streamHook?.({
+        agent,
+        frame: {
+          type: 'chunk',
+          attemptId: 'attempt-1',
+          revision: 1,
+          index: 0,
+          time: 0,
+          chunk: { type: 'text-delta', index: 0, text: streamedText },
+        },
       })
       await delivered.promise
       assert.deepEqual(texts, [streamedText])

@@ -1,11 +1,23 @@
-/** Shared persistent settings namespaces used by the TUI and title provider. */
+/**
+ * Persistent settings namespaces used by the TUI and the title provider.
+ *
+ * dsh 0.2 has no runtime settings registration: a settings section is the live
+ * Config of a profile entry, keyed by that entry's row id. Both namespaces
+ * below name rows this bundle inserts through `cordis.patch.yml`.
+ */
 
-import { settingsNamespace, z } from './dsh-host/index.ts'
+import { settingsNamespace } from './dsh-host/index.ts'
 
+/** The `tui` row: theme, prompt templates, keybindings and card settings. */
 export const TUI_SETTINGS_NAMESPACE = settingsNamespace('tui')
 
 export type ThemeModeSetting = 'dynamic' | 'selected'
 
+/**
+ * Theme and prompt settings the TUI persists. These fields are part of the
+ * `tui` row's Config schema (`TuiConfigSchema`), so the row's live Config is
+ * the settings section.
+ */
 export interface TuiSettings {
   /** Deprecated single-theme setting; migrated to the fields below on read. */
   themeName?: string
@@ -33,29 +45,5 @@ export interface TuiSettings {
   maxToolOutputLines: number
 }
 
-export const TuiSettingsSchema: z<TuiSettings> = z.object({
-  themeName: z.string(),
-  themeMode: z.union([z.const('dynamic'), z.const('selected')]),
-  themeDark: z.string(),
-  themeLight: z.string(),
-  themeSelected: z.string(),
-  themeCustom: z.dict(z.array(z.number().min(0).max(255)).min(3).max(3), z.string()),
-  leftPrompt: z.string(),
-  rightPrompt: z.string(),
-  keyTools: z.string(),
-  keyReasoning: z.string(),
-  showReasoning: z.boolean().default(true),
-  maxToolOutputLines: z.number().step(1).min(1).default(6),
-})
-
-export const SESSION_TITLE_SETTINGS_NAMESPACE = settingsNamespace('session-title')
-
-export interface SessionTitleSettings {
-  provider?: string
-  model?: string
-}
-
-export const SessionTitleSettingsSchema: z<SessionTitleSettings> = z.object({
-  provider: z.string(),
-  model: z.string(),
-})
+/** The `session-title-llm-tui` row: title model route plus generation limits. */
+export const SESSION_TITLE_SETTINGS_NAMESPACE = settingsNamespace('session-title-llm-tui')

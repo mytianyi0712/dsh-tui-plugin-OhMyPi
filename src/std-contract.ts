@@ -3,9 +3,10 @@
  * packages this host is validated against.
  *
  * DSH harness version drift is the std adapter's job (`@dsh-std/adapter-dsh`,
- * dynamically linked from the profile). Published adapter-dsh 0.1.1-rc.2 peers
- * `>=0.1.2-alpha.2 <0.1.3`, so 0.1.2-alpha.3 is in range. This file tracks the
- * protocol packages we compile against and, when present, the linked adapter.
+ * dynamically linked from the profile). Published adapter-dsh 0.1.1-rc.4 peers
+ * `>=0.1.2-alpha.2 <0.1.6 || >=0.2.0-rc.1 <0.2.1`, so both the 0.1.2-alpha line
+ * and the 0.2.0-rc line are in range. This file tracks the protocol packages we
+ * compile against and, when present, the linked adapter.
  * Keep in sync with `package.json` dependencies / optional peerDependencies.
  */
 
@@ -25,7 +26,7 @@ export const STD_PROTOCOL_PACKAGES: readonly { name: string; minimum: string }[]
 ]
 
 /** Community adapter dynamically linked from the profile. Optional at build time. */
-export const STD_ADAPTER_MINIMUM = '0.1.1-rc.2'
+export const STD_ADAPTER_MINIMUM = '0.1.1-rc.4'
 
 /** Peer range advertised for the dynamically-linked adapter. */
 export const STD_ADAPTER_PEER_RANGE = '>=0.1.1-rc.2 <0.2.0'
@@ -46,13 +47,15 @@ export const HARNESS_PACKAGES: readonly string[] = [
   '@deepseek-ai/dsh-agent',
   '@deepseek-ai/dsh-agent-default-model',
   '@deepseek-ai/dsh-agent-loop',
-  '@deepseek-ai/dsh-agent-presets',
+  '@deepseek-ai/dsh-agent-preset',
+  '@deepseek-ai/dsh-agent-preset-registry',
   '@deepseek-ai/dsh-cmdline',
   '@deepseek-ai/dsh-commands',
   '@deepseek-ai/dsh-compaction',
   '@deepseek-ai/dsh-goal',
   '@deepseek-ai/dsh-llm',
   '@deepseek-ai/dsh-permission-presets',
+  '@deepseek-ai/dsh-persona',
   '@deepseek-ai/dsh-session',
   '@deepseek-ai/dsh-session-persistence',
   '@deepseek-ai/dsh-session-projection',
@@ -73,6 +76,7 @@ export const HARNESS_PACKAGES: readonly string[] = [
 export const UPSTREAM_VALIDATED_VERSIONS: readonly string[] = [
   '0.1.2-alpha.2',
   '0.1.2-alpha.3',
+  '0.2.0-rc.2',
 ]
 
 export interface ContractDrift {

@@ -23,11 +23,18 @@ import {
   type SelectItem,
   type TerminalColorScheme,
 } from '@earendil-works/pi-tui'
-import type { Agent, AgentHandle, AgentStatus, ModelSelection, ModelSelectionRef } from './dsh-host/index.ts'
+import type {
+  Agent,
+  AgentHandle,
+  AgentStatus,
+  AssistantStreamFrame,
+  ModelSelection,
+  ModelSelectionRef,
+} from './dsh-host/index.ts'
 import { installModelSelection } from './dsh-host/index.ts'
 import { CombinedAutocompleteProvider, type AutocompleteItem, type SlashCommand } from '@earendil-works/pi-tui'
 import { createUserMessage, errorChain, type ToolCallId, type LlmConfigurableProvider, type LlmReasoningEffortInfo, currentPermissionPreset, setPermissionPreset } from './dsh-host/index.ts'
-import { SessionId, type Session, type SessionEvent } from './dsh-host/index.ts'
+import { SessionId, sessionEvents, type Session, type SessionEvent } from './dsh-host/index.ts'
 import { foldSessionTitle } from './dsh-host/index.ts'
 import { parseSessionReferenceText } from './dsh-host/index.ts'
 import { renderSkillContent } from './dsh-host/index.ts'
@@ -36,7 +43,7 @@ import { renderSkillContent } from './dsh-host/index.ts'
 // `ctx.agentDefaultModel`, `ctx.skills`, `ctx.sessionReferenceResolver`, and
 // `ctx.permissionPresets` on the cordis Context, plus the goal/compaction/skill
 // session-event extensions.
-import { settingsNamespace, type SettingsNamespace } from './dsh-host/index.ts'
+import { settingsNamespace, settingsValues, type SettingsNamespace } from './dsh-host/index.ts'
 import { PERMISSION_SETTINGS_NAMESPACE } from './dsh-host/index.ts'
 // Declaration merges: `ctx.agentPresets` and the `agent-preset/selected`
 // session event, plus the runtime preset resolver for resumed sessions.
@@ -78,7 +85,7 @@ import {
 import {
   SESSION_TITLE_SETTINGS_NAMESPACE,
   TUI_SETTINGS_NAMESPACE,
-  TuiSettingsSchema,
+  type TuiSettings,
 } from './settings.ts'
 import {
   ContextCardComponent,
@@ -168,8 +175,8 @@ const MODE_LABEL_KEYS: Record<UiModeKey, MessageKey> = {
 
 
 /** Restore a session's recorded backend preset, falling back for blank sessions. */
-function modeForSession(session: Session, fallback: string): string {
-  return resolveSessionPreset(session) ?? fallback
+function modeForSession(ctx: Context, session: Session, fallback: string): string {
+  return resolveSessionPreset(ctx, session) ?? fallback
 }
 
 /** The localized label of a preset id, preferring the roster's own name. */
@@ -265,16 +272,10 @@ export class Tui extends Service {
     const resolved: ResolvedTuiConfig = resolveTuiConfig(config)
     const t: Translator = createTranslator(resolved.locale)
     const truecolor = resolved.theme.truecolor || detectTruecolor()
-    // Runtime theme state; `/theme` and `/settings` re-paint in place.
+    // Runtime theme state; `/theme` and `/settings` re-paint in place. The TUI
+    // row's live Config is its own settings section (dsh 0.2 dropped
+    // `SettingsForms.register`), keyed by the row id `tui`.
     const settings = ctx.settings
-    const tuiSettings = settings?.register(TUI_SETTINGS_NAMESPACE, TuiSettingsSchema, {
-      base: {
-        themeMode: resolved.theme.mode,
-        themeDark: resolved.theme.dark,
-        themeLight: resolved.theme.light,
-        themeSelected: resolved.theme.selected,
-      },
-    })
     interface ProviderModelProfile {
       id: string
       name?: string
@@ -309,7 +310,7 @@ export class Tui extends Service {
         : []
     )
     const readConfiguredProvider = (entry: LlmConfigurableProvider): ConfiguredProviderProfile | undefined => {
-      const value = readPath(settings?.get(settingsNamespace(entry.settingsNs)), entry.settingsPath)
+      const value = readPath(settingsValues(ctx, settingsNamespace(entry.settingsNs)), entry.settingsPath)
       const record = asRecord(value)
       if (record === undefined) return undefined
       const profile: ConfiguredProviderProfile = {}
@@ -368,7 +369,7 @@ export class Tui extends Service {
 
       return undefined
     }
-    const persistedTheme = tuiSettings?.get()
+    const persistedTheme = settingsValues(ctx, TUI_SETTINGS_NAMESPACE) as TuiSettings | undefined
     let themeCustom: ThemeCustom | undefined = persistedTheme?.themeCustom ?? resolved.theme.custom
     const legacyThemeMigration = migrateLegacyThemeName(persistedTheme?.themeName)
     let themeMode: ThemeMode = persistedTheme?.themeMode ?? legacyThemeMigration?.themeMode ?? resolved.theme.mode
@@ -886,7 +887,6 @@ export class Tui extends Service {
     let followLatestAfterStartup = false
     const TRANSCRIPT_EVENT_TYPES = new Set<string>([
       'user/message',
-      'assistant/chunk',
       'assistant/message',
       'tool/call',
       'tool/result',
@@ -906,7 +906,7 @@ export class Tui extends Service {
           if (text === '') break
           chat.addChild(new Spacer(1))
           if (source.kind !== 'user') {
-            const label = source.kind === 'plugin' ? source.plugin : source.kind
+            const label = source.kind === 'wechat-bridge' ? source.plugin : source.kind
             const card = new ContextCardComponent(label, text, maxToolOutputLines, palette)
             card.setVisibility(toolsVisibility)
             contextCards.add(card)
@@ -922,9 +922,6 @@ export class Tui extends Service {
         }
         case 'step/start':
           assistantStream.start(showReasoning)
-          break
-        case 'assistant/chunk':
-          assistantStream.update(event.data.chunk)
           break
         case 'assistant/message':
           assistantStream.settle(event.data.message.content)
@@ -952,7 +949,7 @@ export class Tui extends Service {
           break
         }
         case 'tool/result': {
-          const callId = event.data.message.content[0]?.toolCallId
+          const callId = event.data.message.toolCallId
           if (callId !== undefined) toolCards.get(callId)?.updateResult(event.data)
           break
         }
@@ -1025,7 +1022,7 @@ export class Tui extends Service {
       chat.clear()
       if (header !== undefined) chat.addChild(header)
       chat.addChild(new TranscriptFoldNoticeComponent(() => transcriptStart, palette))
-      const events = agent!.session.events
+      const events = sessionEvents(agent!.session)
       const generation = ++transcriptBuildGeneration
       let index = Math.max(0, start)
       const chunkSize = 200
@@ -1033,7 +1030,7 @@ export class Tui extends Service {
         // Drop stale work if a newer window build started or the active
         // session changed while this chunked rebuild was still running.
         if (generation !== transcriptBuildGeneration) return
-        if (agent === undefined || agent.session.events !== events) return
+        if (agent === undefined || sessionEvents(agent.session) !== events) return
         const end = Math.min(index + chunkSize, events.length)
         for (; index < end; index++) {
           renderEvent(events[index]!, false, false)
@@ -1054,7 +1051,7 @@ export class Tui extends Service {
       subagentPanel.clear()
       tokenTotals = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }
       contextUsageCache.measuredAt = 0
-      const events = agent!.session.events
+      const events = sessionEvents(agent!.session)
       // Re-derive persistent compacting flag when rebuilding a truncated window.
       isCompacting = false
       for (const ev of events) {
@@ -1098,8 +1095,8 @@ export class Tui extends Service {
     }
 
     const latestCompactionError = (): string | undefined => {
-      const events = agent?.session.events
-      if (events === undefined) return undefined
+      if (agent === undefined) return undefined
+      const events = sessionEvents(agent.session)
       for (let index = events.length - 1; index >= 0; index--) {
         const event = events[index]!
         if (event.type === 'compaction/end') {
@@ -1132,9 +1129,9 @@ export class Tui extends Service {
 
     const recordActivePreset = (target: Agent): void => {
       const mounted = ctx.agentPresets?.composedPreset(target.ctx)
-      const preset = mounted ?? resolveSessionPreset(target.session)
+      const preset = mounted ?? resolveSessionPreset(ctx, target.session)
         ?? (target.id === agent?.id ? uiMode : undefined)
-      if (preset !== undefined) recordConversationPreset(target.session, preset)
+      if (preset !== undefined) recordConversationPreset(ctx, target.session, preset)
     }
 
     const toggleReasoning = (): void => {
@@ -1272,7 +1269,7 @@ export class Tui extends Service {
         ui.requestRender()
         return
       }
-      if (line === '/doctor') {
+      if (line === '/doctor' || line === '/doctor check') {
         const rows: string[] = ['doctor:']
         if (pluginHost === undefined) {
           rows.push('plugin host unavailable')
@@ -1284,6 +1281,13 @@ export class Tui extends Service {
           rows.push(`generation: ${pluginHost.generationId}`)
         }
         rows.push(`verified dsh lines: ${UPSTREAM_VALIDATED_VERSIONS.join(', ')} (see verify:contract)`)
+        if (line === '/doctor check') {
+          // The profile root is three levels above this module's directory
+          // (profiles/tui/node_modules/dsh-omp-tui/lib), which is where the
+          // harness and std protocol packages resolve.
+          const warnings = await upstreamDriftWarnings(join(import.meta.dirname, '..', '..', '..'))
+          rows.push(warnings.length === 0 ? 'contract probe: ok' : `contract probe: ${warnings.join('; ')}`)
+        }
         chat.addChild(new StaticCardComponent(rows, palette))
         ui.requestRender()
         return
@@ -1447,11 +1451,11 @@ export class Tui extends Service {
         return
       }
       if (line === '/details' || line.startsWith('/details ')) {
-        const folded = foldSessionTitle(current.session.events)
+        const folded = foldSessionTitle(sessionEvents(current.session))
         const model = handles.selectionRef?.current?.model ?? current.options.model
         let inputTokens = 0
         let outputTokens = 0
-        for (const event of current.session.events) {
+        for (const event of sessionEvents(current.session)) {
           if (event.type === 'assistant/message' && event.data.usage !== undefined) {
             inputTokens += event.data.usage.inputTokens
             outputTokens += event.data.usage.outputTokens
@@ -1507,7 +1511,7 @@ export class Tui extends Service {
         // Swapping the composition mid-conversation would leave logged tool
         // calls the new preset cannot make; the official roster only allows
         // switching while the session is blank.
-        const produced = hasConversationData(current.session.events)
+        const produced = hasConversationData(sessionEvents(current.session))
         if (produced) {
           appendNotice(t('noticeModeNotBlank'), 'warning')
           return
@@ -1525,7 +1529,7 @@ export class Tui extends Service {
         return
       }
       if (line === '/settings' || line.startsWith('/settings ')) {
-        if (settings === undefined || tuiSettings === undefined) {
+        if (settings === undefined) {
           appendNotice(t('noticeSettingsUnavailable'), 'warning')
           return
         }
@@ -1632,7 +1636,7 @@ export class Tui extends Service {
             await Promise.all(modelLoaders)
             const defaultSelection = ctx.agentDefaultModel.currentSelection()
             addModel(defaultSelection.provider, defaultSelection.model)
-            const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
+            const titleSettings = settingsValues(ctx, SESSION_TITLE_SETTINGS_NAMESPACE) as {
               provider?: string
               model?: string
             } | undefined
@@ -1674,25 +1678,22 @@ export class Tui extends Service {
             return roles.length === 0 ? t('settingsThemeCustomNone') : roles.join(', ')
           }
           const buildSettingsTabs = (): SettingsTab[] => {
-            const agentLoopSettings = settings.get(settingsNamespace('agent-loop')) as {
+            const agentLoopSettings = settingsValues(ctx, settingsNamespace('agent-loop')) as {
               maxParallelToolCalls?: number
             } | undefined
             const maxParallelToolCalls = agentLoopSettings?.maxParallelToolCalls ?? 10
             const defaultSelection = ctx.agentDefaultModel.currentSelection()
-            const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
+            const titleSettings = settingsValues(ctx, SESSION_TITLE_SETTINGS_NAMESPACE) as {
               provider?: string
               model?: string
             } | undefined
             const titleProvider = titleSettings?.provider ?? current.options.provider ?? 'auto'
             const titleModel = titleSettings?.model ?? current.options.model ?? 'auto'
             const defaultPermission = displayPermissionName(ctx.permissionPresets.defaultPreset)
-            const defaultPreset = (settings.get(settingsNamespace('agent-presets')) as {
-              default?: string
-            } | undefined)?.default
-            const defaultMode = defaultPreset ?? ctx.agentPresets?.defaultId ?? resolved.mode
+            const defaultMode = ctx.agentPresets?.defaultId ?? resolved.mode
             const wechatConfig = getWechatConfig()
             const pluginFieldValue = (section: SettingsSection, field: SettingsField): string => {
-              const value = settings?.get(settingsNamespace(section.ns))
+              const value = settingsValues(ctx, settingsNamespace(section.ns))
               const current = readPath(value, field.path)
               if (current === undefined) return '—'
               if (typeof current === 'boolean') return current ? t('settingsOn') : t('settingsOff')
@@ -2140,19 +2141,19 @@ export class Tui extends Service {
                   showItems('theme-custom', themeCustomItems(), t('settingsThemeCustom'), 'accent')
                 } else if (item.value === 'show-reasoning') {
                   const next = !showReasoning
-                  await tuiSettings.update({ showReasoning: next })
+                  await settings.update(TUI_SETTINGS_NAMESPACE, { showReasoning: next })
                   showReasoning = next
                   appendNotice(t('noticeSettingsSaved'), 'info')
                   if (selectedVersion === viewVersion && view === selectedView) showMain()
                 } else if (item.value === 'tool-output-lines') {
                   const next = cycleValue(toolOutputLineOptions, maxToolOutputLines)
-                  await tuiSettings.update({ maxToolOutputLines: next })
+                  await settings.update(TUI_SETTINGS_NAMESPACE, { maxToolOutputLines: next })
                   maxToolOutputLines = next
                   rebuildTranscript()
                   appendNotice(t('noticeSettingsSaved'), 'info')
                   if (selectedVersion === viewVersion && view === selectedView) showMain()
                 } else if (item.value === 'title-model') {
-                  const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
+                  const titleSettings = settingsValues(ctx, SESSION_TITLE_SETTINGS_NAMESPACE) as {
                     provider?: string
                   } | undefined
                   showItems(
@@ -2168,9 +2169,7 @@ export class Tui extends Service {
                     return
                   }
                   const presetsList = (await presets.list()).filter(preset => preset.broken === undefined)
-                  const defaultMode = (settings.get(settingsNamespace('agent-presets')) as {
-                    default?: string
-                  } | undefined)?.default ?? presets.defaultId
+                  const defaultMode = presets.defaultId
                   showItems(
                     'default-mode',
                     presetsList.map(preset => ({
@@ -2182,7 +2181,7 @@ export class Tui extends Service {
                     defaultMode,
                   )
                 } else if (item.value === 'max-parallel-tool-calls') {
-                  const currentParallel = (settings.get(settingsNamespace('agent-loop')) as {
+                  const currentParallel = (settingsValues(ctx, settingsNamespace('agent-loop')) as {
                     maxParallelToolCalls?: number
                   } | undefined)?.maxParallelToolCalls ?? 10
                   const next = cycleValue(parallelToolCallOptions, currentParallel)
@@ -2209,7 +2208,7 @@ export class Tui extends Service {
                     rightTemplate = parseTuiPromptTemplate(displayInlineText(next))
                     footer = new ComposerFooterComponent(rightTemplate, promptValue, palette)
                   }
-                  await tuiSettings.update({ leftPrompt, rightPrompt })
+                  await settings.update(TUI_SETTINGS_NAMESPACE, { leftPrompt, rightPrompt })
                   rebuildChrome()
                   appendNotice(t('noticePromptSet', { name: editLeft ? t('settingsLeftPrompt') : t('settingsRightPrompt') }), 'info')
                   if (selectedVersion === viewVersion && view === selectedView) showMain()
@@ -2226,7 +2225,7 @@ export class Tui extends Service {
                   if (trimmed !== '') {
                     if (editTools) keyTools = trimmed
                     else keyReasoning = trimmed
-                    await tuiSettings.update({ keyTools, keyReasoning })
+                    await settings.update(TUI_SETTINGS_NAMESPACE, { keyTools, keyReasoning })
                   }
                   appendNotice(t('noticeKeybindingSet', { name: editTools ? t('settingsKeyTools') : t('settingsKeyReasoning') }), 'info')
                   if (selectedVersion === viewVersion && view === selectedView) showMain()
@@ -2343,7 +2342,7 @@ export class Tui extends Service {
 
               if (selectedView === 'theme-mode') {
                 themeMode = item.value === 'dynamic' ? 'dynamic' : 'selected'
-                await tuiSettings.update({ themeMode, themeDark, themeLight, themeSelected })
+                await settings.update(TUI_SETTINGS_NAMESPACE, { themeMode, themeDark, themeLight, themeSelected })
                 Object.assign(palette, createPalette(resolved.theme.color, currentScheme, truecolor, themeOverride()))
                 Object.assign(mdTheme, markdownTheme(palette))
                 rebuildTranscript()
@@ -2358,7 +2357,7 @@ export class Tui extends Service {
                 if (selectedView === 'theme-dark') themeDark = item.value
                 if (selectedView === 'theme-light') themeLight = item.value
                 if (selectedView === 'theme-selected') themeSelected = item.value
-                await tuiSettings.update({ themeMode, themeDark, themeLight, themeSelected })
+                await settings.update(TUI_SETTINGS_NAMESPACE, { themeMode, themeDark, themeLight, themeSelected })
                 Object.assign(palette, createPalette(resolved.theme.color, currentScheme, truecolor, themeOverride()))
                 Object.assign(mdTheme, markdownTheme(palette))
                 rebuildTranscript()
@@ -2392,7 +2391,7 @@ export class Tui extends Service {
                   next[role] = [parts[0]!, parts[1]!, parts[2]!]
                 }
                 themeCustom = Object.keys(next).length === 0 ? undefined : next
-                await tuiSettings.update({ themeMode, themeDark, themeLight, themeSelected, themeCustom })
+                await settings.update(TUI_SETTINGS_NAMESPACE, { themeMode, themeDark, themeLight, themeSelected, themeCustom })
                 Object.assign(palette, createPalette(resolved.theme.color, currentScheme, truecolor, themeOverride()))
                 Object.assign(mdTheme, markdownTheme(palette))
                 rebuildTranscript()
@@ -2404,7 +2403,7 @@ export class Tui extends Service {
               }
 
               if (selectedView === 'default-mode') {
-                await settings.update(settingsNamespace('agent-presets'), { default: item.value })
+                await settings.update(settingsNamespace('agent-presets'), { selectedDefault: item.value })
                 appendNotice(t('noticeDefaultModeSet', { mode: modeLabel(t, item.value, presetNames) }), 'info')
                 if (selectedVersion === viewVersion && view === selectedView) showMain()
                 return
@@ -2412,7 +2411,7 @@ export class Tui extends Service {
 
 
               if (selectedView === 'title-provider') {
-                const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
+                const titleSettings = settingsValues(ctx, SESSION_TITLE_SETTINGS_NAMESPACE) as {
                   provider?: string
                   model?: string
                 } | undefined
@@ -2439,7 +2438,7 @@ export class Tui extends Service {
 
               if (selectedView === 'title-model') {
                 if (pendingProvider === undefined) return
-                const titleSettings = settings.get(SESSION_TITLE_SETTINGS_NAMESPACE) as {
+                const titleSettings = settingsValues(ctx, SESSION_TITLE_SETTINGS_NAMESPACE) as {
                   provider?: string
                   model?: string
                 } | undefined
@@ -2555,9 +2554,9 @@ export class Tui extends Service {
         const arg = line.slice('/theme'.length).trim()
         const parts = arg.split(/\s+/).filter(Boolean)
         const applyTheme = async (): Promise<void> => {
-          if (tuiSettings !== undefined) {
+          if (settings !== undefined) {
             try {
-              await tuiSettings.update({ themeMode, themeDark, themeLight, themeSelected })
+              await settings.update(TUI_SETTINGS_NAMESPACE, { themeMode, themeDark, themeLight, themeSelected })
             } catch (error: unknown) {
               appendNotice(t('noticeSettingsFailed', { error: errorChain(error) }), 'error')
               return
@@ -2768,7 +2767,7 @@ export class Tui extends Service {
       }
       const refreshTitle = (): void => {
         const sessionTitle = ctx.get('sessionTitle')
-        if (sessionTitle !== undefined && foldSessionTitle(current.session.events) === undefined) {
+        if (sessionTitle !== undefined && foldSessionTitle(sessionEvents(current.session)) === undefined) {
           void sessionTitle.refresh(current.session).catch(() => undefined)
         }
       }
@@ -3009,13 +3008,14 @@ export class Tui extends Service {
     let offScheme: (() => void) | undefined
     let offModelSelection: (() => void) | undefined
     let offInbox: (() => void) | undefined
+    let offStream: (() => void) | undefined
     let offWechatOutput: (() => void) | undefined
     let activeHandle: AgentHandle | undefined
     let mounted = false
 
     const mount = (liveAgent: Agent): void => {
       if (mounted) return
-      uiMode = modeForSession(liveAgent.session, resolveDefaultMode())
+      uiMode = modeForSession(ctx, liveAgent.session, resolveDefaultMode())
       mounted = true
       agent = liveAgent
       // 让微信桥跟随 TUI 当前会话；/resume、/new 等切换也走 activateAgent。
@@ -3058,7 +3058,7 @@ export class Tui extends Service {
 
       const updateTitle = (): void => {
         const current = agent
-        const folded = current === undefined ? undefined : foldSessionTitle(current.session.events)
+        const folded = current === undefined ? undefined : foldSessionTitle(sessionEvents(current.session))
         terminal.setTitle(folded === undefined ? resolved.title : `${folded.title} — ${resolved.title}`)
       }
 
@@ -3285,9 +3285,25 @@ export class Tui extends Service {
           appendNotice(t('noticeEventRenderFailed', { error: errorChain(error) }), 'error')
         }
       }
+
+      /**
+       * Live assistant streaming arrives through `agent/assistant-stream` frames
+       * (dsh 0.2 replaced the durable `assistant/chunk` session event). Chunk
+       * frames paint the streaming card; the end frame closes it after the
+       * durable `assistant/message` settlement.
+       */
+      const handleAssistantFrame = (targetId: SessionId, candidate: Agent, frame: AssistantStreamFrame): void => {
+        if (candidate.id !== targetId) return
+        if (frame.type === 'chunk') assistantStream.update(frame.chunk)
+        else if (frame.type === 'end') assistantStream.end()
+        ui.requestRender()
+      }
+
       offEvent = ctx.on('session/event', (session, event) => handleSessionEvent(liveAgent.session.id, session, event))
 
       offStatus = ctx.on('agent/status', ({ agent: candidate, status }) => handleAgentStatus(liveAgent.id, candidate, status))
+
+      offStream = ctx.on('agent/assistant-stream', (payload) => handleAssistantFrame(liveAgent.id, payload.agent, payload.frame))
 
       // If an interjection is discarded (cancellation, inbox clear, or an
       // Alt+Up edit racing the loop), drop it from the TUI queue too.
@@ -3320,8 +3336,8 @@ export class Tui extends Service {
       async function composeAgentPreset(target: Agent): Promise<void> {
         const presets = ctx.agentPresets
         if (presets === undefined || presets.composedPreset(target.ctx) !== undefined) return
-        const recorded = resolveSessionPreset(target.session)
-        if (recorded === undefined && hasConversationData(target.session.events)) return
+        const recorded = resolveSessionPreset(ctx, target.session)
+        if (recorded === undefined && hasConversationData(sessionEvents(target.session))) return
         const wanted = recorded ?? uiMode
         try {
           await presets.mount(target.ctx, wanted)
@@ -3334,12 +3350,13 @@ export class Tui extends Service {
         const previousHandle = activeHandle
         offEvent?.()
         offStatus?.()
+        offStream?.()
         offModelSelection?.()
         offInbox?.()
         const nextSelection = selectionFor(next)
         selectionRef.current = nextSelection
         selectionRef.assembled = undefined
-        uiMode = modeForSession(next.session, resolveDefaultMode())
+        uiMode = modeForSession(ctx, next.session, resolveDefaultMode())
         offModelSelection = installModelSelection(next.ctx, selectionRef)
         agent = next
         activeHandle = handle
@@ -3362,6 +3379,7 @@ export class Tui extends Service {
         )
         offEvent = ctx.on('session/event', (session, event) => handleSessionEvent(next.session.id, session, event))
         offStatus = ctx.on('agent/status', ({ agent: candidate, status }) => handleAgentStatus(next.id, candidate, status))
+        offStream = ctx.on('agent/assistant-stream', (payload) => handleAssistantFrame(next.id, payload.agent, payload.frame))
         offInbox = ctx.on('agent/inbox/discarded', (payload) => {
           if (payload.agent.id !== next.id) return
           const index = pendingInterjections.findIndex(entry => entry.message.id === payload.message.id)
@@ -3456,9 +3474,8 @@ export class Tui extends Service {
           resumeSessionId: targetId,
           agentOptions: current.options,
           signal: controller.signal,
-          setup: presets === undefined ? undefined : async (agentCtx) => {
-            const resumed = agentCtx.agent
-            const recorded = resumed === undefined ? undefined : resolveSessionPreset(resumed.session)
+          setup: presets === undefined ? undefined : async (agentCtx, resumed) => {
+            const recorded = resolveSessionPreset(agentCtx, resumed.session)
             if (recorded !== undefined) await presets.mount(agentCtx, recorded)
           },
         })
@@ -3565,6 +3582,7 @@ export class Tui extends Service {
       offKeys()
       offEvent?.()
       offStatus?.()
+      offStream?.()
       offScheme?.()
       offModelSelection?.()
       offInbox?.()

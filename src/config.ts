@@ -60,6 +60,23 @@ export interface TuiConfig {
   locale?: Locale
   /** Terminal title. */
   title?: string
+  /**
+   * Runtime theme-mode override written by `/settings` and `/theme`. Wins over
+   * `theme.mode`; the profile patch keeps it, so the choice survives restarts.
+   */
+  themeMode?: ThemeMode
+  /** Runtime dark-theme override; wins over `theme.dark`. */
+  themeDark?: string
+  /** Runtime light-theme override; wins over `theme.light`. */
+  themeLight?: string
+  /** Runtime fixed-theme override for `selected` mode; wins over `theme.selected`. */
+  themeSelected?: string
+  /** Runtime per-role truecolor overrides; wins over `theme.custom`. */
+  themeCustom?: Record<string, number[]>
+  /** Keybinding for cycling tool cards. */
+  keyTools?: string
+  /** Keybinding for toggling reasoning blocks. */
+  keyReasoning?: string
 }
 
 export const DEFAULT_LEFT_PROMPT = '${cwd}'
@@ -94,7 +111,12 @@ const themeSchema = z.object({
 /** Alias kept for consumers that name the plugin config `Config`. */
 export type Config = TuiConfig
 
-/** Schemastery schema for presentation settings embedded by the bundle. */
+/**
+ * Schemastery schema for presentation settings embedded by the bundle. The
+ * flat `theme*` / `key*` fields are the runtime overrides `/settings` and
+ * `/theme` write back into this row; dsh 0.2 exposes the row's live Config as
+ * the settings section, so the row id (`tui`) is the settings namespace.
+ */
 export const TuiConfigSchema: z<TuiConfig> = z.object({
   showReasoning: z.boolean().default(true),
   maxToolOutputLines: z.number().step(1).min(1).default(6),
@@ -103,6 +125,13 @@ export const TuiConfigSchema: z<TuiConfig> = z.object({
   mode: z.string().default(DEFAULT_MODE),
   locale: z.union([z.const('zh-CN'), z.const('en')]).default(DEFAULT_LOCALE),
   title: z.string().default('dsh'),
+  themeMode: z.union([z.const('dynamic'), z.const('selected')]),
+  themeDark: z.string(),
+  themeLight: z.string(),
+  themeSelected: z.string(),
+  themeCustom: z.dict(z.array(z.number().min(0).max(255)).min(3).max(3), z.string()),
+  keyTools: z.string(),
+  keyReasoning: z.string(),
 })
 
 /** Fully defaulted theme settings. */
@@ -129,6 +158,8 @@ export interface ResolvedTuiConfig {
   mode: string
   locale: Locale
   title: string
+  keyTools: string
+  keyReasoning: string
 }
 
 const CONCRETE_THEME_IDS = new Set(THEME_DATA.map(theme => theme.id))
@@ -181,6 +212,13 @@ export function resolveTuiConfig(config: TuiConfig | undefined): ResolvedTuiConf
     }
   }
 
+  // Runtime overrides written by `/settings` and `/theme` win over the
+  // deployment defaults in `theme`.
+  if (config?.themeMode !== undefined) mode = config.themeMode
+  if (config?.themeDark !== undefined) dark = config.themeDark
+  if (config?.themeLight !== undefined) light = config.themeLight
+  if (config?.themeSelected !== undefined) selected = config.themeSelected
+
   return {
     showReasoning: config?.showReasoning ?? true,
     maxToolOutputLines: config?.maxToolOutputLines ?? 6,
@@ -192,7 +230,7 @@ export function resolveTuiConfig(config: TuiConfig | undefined): ResolvedTuiConf
       dark,
       light,
       selected,
-      custom: theme?.custom,
+      custom: config?.themeCustom ?? theme?.custom,
       leftPrompt: theme?.leftPrompt ?? DEFAULT_LEFT_PROMPT,
       rightPrompt: theme?.rightPrompt ?? DEFAULT_RIGHT_PROMPT,
       inputPrompt: theme?.inputPrompt ?? DEFAULT_INPUT_PROMPT,
@@ -201,5 +239,7 @@ export function resolveTuiConfig(config: TuiConfig | undefined): ResolvedTuiConf
     mode: config?.mode ?? DEFAULT_MODE,
     locale: config?.locale ?? DEFAULT_LOCALE,
     title: config?.title ?? 'dsh',
+    keyTools: config?.keyTools ?? 'ctrl+o',
+    keyReasoning: config?.keyReasoning ?? 'ctrl+t',
   }
 }

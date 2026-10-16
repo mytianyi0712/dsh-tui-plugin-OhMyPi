@@ -3,7 +3,7 @@
   "manifestVersion": "0.15",
   "id": "dsh-omp-tui",
   "name": "dsh-omp-tui",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "license": "BSD-3-Clause",
   "source": {
     "repository": "https://github.com/mytianyi0712/dsh-tui-plugin-OhMyPi"

@@ -7,6 +7,7 @@ export type {
   Agent,
   AgentHandle,
   AgentStatus,
+  AssistantStreamFrame,
   ModelSelection,
   ModelSelectionRef,
 } from '@deepseek-ai/dsh-agent'

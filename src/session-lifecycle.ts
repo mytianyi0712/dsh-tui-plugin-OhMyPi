@@ -1,4 +1,4 @@
-import { resolveSessionPreset, type Session, type SessionEvent } from './dsh-host/index.ts'
+import { resolveSessionPreset, type Context, type Session, type SessionEvent } from './dsh-host/index.ts'
 
 /** Events proving that a session contains model-facing conversation data. */
 const CONVERSATION_EVENT_TYPES: Readonly<Record<string, true>> = {
@@ -17,7 +17,7 @@ export function hasConversationData(events: readonly SessionEvent[]): boolean {
  * this out of blank-session setup preserves the persistence backend's lazy
  * materialization contract: an abandoned session leaves no artifact.
  */
-export function recordConversationPreset(session: Session, preset: string): void {
-  if (resolveSessionPreset(session) === preset) return
+export function recordConversationPreset(ctx: Context, session: Session, preset: string): void {
+  if (resolveSessionPreset(ctx, session) === preset) return
   session.append('agent-preset/selected', { agentPreset: preset })
 }

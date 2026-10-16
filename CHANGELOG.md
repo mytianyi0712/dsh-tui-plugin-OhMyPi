@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.4.0] - 2026-10-16
+
+### 适配 dsh 0.2.0-rc.2
+
+- 目标版本从 `0.1.2-alpha.3` 迁移到 `0.2.0-rc.2`；`devDependencies` 精确钉死 `0.2.0-rc.2`（`@dsh-std/adapter-dsh` 钉 `0.1.1-rc.4`，cordis `4.0.5-alpha.2`，schemastery `3.18.5-alpha.2`），`peerDependencies` 放宽为 `>=0.1.2-alpha.2 <0.2.1`。0.1.2-alpha.3 兼容垫片全部移除，只支持 0.2 线。
+- 会话读取面：dsh 0.2 移除 `Session.events` getter，新增 `src/dsh-host/session.ts` 的 `sessionEvents(session)` 单一入口（`snapshotEvents()`）。快照在两次 append 之间身份稳定，transcript 的日志增长检查仍然成立。
+- 事件面：durable `assistant/chunk` 会话事件被移除，实时文本改由 `agent/assistant-stream` 帧驱动（`src/index.ts` 新增 `offStream` 监听，`src/wechat/dsh/progress.ts` 的 chat 流式回传同步改造，chunk 帧不带 turn，由 start 帧记录 turn）。`tool/result` 的调用 id 从 `ToolResultMessage.toolCallId` 读取，不再从 content 块取。
+- 消息来源：dsh 0.2 移除共享的 `kind: 'plugin'` 来源，微信桥改为自己声明的 `wechat-bridge` 来源（`src/dsh-host/declarations.ts` 的 `MessageSourceMap` 合并）。
+- 设置面：dsh 0.2 的 `SettingsForms` 没有 `register`/`get`，一个 profile 行的实时 Config 就是它的 settings section。`TuiSettingsSchema` 的字段并入 `TuiConfigSchema`（行 `tui`），标题行 `session-title-llm-tui` 的 Config 即其自身 section；读取统一走 `settings.describe()`，写入走 `settings.update(namespace, …)`。
+- 预设名册：`@deepseek-ai/dsh-agent-presets` 在 0.2 线不存在，改用 `@deepseek-ai/dsh-agent-preset-registry`。dsh 0.2 不随发行版提供名册，本 bundle 在 `cordis.patch.yml` 自行声明 `standard`/`minimal`/`code`/`cordis` 四套预设行（含 plan-mode `section`、compaction realm、delegation realm）。`/mode` 的当前预设改读 `agentPreset` 会话投影（registry 注册），creation header 作为回退；`agent-preset/selected` 事件在 registry 的类型合并下可正常写入与恢复。
+- 默认模式：设置页读写 registry Config 的 `selectedDefault`（用户选择默认），显示走 `defaultId`（`selectedDefault ?? default`）。
+- 系统提示：`dsh-system-prompt` Config 的 `persona` 改名 `personaPrefix`。
+- 权限预设：`PERMISSION_SETTINGS_NAMESPACE` 不再导出，改用 `settingsNamespace('permission')`；读写走 `ctx.permissionPresets.current(session)` / `.set(session, preset)`。
+- 会话持久化：dsh 0.2 的 JSONL 后端在首次物理 append 与 `SessionHandle.flush` 时物化，且后端把实时会话事件直接路由到自己的 handle。会话写入闸门（`ConversationPersistenceGate`）无法阻止空白会话物化，已删除；`src/session-persistence.ts` 只保留 LLM 流 seam 上的 tool-call id 合成（`ToolCallIdSanitizer`）。空 id 在写入前被合成，避免恢复时校验拒绝整条日志。
+- 启动器：`omdsh` 按精确版本安装 `@dsh-std/adapter-dsh@0.1.1-rc.4`（npm `latest` 标签仍是 `0.1.1-rc.2`，peer 范围不覆盖 0.2）。
+- `/doctor check` 子命令落地：实时探测当前 profile 的协议包/adapter 版本漂移（此前 CHANGELOG 已声明但从未实现）。
+
+### Breaking Changes
+
+- 不再兼容 dsh `0.1.2-alpha.3`。在 0.1 线上运行本版本会因 `Session.events`、`SettingsForms.register`、`assistant/chunk`、`dsh-agent-presets` 缺失而启动失败。
+- 空白会话被放弃时不再保证「零产物」：0.2 的持久化后端在 durability barrier 会写入 header，`~/.dsh/sessions/<project>/<session>/session.v4.jsonl.zstd` 会留下仅含 header 的小文件。
+- 旧会话日志里空 tool-call id 的读取侧修复被移除：0.2 的格式恢复在 handle 内部校验，插件无法在读取前修补，这类旧会话无法恢复。写入侧（流 seam 合成 id）保证新会话不再产生该损坏。
+
+### 已知限制
+
+- `@dsh-std/adapter-dsh@0.1.1-rc.4` 的自带行依赖 `sessionController`，dsh `0.2.0-rc.2` 未提供该服务，该行停留在 pending；TUI 正常启动，社区 std 插件不自动加载。
+- `dsh-base@0.2.0-rc.2` 的 `session-query-sqlite` 默认 `openAt: never`，`ctx.sessionQuery` 已挂载但全文检索返回 `SESSION_QUERY_SEARCH_DISABLED`；`/resume` 选择器走 exact reads 与 title 读取，不受影响。
+
 ## [0.3.2] - 2026-09-08
 
 ### 社区 std 标准适配改进
