@@ -530,6 +530,12 @@
     # components after our host rows. Do not insert a duplicate row here.
     # `dsh-omp-tui/std-adapter` / `std-profile-loader` subpaths remain exported
     # for profiles that compose the adapter manually.
+    #
+    # On dsh 0.2 the adapter row cannot activate in a terminal profile: its row
+    # injects `sessionController`, which `@deepseek-ai/dsh-api-session-controller`
+    # provides only alongside `fileUploads` (needs `connection`) and
+    # `workspaceRegistry` — the web client stack. Installing it therefore leaves a
+    # permanent `pending` entry warning, so the tui profile does not ship it.
 
     # Host plane for the community extension ecosystem (dsh-ecosystem-spec
     # v0.15): admission, grants, effect ledger, plugin storage, message

@@ -20,7 +20,6 @@ import { fileURLToPath } from 'node:url'
 
 const PACKAGE = 'dsh-omp-tui'
 const PROFILE = 'tui'
-const STD_ADAPTER = '@dsh-std/adapter-dsh@0.1.1-rc.4'
 const GITHUB_REPO = 'mytianyi0712/dsh-tui-plugin-OhMyPi'
 const ownPackageJson = JSON.parse(
   fs.readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'),
@@ -470,27 +469,8 @@ function runCheck() {
   say(`已用全局 v${ownVersion} 覆盖 tui profile（现为 v${after ?? '未知'}，源包 ${afterHash === undefined ? '未知' : afterHash.slice(0, 12)}）。`)
 }
 
-function stdAdapterInstalled() {
-  try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(dshHome(), 'profiles', PROFILE, 'node_modules', '@dsh-std', 'adapter-dsh', 'package.json'), 'utf8'))
-    return typeof pkg.version === 'string' ? pkg.version : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function ensureStdAdapter() {
-  if (stdAdapterInstalled() !== undefined) return
-  say(`正在安装社区 std adapter ${STD_ADAPTER}…`)
-  const result = runSync(dsh, ['plugin', '--profile', PROFILE, 'add', STD_ADAPTER], { stdio: ['inherit', 'inherit', 'pipe'] })
-  if (result.status !== 0) {
-    say('std adapter 安装失败（TUI 仍可启动；社区插件不会自动加载）。')
-  }
-}
-
 function adaptForNewVersion() {
   migrateLegacySessionArtifacts()
-  ensureStdAdapter()
 }
 
 async function githubLatestRelease() {

@@ -5,8 +5,8 @@
 **OMP 风格的 DeepSeek Harness（dsh）终端界面**
 
 [![License](https://img.shields.io/badge/License-BSD--3--Clause-blue)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.1-blue)](#变更记录)
-[![dsh](https://img.shields.io/badge/dsh-0.1.1--rc.2%20%2F%200.1.2--alpha.3-4c8bf5)](#运行要求)
+[![Version](https://img.shields.io/badge/version-0.4.0-blue)](#变更记录)
+[![dsh](https://img.shields.io/badge/dsh-0.2.0--rc.2-4c8bf5)](#运行要求)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen)](CONTRIBUTING.md)
 
 </div>
@@ -27,6 +27,16 @@
 > - 项目目前已经可以作为 TUI 工具正常使用，必要功能均已测试通过。
 > - wechat-claw 通道的远程控制能力已开发完成。
 > - 由于本人近期发现利用dsh万物皆插件的性质+本地部署小模型或者接入其他低价模型，用来处理一些日常任务好像可以达成很不错的效果，可以随便定制自己想要的功能，因此本人准备继续缓慢维护该项目，只解决个人需求，如有其他功能需求，可以提交issue。
+
+> [!WARNING]
+> **破坏性变更预告：下一版本将放弃pi-tui基础组件**
+>
+> 该项目将会重命名为my-dpsk-harness-tui，并预期将tui重构为opencode v2的样式。
+>
+> - **布局骨架**：头部、状态栏、编辑器与 transcript 的行序、高度分配与响应式断点会重排，窄终端下的紧凑布局随之改变。
+> - **主题角色**：现有 98 个 OMP 主题的逐角色配色会重新定义，`theme.custom` 里的角色名可能改名或合并，逐角色 RGB 覆盖需要重新配置。
+> - **呈现细节**：工具卡片、思考块、进度行与状态行的绘制方式会重写，`showReasoning`、`maxToolOutputLines` 等开关的语义可能调整。
+> - **命令与键位**：`/theme`、`/settings` 的页面结构与快捷键随新布局调整。
 
 ## 目录
 
@@ -324,13 +334,15 @@ node --experimental-transform-types scripts/perf-probe.ts
 npx --yes @deepseek-ai/dsh@0.2.0-rc.2 plugin --profile tui add link:.
 ```
 
-社区 std adapter（`@dsh-std/adapter-dsh`）由 profile 动态链接，不打进本包。`omdsh update` 会在升级时尝试把它装进 tui profile；也可以手工安装：
+社区 std adapter（`@dsh-std/adapter-dsh`）由 profile 动态链接，不打进本包。**dsh `0.2.0-rc.2` 上终端 profile 无法激活它**：adapter 自带行注入 `sessionController`，该服务由 `@deepseek-ai/dsh-api-session-controller` 提供，而后者又要求 `fileUploads`（依赖 `connection`）与 `workspaceRegistry` —— 属于 web profile 的客户端栈。装上后 dsh 每次启动都会打印一行 `pending (waiting for service: sessionController)` 的未激活警告，所以本 profile 不再安装它，`omdsh update` 也不再自动安装。
+
+需要手工尝试时（仅在你自己补上 web 客户端栈的 profile 里才有意义）：
 
 ```sh
-dsh plugin --profile tui add @dsh-std/adapter-dsh
+dsh plugin --profile tui add @dsh-std/adapter-dsh@0.1.1-rc.4
 ```
 
-装上后本 TUI 会通过 `dsh-omp-tui/std-adapter` 行以 `discover:false` 启动 adapter core，再在 TUI 发布宿主能力之后由 `dsh-omp-tui/std-profile-loader` 激活 profile 里的 Community v0.15 插件。adapter 缺失或当前 dsh 缺少 `sessionController` 时 TUI 仍可启动，只是不会自动装载 std 插件。更新 adapter 只需在 profile 里升级该包，或再次执行 `omdsh update`。
+adapter 缺失时本 TUI 的 `dsh-omp-tui/std-adapter` / `std-profile-loader` 行降级为 no-op，TUI 正常启动，只是不会自动装载 std 插件。这两个子路径仍然导出，供手工组合 profile 使用。
 
 > [!NOTE]
 > dsh 仍处于 rc 阶段。上游接口变更时，先更新 [`docs/contracts.md`](docs/contracts.md)，再同步代码、依赖版本，并运行测试与 `dsh --profile tui` 实机 smoke。
@@ -370,7 +382,7 @@ docs/assets/            README 使用的实机截图
 - **诊断与门禁**：内置 `/plugins`、`/doctor` 诊断命令，并在 CI 中运行 `verify:boundary`、`verify:contract`、`verify:patch-surface`、`verify:plugin-spec` 四道门禁。
 - **版本策略**：所有 `@deepseek-ai/*` 宿主包改为 optional peer，dsh 版本差异尽量由动态链接的 `@dsh-std/adapter-dsh` 吸收，adapter 可在 profile 内独立升级，无需重建本插件。
 
-该迁移仍处于实验阶段，接口与行为可能随上游规范调整。当前已知限制：`@dsh-std/adapter-dsh@0.1.1-rc.4` 作为 dsh bundle 安装时，其自带行依赖 `sessionController`；dsh `0.2.0-rc.2` 未提供该服务，因此该行停留在 pending 状态，TUI 仍可正常启动，但社区 std 插件不会自动加载。npm 的 `latest` 标签仍是 `0.1.1-rc.2`（peer 范围不覆盖 0.2），启动器按 `0.1.1-rc.4` 精确安装。
+该迁移仍处于实验阶段，接口与行为可能随上游规范调整。当前已知限制：`@dsh-std/adapter-dsh@0.1.1-rc.4`（peer 范围覆盖 `0.2.0-rc.1`–`0.2.1`，2026-10-02 发布）在终端 profile 中无法激活——其自带行注入 `sessionController`，该服务由 `@deepseek-ai/dsh-api-session-controller` 提供，而后者要求 `fileUploads`（依赖 `connection`）与 `workspaceRegistry`，属于 web profile 的客户端栈。因此本 profile 不安装 adapter，`omdsh update` 也不再安装；TUI 正常启动，社区 std 插件不会自动加载。npm 的 `latest` 标签仍是 `0.1.1-rc.2`（peer 范围不覆盖 0.2）。
 
 ## 变更记录
 

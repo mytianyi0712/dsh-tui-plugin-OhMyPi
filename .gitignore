@@ -3,3 +3,4 @@ lib/
 *.tsbuildinfo
 *.tgz
 tmp/
+.omdsh-source

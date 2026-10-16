@@ -14,7 +14,7 @@
 - 系统提示：`dsh-system-prompt` Config 的 `persona` 改名 `personaPrefix`。
 - 权限预设：`PERMISSION_SETTINGS_NAMESPACE` 不再导出，改用 `settingsNamespace('permission')`；读写走 `ctx.permissionPresets.current(session)` / `.set(session, preset)`。
 - 会话持久化：dsh 0.2 的 JSONL 后端在首次物理 append 与 `SessionHandle.flush` 时物化，且后端把实时会话事件直接路由到自己的 handle。会话写入闸门（`ConversationPersistenceGate`）无法阻止空白会话物化，已删除；`src/session-persistence.ts` 只保留 LLM 流 seam 上的 tool-call id 合成（`ToolCallIdSanitizer`）。空 id 在写入前被合成，避免恢复时校验拒绝整条日志。
-- 启动器：`omdsh` 按精确版本安装 `@dsh-std/adapter-dsh@0.1.1-rc.4`（npm `latest` 标签仍是 `0.1.1-rc.2`，peer 范围不覆盖 0.2）。
+- 启动器：`omdsh update` 不再自动安装 `@dsh-std/adapter-dsh`。它在 dsh `0.2.0-rc.2` 的终端 profile 里无法激活（见「已知限制」），装上后每次启动都会打印一行未激活警告；`src/dsh-adapter/` 的动态链接与 `./std-adapter` / `./std-profile-loader` 子路径保留，缺失时降级为 no-op。
 - `/doctor check` 子命令落地：实时探测当前 profile 的协议包/adapter 版本漂移（此前 CHANGELOG 已声明但从未实现）。
 
 ### Breaking Changes
@@ -25,7 +25,7 @@
 
 ### 已知限制
 
-- `@dsh-std/adapter-dsh@0.1.1-rc.4` 的自带行依赖 `sessionController`，dsh `0.2.0-rc.2` 未提供该服务，该行停留在 pending；TUI 正常启动，社区 std 插件不自动加载。
+- `@dsh-std/adapter-dsh@0.1.1-rc.4`（2026-10-02 发布，peer 覆盖 `0.2.0-rc.1`–`0.2.1`，并未停更）在终端 profile 中无法激活：其自带行注入 `sessionController`，该服务由 `@deepseek-ai/dsh-api-session-controller` 提供，而后者要求 `fileUploads`（依赖 `connection`）与 `workspaceRegistry`，属于 web profile 的客户端栈。本 profile 因此不安装 adapter；TUI 正常启动，社区 std 插件不自动加载。
 - `dsh-base@0.2.0-rc.2` 的 `session-query-sqlite` 默认 `openAt: never`，`ctx.sessionQuery` 已挂载但全文检索返回 `SESSION_QUERY_SEARCH_DISABLED`；`/resume` 选择器走 exact reads 与 title 读取，不受影响。
 
 ## [0.3.2] - 2026-09-08
