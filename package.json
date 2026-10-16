@@ -198,8 +198,8 @@
   },
   "dependencies": {
     "@dsh-std/command": "^0.1.1-rc.1",
-    "@dsh-std/core": "^0.1.1-rc.1",
-    "@dsh-std/manifest": "^0.1.1-rc.2",
+    "@dsh-std/core": "^0.1.1-rc.2",
+    "@dsh-std/manifest": "^0.1.1-rc.3",
     "@dsh-std/messages": "^0.1.1-rc.1",
     "@dsh-std/presentation": "^0.1.1-rc.1",
     "@dsh-std/session": "0.1.1-rc.2",

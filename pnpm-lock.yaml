@@ -15,11 +15,11 @@ importers:
         specifier: ^0.1.1-rc.1
         version: 0.1.1-rc.1
       '@dsh-std/core':
-        specifier: ^0.1.1-rc.1
-        version: 0.1.1-rc.1
-      '@dsh-std/manifest':
         specifier: ^0.1.1-rc.2
         version: 0.1.1-rc.2
+      '@dsh-std/manifest':
+        specifier: ^0.1.1-rc.3
+        version: 0.1.1-rc.3
       '@dsh-std/messages':
         specifier: ^0.1.1-rc.1
         version: 0.1.1-rc.1
@@ -880,10 +880,6 @@ packages:
     resolution: {integrity: sha512-3igfBM7C+SC9squz9rKr+hoC+mwO04Gae4gsb8uAKAuh5FbHAzyjPHWy2/1LRQcjwE73yjgCmj7+7kvPBPrG5w==}
     engines: {node: ^22.19 || >=24}
 
-  '@dsh-std/core@0.1.1-rc.1':
-    resolution: {integrity: sha512-I2tZEYk0V5QjlvkLvqKkAj/Fsvz0bTe0oDF2YFzL8EpmOS9KNcILrLBGSdVrt1qZnlBZP+9Zzh2byJzG0dJiOQ==}
-    engines: {node: ^22.19 || >=24}
-
   '@dsh-std/core@0.1.1-rc.2':
     resolution: {integrity: sha512-Z5DEu+wuNunaw/8Y8dGGIuGfrpOYd2gyBXGDzHrh5HYNZbJdBjLnuEGFJkMaBqan2rPxp7KL4OalXZzM6w5rYg==}
     engines: {node: ^22.19 || >=24}
@@ -894,10 +890,6 @@ packages:
 
   '@dsh-std/lifecycle@0.1.1-rc.3':
     resolution: {integrity: sha512-XqcVUPz4SP8bCRJQuCpKbi1XzWUf3I0zn6uyv+IL073Mood29RbGDsT4awbMYn5tm96q0pTtpbejVh8OipNqJA==}
-    engines: {node: ^22.19 || >=24}
-
-  '@dsh-std/manifest@0.1.1-rc.2':
-    resolution: {integrity: sha512-PsAvpxkRx7yA+DiHkTTxFxVYpLGRfGRQCzy0VGf4da0lEHTtgvFk9l13MKsazPyzBClt6lywI+cAyTDaa8WQvw==}
     engines: {node: ^22.19 || >=24}
 
   '@dsh-std/manifest@0.1.1-rc.3':
@@ -2261,32 +2253,30 @@ snapshots:
   '@dsh-std/command@0.1.1-rc.1':
     dependencies:
       '@dsh-std/connection': 0.1.1-rc.2
-      '@dsh-std/core': 0.1.1-rc.1
-      '@dsh-std/manifest': 0.1.1-rc.2
+      '@dsh-std/core': 0.1.1-rc.2
+      '@dsh-std/manifest': 0.1.1-rc.3
       '@dsh-std/presentation': 0.1.1-rc.1
 
   '@dsh-std/composition@0.1.1-rc.1':
     dependencies:
-      '@dsh-std/core': 0.1.1-rc.1
-      '@dsh-std/manifest': 0.1.1-rc.2
+      '@dsh-std/core': 0.1.1-rc.2
+      '@dsh-std/manifest': 0.1.1-rc.3
 
   '@dsh-std/connection@0.1.1-rc.2':
     dependencies:
-      '@dsh-std/core': 0.1.1-rc.1
+      '@dsh-std/core': 0.1.1-rc.2
 
   '@dsh-std/connection@0.1.1-rc.3':
     dependencies:
       '@dsh-std/core': 0.1.1-rc.2
-
-  '@dsh-std/core@0.1.1-rc.1': {}
 
   '@dsh-std/core@0.1.1-rc.2': {}
 
   '@dsh-std/lifecycle@0.1.1-rc.2':
     dependencies:
       '@dsh-std/composition': 0.1.1-rc.1
-      '@dsh-std/core': 0.1.1-rc.1
-      '@dsh-std/manifest': 0.1.1-rc.2
+      '@dsh-std/core': 0.1.1-rc.2
+      '@dsh-std/manifest': 0.1.1-rc.3
 
   '@dsh-std/lifecycle@0.1.1-rc.3':
     dependencies:
@@ -2294,40 +2284,36 @@ snapshots:
       '@dsh-std/core': 0.1.1-rc.2
       '@dsh-std/manifest': 0.1.1-rc.3
 
-  '@dsh-std/manifest@0.1.1-rc.2':
-    dependencies:
-      '@dsh-std/core': 0.1.1-rc.1
-
   '@dsh-std/manifest@0.1.1-rc.3':
     dependencies:
       '@dsh-std/core': 0.1.1-rc.2
 
   '@dsh-std/messages@0.1.1-rc.1':
     dependencies:
-      '@dsh-std/core': 0.1.1-rc.1
+      '@dsh-std/core': 0.1.1-rc.2
 
   '@dsh-std/model@0.1.1-rc.1':
     dependencies:
       '@dsh-std/command': 0.1.1-rc.1
       '@dsh-std/connection': 0.1.1-rc.2
-      '@dsh-std/core': 0.1.1-rc.1
-      '@dsh-std/manifest': 0.1.1-rc.2
+      '@dsh-std/core': 0.1.1-rc.2
+      '@dsh-std/manifest': 0.1.1-rc.3
 
   '@dsh-std/presentation@0.1.1-rc.1':
     dependencies:
       '@dsh-std/connection': 0.1.1-rc.2
-      '@dsh-std/core': 0.1.1-rc.1
+      '@dsh-std/core': 0.1.1-rc.2
 
   '@dsh-std/sdk@0.1.1-rc.2':
     dependencies:
-      '@dsh-std/core': 0.1.1-rc.1
+      '@dsh-std/core': 0.1.1-rc.2
       '@dsh-std/lifecycle': 0.1.1-rc.2
 
   '@dsh-std/session@0.1.1-rc.2':
     dependencies:
       '@dsh-std/connection': 0.1.1-rc.2
-      '@dsh-std/core': 0.1.1-rc.1
-      '@dsh-std/manifest': 0.1.1-rc.2
+      '@dsh-std/core': 0.1.1-rc.2
+      '@dsh-std/manifest': 0.1.1-rc.3
 
   '@dsh-std/skill@0.1.1-rc.1':
     dependencies:
@@ -2336,30 +2322,30 @@ snapshots:
 
   '@dsh-std/storage@0.1.1-rc.1':
     dependencies:
-      '@dsh-std/core': 0.1.1-rc.1
+      '@dsh-std/core': 0.1.1-rc.2
 
   '@dsh-std/tool@0.1.1-rc.1':
     dependencies:
       '@dsh-std/composition': 0.1.1-rc.1
-      '@dsh-std/manifest': 0.1.1-rc.2
+      '@dsh-std/manifest': 0.1.1-rc.3
 
   '@dsh-std/ui-browser@0.1.1-rc.1':
     dependencies:
-      '@dsh-std/core': 0.1.1-rc.1
-      '@dsh-std/manifest': 0.1.1-rc.2
+      '@dsh-std/core': 0.1.1-rc.2
+      '@dsh-std/manifest': 0.1.1-rc.3
       '@dsh-std/sdk': 0.1.1-rc.2
       '@dsh-std/ui': 0.1.1-rc.1
 
   '@dsh-std/ui@0.1.1-rc.1':
     dependencies:
-      '@dsh-std/core': 0.1.1-rc.1
-      '@dsh-std/manifest': 0.1.1-rc.2
+      '@dsh-std/core': 0.1.1-rc.2
+      '@dsh-std/manifest': 0.1.1-rc.3
 
   '@dsh-std/workspace@0.1.1-rc.1':
     dependencies:
       '@dsh-std/connection': 0.1.1-rc.2
-      '@dsh-std/core': 0.1.1-rc.1
-      '@dsh-std/manifest': 0.1.1-rc.2
+      '@dsh-std/core': 0.1.1-rc.2
+      '@dsh-std/manifest': 0.1.1-rc.3
       '@dsh-std/session': 0.1.1-rc.2
 
   '@earendil-works/pi-tui@0.80.7(patch_hash=df4d02c26fc67b842a5c71f1a59b53585d10d0d2d25ed9bbbb2e477427c944ba)':

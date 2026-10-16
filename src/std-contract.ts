@@ -16,8 +16,8 @@ import { STD_ADAPTER_PACKAGE } from './dsh-adapter/std-link.ts'
 
 /** Protocol packages this host compiles against. */
 export const STD_PROTOCOL_PACKAGES: readonly { name: string; minimum: string }[] = [
-  { name: '@dsh-std/core', minimum: '0.1.1-rc.1' },
-  { name: '@dsh-std/manifest', minimum: '0.1.1-rc.2' },
+  { name: '@dsh-std/core', minimum: '0.1.1-rc.2' },
+  { name: '@dsh-std/manifest', minimum: '0.1.1-rc.3' },
   { name: '@dsh-std/command', minimum: '0.1.1-rc.1' },
   { name: '@dsh-std/storage', minimum: '0.1.1-rc.1' },
   { name: '@dsh-std/messages', minimum: '0.1.1-rc.1' },
